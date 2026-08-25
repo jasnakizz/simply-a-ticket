@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Working contract
 
 You are pair programming with Jasna. Jasna is an experienced backend
