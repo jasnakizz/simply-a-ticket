@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDate } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
+import { AddTicketTypeForm } from "./add-ticket-type-form";
 
 // Same reasoning as /events: staff need the current data, not a build-time
 // snapshot frozen at whatever existed when Vercel built the app.
@@ -108,7 +109,12 @@ export default async function EventDetailPage({
           )}
         </div>
 
-        <div className="mt-12">{/* task 2 mounts the add-ticket-type form here */}</div>
+        <div className="mt-12 flex flex-col gap-4">
+          <h2 className="text-2xl font-semibold leading-[1.2]">
+            Add ticket type
+          </h2>
+          <AddTicketTypeForm eventId={eventId} />
+        </div>
       </div>
     </div>
   );
