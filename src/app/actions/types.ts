@@ -9,3 +9,9 @@ export type CreateEventState = {
   formError?: string;
   values?: { name: string; description: string; event_date: string; location: string };
 };
+
+export type CreateTicketTypeState = {
+  errors?: FieldErrors;
+  formError?: string;
+  values?: { name: string; description: string };
+};
