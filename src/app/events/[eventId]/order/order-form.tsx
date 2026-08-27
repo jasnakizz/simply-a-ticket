@@ -66,7 +66,11 @@ export function OrderForm({
           {ticketTypes.map((ticketType) => (
             <label
               key={ticketType.id}
-              className="flex gap-2 rounded-md bg-muted p-2 has-[[data-checked]]:border has-[[data-checked]]:border-primary"
+              // border is always present but transparent, so selecting an
+              // option changes its colour without nudging the layout. The
+              // accent border pairs with the radio dot's own data-checked
+              // accent from the generated RadioGroupItem.
+              className="flex gap-2 rounded-md border border-transparent bg-muted p-2 has-[[data-checked]]:border-primary"
             >
               <RadioGroupItem value={ticketType.id} className="mt-1" />
               <span className="flex flex-col gap-1">

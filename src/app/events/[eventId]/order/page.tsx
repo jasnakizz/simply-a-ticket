@@ -49,7 +49,9 @@ export default async function OrderPage({
 
   return (
     <div className="flex flex-col flex-1 items-center">
-      <div className="w-full max-w-md px-6 py-6 flex flex-col gap-4">
+      {/* max-w-md px-6 matches the event detail page so the two line up;
+          pt-16 is the UI-SPEC's page-level top spacing (3xl). */}
+      <div className="w-full max-w-md px-6 pt-16 pb-6 flex flex-col gap-6">
         <Link
           href={`/events/${eventId}`}
           className={buttonVariants({ variant: "ghost" })}
@@ -57,35 +59,39 @@ export default async function OrderPage({
           Back to event
         </Link>
 
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold leading-[1.2] break-words">
-            Order tickets — {event.name}
-          </h1>
-          <p className="text-base font-normal leading-[1.5] text-muted-foreground">
-            {formatEventDate(event.event_date)} · {event.location}
-          </p>
-        </div>
-
-        {hasTicketTypes ? (
-          <OrderForm eventId={eventId} ticketTypes={ticketTypes} />
-        ) : (
-          // Nothing to pick, so no form — a dead end otherwise. Mirrors the
-          // event detail page's own empty state.
+        {/* gap-12 (2xl) is the UI-SPEC's major section break between the page
+            heading block and the form. */}
+        <div className="flex flex-col gap-12">
           <div className="flex flex-col gap-2">
-            <h2 className="text-2xl font-semibold leading-[1.2]">
-              No ticket types yet
-            </h2>
-            <p className="text-base font-normal leading-[1.5] text-muted-foreground">
-              Add a ticket type on the event page before starting an order.
+            <h1 className="text-2xl font-semibold leading-[1.2] break-words">
+              Order tickets — {event.name}
+            </h1>
+            <p className="text-base font-normal leading-[1.5] text-muted-foreground break-words">
+              {formatEventDate(event.event_date)} · {event.location}
             </p>
-            <Link
-              href={`/events/${eventId}`}
-              className={buttonVariants({ variant: "outline" })}
-            >
-              Back to event
-            </Link>
           </div>
-        )}
+
+          {hasTicketTypes ? (
+            <OrderForm eventId={eventId} ticketTypes={ticketTypes} />
+          ) : (
+            // Nothing to pick, so no form — a dead end otherwise. Mirrors the
+            // event detail page's own empty state.
+            <div className="flex flex-col gap-2">
+              <h2 className="text-2xl font-semibold leading-[1.2]">
+                No ticket types yet
+              </h2>
+              <p className="text-base font-normal leading-[1.5] text-muted-foreground">
+                Add a ticket type on the event page before starting an order.
+              </p>
+              <Link
+                href={`/events/${eventId}`}
+                className={buttonVariants({ variant: "outline" })}
+              >
+                Back to event
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

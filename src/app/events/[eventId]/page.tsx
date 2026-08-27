@@ -76,6 +76,17 @@ export default async function EventDetailPage({
           {formatEventDate(event.event_date)}
         </p>
 
+        {/* The main thing you do with an event once it is set up — sits above
+            the ticket-types list, not buried under the add form at the
+            bottom. Same Link + primary buttonVariants combo the events list
+            uses for "Add event". */}
+        <Link
+          href={`/events/${eventId}/order`}
+          className={buttonVariants({ variant: "default" })}
+        >
+          Place an order
+        </Link>
+
         <div className="mt-8 flex flex-col gap-4">
           {ticketTypes && ticketTypes.length === 0 ? (
             <div className="flex flex-col gap-2">
