@@ -31,7 +31,7 @@
 | status | text | `issued` \| `checked_in` |
 | paid_amount | numeric, nullable | staff-entered at order time; internal bookkeeping only — never shown to the attendee or included in the ticket email |
 | pay_at_door_amount | numeric, nullable | staff-entered at order time; amount still owed for a reservation-style order. Shown to door staff on scan — check-in requires confirming this was collected ("Mark as paid & check in") |
-| currency | text | `EUR` \| `RSD`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies |
+| currency | text, nullable | `EUR` \| `RSD`, or `NULL`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies. **Nullable, no default:** `NULL` means no money was recorded on this order. A row-level CHECK (`tickets_currency_required_with_amount`) requires `currency` to be non-null whenever `paid_amount` or `pay_at_door_amount` is set — the database rejects an amount with a null currency, so decision D-06 holds even against a caller that bypasses the Server Action |
 | issued_at | timestamptz | default now() |
 | checked_in_at | timestamptz, nullable | |
 
@@ -57,5 +57,17 @@
   considering per-field pickers. Only `EUR` and `RSD` are allowed; this is a
   real two-market constraint, not a generic multi-currency abstraction, so
   there is no currency-config table and no open ISO 4217 list.
+- `currency` is nullable with no default. The database enforces one
+  direction with a named row-level CHECK constraint
+  (`tickets_currency_required_with_amount`): the moment either
+  `paid_amount` or `pay_at_door_amount` is set, `currency` must be one of
+  `EUR` / `RSD`. An amount stored with a null currency is a rejected
+  insert, not a silently-accepted ambiguous row — this makes decision D-06
+  true at the database level, not only in the Server Action.
+- By convention (upheld by the order Server Action, not by a DB
+  constraint), a genuinely price-free ticket — both amounts `NULL` —
+  records `currency` as `NULL` too, so `NULL` reads as "no money recorded
+  on this order". Every read site handles three cases: `EUR`, `RSD`,
+  `NULL`.
 - `currency` is never shown to the attendee, for the same reason the two
   amount columns are not: it is part of the staff-only bookkeeping record.
