@@ -82,13 +82,16 @@ export default async function OrderConfirmationPage({
           />
         </div>
 
-        <dl className="flex flex-col gap-2">
-          <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Attendee</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
-              {ticket.attendee_name}
-            </dd>
-          </div>
+        {/* xl gap (mt-4 on top of the parent's gap-4 = 32px) between the QR
+            and these rows, per the UI-SPEC spacing map. Row order follows the
+            UI-SPEC: event, date, location, ticket type, description, attendee.
+            The two money figures the staff member just entered are
+            deliberately absent here — this screen is often seen by the
+            attendee and those figures are staff-only (ORDER-04 / ORDER-05),
+            the same non-disclosure rule the ticket email follows. Every value
+            carries break-words so a long name or a paragraph-length
+            description wraps in full instead of being clipped. */}
+        <dl className="mt-4 flex flex-col gap-2">
           <div className="flex flex-col">
             <dt className="text-sm font-semibold leading-[1.4]">Event</dt>
             <dd className="text-base font-normal leading-[1.5] break-words">
@@ -97,7 +100,7 @@ export default async function OrderConfirmationPage({
           </div>
           <div className="flex flex-col">
             <dt className="text-sm font-semibold leading-[1.4]">Date</dt>
-            <dd className="text-base font-normal leading-[1.5]">
+            <dd className="text-base font-normal leading-[1.5] break-words">
               {formatEventDate(event.event_date)}
             </dd>
           </div>
@@ -117,6 +120,12 @@ export default async function OrderConfirmationPage({
             <dt className="text-sm font-semibold leading-[1.4]">Details</dt>
             <dd className="text-base font-normal leading-[1.5] break-words">
               {ticketType.description}
+            </dd>
+          </div>
+          <div className="flex flex-col">
+            <dt className="text-sm font-semibold leading-[1.4]">Attendee</dt>
+            <dd className="text-base font-normal leading-[1.5] break-words">
+              {ticket.attendee_name}
             </dd>
           </div>
         </dl>
