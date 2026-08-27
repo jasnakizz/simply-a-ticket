@@ -25,3 +25,52 @@ export function formatEventDate(iso: string): string {
     year: "numeric",
   });
 }
+
+// --- Check-in time helpers (CHECKIN-01 / D-09) -----------------------------
+// The already-checked-in scan result shows both how long ago a ticket was
+// checked in and the exact moment it happened, so a seconds-old double scan
+// looks nothing like a re-entry three hours later.
+
+// Module-level so the ICU object is built once, not per call. `numeric:
+// "always"` is deliberate: it yields "1 day ago" rather than "yesterday",
+// which is the "{n} minutes/hours/days ago" wording the UI contract implies —
+// a door operator reading a timestamp wants a number, not a word.
+const relativeTimeFormat = new Intl.RelativeTimeFormat("en-GB", {
+  numeric: "always",
+});
+
+// `now` is an injected parameter with a default rather than a hidden call to
+// the clock: that is what makes every bucket boundary assertable in a test
+// without waiting. Same instinct as the rest of src/lib.
+export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+  // Signed: negative = in the past. Rounded to whole seconds so exact
+  // boundary inputs (60s, 3600s, 86400s) land cleanly on the next bucket.
+  const deltaSec = Math.round((new Date(iso).getTime() - now.getTime()) / 1000);
+  const absSec = Math.abs(deltaSec);
+
+  if (absSec < 60) return "just now";
+  if (absSec < 3600)
+    return relativeTimeFormat.format(Math.round(deltaSec / 60), "minute");
+  if (absSec < 86_400)
+    return relativeTimeFormat.format(Math.round(deltaSec / 3600), "hour");
+  return relativeTimeFormat.format(Math.round(deltaSec / 86_400), "day");
+}
+
+// The absolute line beneath the relative one (D-09). Locale pinned, timezone
+// deliberately NOT pinned — this diverges from formatEventDate directly above
+// on purpose, for two reasons that both fail to apply here:
+//   1. formatEventDate pins UTC because an event date is a bare calendar day
+//      that would shift across a timezone boundary. A check-in timestamp is an
+//      instant, not a calendar day, so there is no day to shift.
+//   2. formatEventDate pins UTC because it renders on the server, where an
+//      unpinned timezone produces a server/client hydration mismatch. This
+//      string renders only inside the "use client" scanner component, so there
+//      is no hydration risk — and door staff read a check-in time against
+//      their own wall clock, not UTC.
+// If app-wide consistency is preferred instead, this is the one line to change.
+export function formatCheckInTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
