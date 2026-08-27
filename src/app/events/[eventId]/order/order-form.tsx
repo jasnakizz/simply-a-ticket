@@ -35,6 +35,30 @@ function FieldError({ message }: { message: string }) {
   );
 }
 
+function FormError({ message }: { message: string }) {
+  // The top-level failure banner — the FIRST real use of the destructive (red)
+  // token in this app. Structurally identical to FieldError (the alert role so
+  // a screen reader announces it, a CircleAlert icon, icon+text in a row with a
+  // gap-1), so it stays distinguishable from a per-field message even without
+  // colour vision. What differs on purpose: the icon and text use the
+  // destructive colour and the text is Body size (16px) instead of small.
+  // `message` is only ever one of the two contracted strings createOrder
+  // returns in `state.formError` — never a raw Postgres or Resend error.
+  //
+  // (Java-dev note: the alert role is an implicit assertive live region — the
+  // browser's accessibility layer reads the node aloud the moment React
+  // inserts it, no extra wiring needed.)
+  return (
+    <p
+      role="alert"
+      className="flex items-center gap-1 text-base font-normal leading-[1.5] text-destructive"
+    >
+      <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+      {message}
+    </p>
+  );
+}
+
 type TicketTypeOption = { id: string; name: string; description: string };
 
 export function OrderForm({
@@ -52,6 +76,13 @@ export function OrderForm({
           the event id from the URL into formData. D-04 fixes the event by the
           URL — there is no event picker on this form. */}
       <input type="hidden" name="event_id" defaultValue={eventId} />
+
+      {/* Top-level failure banner, above every field so it leads the form's
+          reading order. Shows only when createOrder came back with a
+          formError — an email that would not send, or (different copy) an
+          email that sent but whose order row then failed to save. A forgotten
+          field never lands here; it renders inline through FieldError instead. */}
+      {state.formError && <FormError message={state.formError} />}
 
       {/* Ticket-type picker — the page's primary visual anchor: it is the
           first control, carries the most text, and is the only non-text-entry
