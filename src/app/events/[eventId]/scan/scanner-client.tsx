@@ -14,12 +14,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { LoaderCircle } from "lucide-react";
+import {
+  Ban,
+  CameraOff,
+  CircleAlert,
+  CircleCheck,
+  CircleCheckBig,
+  CircleX,
+  LoaderCircle,
+  type LucideIcon,
+} from "lucide-react";
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
 
 import { checkInTicket, lookupTicket } from "@/app/actions/check-in";
 import type { ScanResult } from "@/lib/scan-result";
 import type { CheckInState } from "@/app/actions/types";
+import { formatCheckInTimestamp, formatRelativeTime } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 
 type Phase =
@@ -32,6 +42,18 @@ type Phase =
   | { kind: "result"; result: ScanResult; token: string };
 
 const initialCheckIn: CheckInState = {};
+
+// Copy held verbatim from the 03-UI-SPEC Copywriting Contract. Kept as string
+// constants (not inline JSX text) so a literal apostrophe survives without
+// tripping react/no-unescaped-entities, and so the exact contracted wording is
+// greppable in one place.
+const NOT_FOUND_BODY =
+  "This code isn't a ticket for any event. Check you scanned the right code.";
+const WRONG_EVENT_BODY = "This ticket is for a different event.";
+const CAMERA_UNAVAILABLE_BODY =
+  "Simply a Ticket can't reach a camera on this device. Check that a camera is connected and that your browser is allowed to use it, then try again.";
+const LOOKUP_ERROR_BODY =
+  "The ticket couldn't be checked. Check your connection and try again.";
 
 export function ScannerClient({ eventId }: { eventId: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -136,6 +158,22 @@ export function ScannerClient({ eventId }: { eventId: string }) {
             <p className="text-base">Starting camera…</p>
           </div>
         )}
+        {/* Live-camera framing guide (D-12): a centred square over a darkened
+            surround. The single huge translucent-black box-shadow masks
+            everything outside the square; the container's overflow-hidden
+            clips it. Decorative only — no scanning animation is contracted
+            and it changes nothing about what decodes. */}
+        {phase.kind === "scanning" && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+          >
+            <div
+              className="size-2/3 aspect-square rounded-lg border-2 border-white/90"
+              style={{ boxShadow: "0 0 0 100vmax rgba(0, 0, 0, 0.35)" }}
+            />
+          </div>
+        )}
       </div>
 
       {phase.kind === "scanning" && (
@@ -164,25 +202,26 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       )}
 
       {phase.kind === "camera-unavailable" && (
-        <ResultShell word="Camera unavailable">
-          <p className="text-base break-words">
-            Simply a Ticket can&apos;t reach a camera on this device. Check that
-            a camera is connected and that your browser is allowed to use it,
-            then try again.
-          </p>
-          <Button onClick={startScan} className="min-h-11 w-full">
-            Try again
-          </Button>
+        <ResultShell icon={CameraOff} word="Camera unavailable" tone="stop">
+          <p className="text-base break-words">{CAMERA_UNAVAILABLE_BODY}</p>
+          <ActionGroup>
+            <Button onClick={startScan} className="min-h-11 w-full">
+              Try again
+            </Button>
+          </ActionGroup>
         </ResultShell>
       )}
 
       {phase.kind === "lookup-error" && (
-        <ResultShell word="Something went wrong">
-          <p className="text-base break-words">
-            The ticket couldn&apos;t be checked. Check your connection and try
-            again.
-          </p>
-          <ScanNextButton onClick={startScan} />
+        // Not one of the five designed result states: a non-throwing lookup
+        // failure has no bespoke screen this phase (an explicit no-connection
+        // state is Phase 4 / SCAN-05). This is a minimal honest terminal
+        // state instead of a silent hang on "Checking ticket…".
+        <ResultShell icon={CircleAlert} word="Something went wrong" tone="stop">
+          <p className="text-base break-words">{LOOKUP_ERROR_BODY}</p>
+          <ActionGroup>
+            <ScanNextButton onClick={startScan} />
+          </ActionGroup>
         </ResultShell>
       )}
 
@@ -199,13 +238,43 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   );
 }
 
-function ResultShell({ word, children }: { word: string; children: ReactNode }) {
+// The full-screen result stack from the 03-UI-SPEC Layout & Interaction
+// Contract: a 64px glyph, the status word at the Display scale, then the
+// caller's detail block and actions. `tone` is the one learnable binary for a
+// door operator — GO (near-black foreground) means proceed, STOP (destructive
+// red) means halt. Colour is never the only signal: every state also carries
+// its own glyph and its own status word.
+function ResultShell({
+  icon: Icon,
+  word,
+  tone,
+  children,
+}: {
+  icon: LucideIcon;
+  word: string;
+  tone: "go" | "stop";
+  children: ReactNode;
+}) {
+  const toneClass = tone === "stop" ? "text-destructive" : "text-foreground";
   return (
-    <div className="flex w-full flex-col items-center gap-4 text-center">
-      <p className="text-[2rem] font-semibold leading-[1.2]">{word}</p>
-      {children}
+    <div className="flex w-full flex-col items-center text-center">
+      {/* glyph → status word: sm (8px) */}
+      <Icon aria-hidden="true" className={`size-16 ${toneClass}`} />
+      <p className={`mt-2 text-[2rem] font-semibold leading-[1.2] ${toneClass}`}>
+        {word}
+      </p>
+      {/* status word → detail: md (16px); detail → actions: lg (24px) */}
+      <div className="mt-4 flex w-full flex-col items-center gap-6">
+        {children}
+      </div>
     </div>
   );
+}
+
+// The action column at the foot of every result state: full-width, ≥44px
+// controls stacked with an sm (8px) gap (primary action → "Scan next").
+function ActionGroup({ children }: { children: ReactNode }) {
+  return <div className="flex w-full flex-col gap-2">{children}</div>;
 }
 
 function ScanNextButton({ onClick }: { onClick: () => void }) {
@@ -218,17 +287,51 @@ function ScanNextButton({ onClick }: { onClick: () => void }) {
 
 function AttendeeName({ name }: { name: string }) {
   if (!name) return null;
+  // Heading scale (24px/600) per the Typography usage map, wrapping rather
+  // than clipping a long name (break-words, reused from the confirmation page).
   return (
-    <p className="text-xl font-semibold leading-[1.2] break-words">{name}</p>
+    <p className="text-2xl font-semibold leading-[1.2] break-words">{name}</p>
   );
 }
 
-function formatAbsolute(iso: string): string {
-  if (!iso) return "earlier";
-  return new Date(iso).toLocaleString("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+// Shared by both already-checked-in paths — a lookup that finds a checked_in
+// ticket, and a check-in attempt whose atomic UPDATE matched zero rows. Both
+// show how long ago (relative, glanceable) above the exact moment (absolute,
+// muted) so a seconds-old double scan looks nothing like a re-entry hours
+// later (D-09).
+function AlreadyCheckedIn({
+  name,
+  checkedInAt,
+  onScanNext,
+}: {
+  name: string;
+  checkedInAt: string;
+  onScanNext: () => void;
+}) {
+  const hasTimestamp =
+    checkedInAt !== "" && !Number.isNaN(new Date(checkedInAt).getTime());
+  return (
+    <ResultShell icon={CircleAlert} word="Already checked in" tone="stop">
+      <div className="flex w-full flex-col items-center gap-1">
+        <AttendeeName name={name} />
+        {hasTimestamp ? (
+          <>
+            <p className="text-base">
+              Checked in {formatRelativeTime(checkedInAt)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {formatCheckInTimestamp(checkedInAt)}
+            </p>
+          </>
+        ) : (
+          <p className="text-base">Checked in earlier</p>
+        )}
+      </div>
+      <ActionGroup>
+        <ScanNextButton onClick={onScanNext} />
+      </ActionGroup>
+    </ResultShell>
+  );
 }
 
 function ScanResultView({
@@ -252,102 +355,109 @@ function ScanResultView({
   );
 
   if (checkInState.ok) {
+    // Distinct glyph (CircleCheckBig) from the pre-check-in "Valid ticket"
+    // CircleCheck so a completed check-in is never mistaken for a fresh scan.
     return (
-      <ResultShell word="Checked in">
-        <AttendeeName name={checkInState.attendeeName ?? ""} />
-        <p className="text-base">Checked in just now</p>
-        <ScanNextButton onClick={onScanNext} />
+      <ResultShell icon={CircleCheckBig} word="Checked in" tone="go">
+        <div className="flex w-full flex-col items-center gap-1">
+          <AttendeeName name={checkInState.attendeeName ?? ""} />
+          <p className="text-base">Checked in just now</p>
+        </div>
+        <ActionGroup>
+          <ScanNextButton onClick={onScanNext} />
+        </ActionGroup>
       </ResultShell>
     );
   }
 
   if (checkInState.alreadyCheckedIn) {
     return (
-      <ResultShell word="Already checked in">
-        <AttendeeName name={checkInState.attendeeName ?? ""} />
-        <p className="text-base">
-          Checked in {formatAbsolute(checkInState.checkedInAt ?? "")}
-        </p>
-        <ScanNextButton onClick={onScanNext} />
-      </ResultShell>
+      <AlreadyCheckedIn
+        name={checkInState.attendeeName ?? ""}
+        checkedInAt={checkInState.checkedInAt ?? ""}
+        onScanNext={onScanNext}
+      />
     );
   }
 
   if (checkInState.notFound || result.kind === "not_found") {
     return (
-      <ResultShell word="Ticket not found">
-        <p className="text-base break-words">
-          This code isn&apos;t a ticket for any event. Check you scanned the
-          right code.
-        </p>
-        <ScanNextButton onClick={onScanNext} />
+      <ResultShell icon={CircleX} word="Ticket not found" tone="stop">
+        <p className="text-base break-words">{NOT_FOUND_BODY}</p>
+        <ActionGroup>
+          <ScanNextButton onClick={onScanNext} />
+        </ActionGroup>
       </ResultShell>
     );
   }
 
   if (result.kind === "wrong_event") {
+    // Generic sentence only — the other event is never named and never
+    // queried for (D-11), so a ticket scanned at the wrong door leaks nothing.
     return (
-      <ResultShell word="Wrong event">
-        <p className="text-base break-words">
-          This ticket is for a different event.
-        </p>
-        <ScanNextButton onClick={onScanNext} />
+      <ResultShell icon={Ban} word="Wrong event" tone="stop">
+        <p className="text-base break-words">{WRONG_EVENT_BODY}</p>
+        <ActionGroup>
+          <ScanNextButton onClick={onScanNext} />
+        </ActionGroup>
       </ResultShell>
     );
   }
 
   if (result.kind === "already_checked_in") {
     return (
-      <ResultShell word="Already checked in">
-        <AttendeeName name={result.attendeeName} />
-        <p className="text-base">
-          Checked in {formatAbsolute(result.checkedInAt)}
-        </p>
-        <ScanNextButton onClick={onScanNext} />
-      </ResultShell>
+      <AlreadyCheckedIn
+        name={result.attendeeName}
+        checkedInAt={result.checkedInAt}
+        onScanNext={onScanNext}
+      />
     );
   }
 
   // valid | valid_balance_due — same header block. The pay-at-door check-in
   // sub-flow (the "Payment collected" gate and "Mark as paid & check in") is
-  // plan 03-04; this tracer wires the plain "Check in" path only, so a
+  // plan 03-04; this plan wires the plain "Check in" path only, so a
   // balance-due ticket shows the balance and "Scan next" but no primary
   // action yet.
   const isBalanceDue = result.kind === "valid_balance_due";
 
   return (
-    <ResultShell word="Valid ticket">
-      <AttendeeName name={result.attendeeName} />
-      {result.ticketTypeName && (
-        <dl className="flex flex-col items-center gap-1">
-          <dt className="text-sm font-semibold leading-[1.4]">Ticket type</dt>
-          <dd className="text-base break-words">{result.ticketTypeName}</dd>
-        </dl>
-      )}
-      {isBalanceDue && (
-        <p className="text-base font-semibold leading-[1.5]">
-          Balance due: {result.balanceAmount} {result.balanceCurrency}
-        </p>
-      )}
-      {checkInState.formError && (
-        <p role="alert" className="text-base text-destructive break-words">
-          {checkInState.formError}
-        </p>
-      )}
-      {!isBalanceDue && (
-        <form action={checkInAction} className="flex w-full flex-col gap-2">
-          <input type="hidden" name="token" defaultValue={token} />
-          <input type="hidden" name="event_id" defaultValue={eventId} />
-          <Button
-            type="submit"
-            disabled={checkInPending}
-            className="min-h-11 w-full"
-          >
-            {checkInPending ? "Checking in…" : "Check in"}
-          </Button>
-        </form>
-      )}
-      <ScanNextButton onClick={onScanNext} />
+    <ResultShell icon={CircleCheck} word="Valid ticket" tone="go">
+      <div className="flex w-full flex-col items-center gap-2">
+        <AttendeeName name={result.attendeeName} />
+        {result.ticketTypeName && (
+          <dl className="flex flex-col items-center gap-1">
+            <dt className="text-sm font-semibold leading-[1.4]">Ticket type</dt>
+            <dd className="text-base break-words">{result.ticketTypeName}</dd>
+          </dl>
+        )}
+        {isBalanceDue && (
+          <p className="text-base font-semibold leading-[1.5]">
+            Balance due: {result.balanceAmount} {result.balanceCurrency}
+          </p>
+        )}
+        {checkInState.formError && (
+          <p role="alert" className="text-base text-destructive break-words">
+            {checkInState.formError}
+          </p>
+        )}
+      </div>
+      <ActionGroup>
+        {!isBalanceDue && (
+          <form action={checkInAction} className="flex w-full flex-col">
+            <input type="hidden" name="token" defaultValue={token} />
+            <input type="hidden" name="event_id" defaultValue={eventId} />
+            <Button
+              type="submit"
+              disabled={checkInPending}
+              className="min-h-11 w-full"
+            >
+              {checkInPending ? "Checking in…" : "Check in"}
+            </Button>
+          </form>
+        )}
+        <ScanNextButton onClick={onScanNext} />
+      </ActionGroup>
     </ResultShell>
   );
 }
