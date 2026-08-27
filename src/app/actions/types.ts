@@ -45,6 +45,10 @@ export type OrderState = {
 // `checkedInAt` is a string, never a Date: a Server Action return value
 // crosses an RPC boundary and must be plain-serializable (a Date comes back
 // as `{}` or throws). The scanner formats it for display on the client.
+//
+// `values` echoes back the two pay-at-the-door collected fields on a rejected
+// balance-due check-in — same purpose and shape as `OrderState.values`, so a
+// staff member who mistyped the figure corrects it rather than retyping it.
 export type CheckInState = {
   errors?: FieldErrors;
   formError?: string;
@@ -53,4 +57,8 @@ export type CheckInState = {
   notFound?: boolean;
   checkedInAt?: string;
   attendeeName?: string;
+  values?: {
+    collected_amount: string;
+    collected_currency: string;
+  };
 };

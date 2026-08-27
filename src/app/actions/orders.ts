@@ -11,6 +11,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { amountSchema } from "@/lib/amount";
 import { formatEventDate } from "@/lib/date";
 import { generateQrDataUrl, qrDataUrlToBase64 } from "@/lib/qr";
 import { sendTicketEmail } from "@/lib/email";
@@ -27,27 +28,11 @@ import type { OrderState } from "@/app/actions/types";
 // field at all still validates because `.default("RSD")` fills it in. The two
 // optional amount fields (plan 02-04) share `amountSchema` below.
 
-// Shared schema for both optional money fields. The value stays a *string*
-// end to end — it is never turned into a JavaScript number on this path, so
-// it cannot pick up floating-point drift before Postgres parses it into the
-// `numeric` column (this is why 19.99 stores as exactly 19.99). An empty or
-// whitespace-only input means "no amount was recorded" and becomes
-// `undefined` here, which the insert writes as SQL NULL — deliberately
-// different from a recorded `0` (D-09; Phase 3's scanner reads NULL as
-// "unknown" and 0 as "nothing to collect").
-//
-// The pattern is anchored at both ends (^…$) so a value with trailing
-// characters cannot slip through, allows at most two fractional digits, and
-// carries no leading minus — that is how "non-negative" is enforced here, by
-// the shape of the string rather than a numeric comparison. No upper bound:
-// D-09 is explicit that there is no cap.
-const amountSchema = z
-  .string()
-  .trim()
-  .transform((value) => (value === "" ? undefined : value))
-  .refine((value) => value === undefined || /^\d+(\.\d{1,2})?$/.test(value), {
-    message: "Enter a non-negative amount with up to 2 decimal places.",
-  });
+// `amountSchema` (both optional money fields) is now shared from
+// src/lib/amount.ts so the check-in Server Action can reuse the exact same
+// anchored decimal rule and message. The value stays a *string* end to end and
+// a blank field becomes `undefined` → SQL NULL, never `0` (D-09). See that
+// module for the full rationale.
 
 const orderSchema = z.object({
   event_id: z.uuid(),

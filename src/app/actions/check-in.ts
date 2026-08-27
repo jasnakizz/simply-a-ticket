@@ -15,6 +15,7 @@
 import { z } from "zod";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { amountSchema } from "@/lib/amount";
 import { classifyScan, type ScanResult } from "@/lib/scan-result";
 import type { CheckInState } from "@/app/actions/types";
 
@@ -22,10 +23,58 @@ import type { CheckInState } from "@/app/actions/types";
 // it must never reach the database as a query on an empty value.
 const tokenSchema = z.string().trim().min(1);
 
-const checkInSchema = z.object({
-  token: z.string().trim().min(1),
-  event_id: z.uuid(),
-});
+const checkInSchema = z
+  .object({
+    token: z.string().trim().min(1),
+    event_id: z.uuid(),
+    // The client marks which path it is on: a hidden "true" on the balance-due
+    // form, absent on the plain form. This is client-controlled and the server
+    // does not re-derive the balance from the row — the failure mode is
+    // self-defeating (a caller who lies and omits the marker gets a plain
+    // check-in that records no collection, which is exactly what omitting the
+    // confirmation would get them, and the ticket is still checked in exactly
+    // once). Recorded as a flagged assumption in 03-04-PLAN.md.
+    balance_due: z.enum(["true"]).optional(),
+    // An HTML checkbox submits the string "on" when ticked and is absent
+    // entirely when not — an optional literal, not a boolean.
+    payment_collected: z.enum(["on"]).optional(),
+    // The same anchored decimal rule the order form uses, shared from
+    // @/lib/amount so there is one pattern and one message. Stays a string.
+    collected_amount: amountSchema.optional(),
+    collected_currency: z.enum(["EUR", "RSD"]).optional(),
+  })
+  .superRefine((data, ctx) => {
+    // CHECKIN-03: on the balance-due path the confirmation, the collected
+    // amount and the collected currency are ALL required, and their absence is
+    // a field error — not a silent pass. Expressed here, at the schema level,
+    // so it runs on every submission and a later edit to the handler cannot
+    // step around it. The disabled button in the UI is convenience; this
+    // refinement is what makes "not checked in until staff confirm payment"
+    // literally true (a form POST is reachable without the button).
+    if (data.balance_due !== "true") return;
+    if (data.payment_collected !== "on") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["payment_collected"],
+        message:
+          "Confirm you collected the payment before checking this ticket in.",
+      });
+    }
+    if (data.collected_amount === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["collected_amount"],
+        message: "Enter the amount you collected.",
+      });
+    }
+    if (data.collected_currency === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["collected_currency"],
+        message: "Choose the currency you collected.",
+      });
+    }
+  });
 
 // The exact column list the door screen is allowed to see. The attendee's
 // email column and the internal paid-amount bookkeeping column are
@@ -89,27 +138,67 @@ export async function checkInTicket(
   // React's own action-bookkeeping keys ($ACTION_*).
   const rawToken = formData.get("token");
   const rawEventId = formData.get("event_id");
+  const rawBalanceDue = formData.get("balance_due");
+  const rawPaymentCollected = formData.get("payment_collected");
+  const rawCollectedAmount = formData.get("collected_amount");
+  const rawCollectedCurrency = formData.get("collected_currency");
 
   const parsed = checkInSchema.safeParse({
     token: rawToken ?? "",
     event_id: rawEventId ?? "",
+    balance_due: rawBalanceDue || undefined,
+    payment_collected: rawPaymentCollected || undefined,
+    collected_amount: rawCollectedAmount ?? undefined,
+    collected_currency: rawCollectedCurrency || undefined,
   });
 
   if (!parsed.success) {
-    return { errors: z.flattenError(parsed.error).fieldErrors };
+    // Echo the amount + currency the staff member entered so a rejected
+    // balance-due submission does not blank what they typed (React resets an
+    // uncontrolled form to its default once the action settles).
+    return {
+      errors: z.flattenError(parsed.error).fieldErrors,
+      values: {
+        collected_amount: String(rawCollectedAmount ?? ""),
+        collected_currency: String(rawCollectedCurrency ?? ""),
+      },
+    };
   }
 
-  const { token, event_id: eventId } = parsed.data;
+  const {
+    token,
+    event_id: eventId,
+    balance_due: balanceDue,
+    collected_amount: collectedAmount,
+    collected_currency: collectedCurrency,
+  } = parsed.data;
+
+  const isPayAtDoor = balanceDue === "true";
 
   const supabase = createServiceClient();
 
-  // An UPDATE fires no column default, so checked_in_at must be written
-  // explicitly here or the already-checked-in screen has nothing to render
-  // (RESEARCH Pitfall 8).
-  const patch = {
-    status: "checked_in" as const,
-    checked_in_at: new Date().toISOString(),
+  // One clock reading for both timestamps, so checked_in_at and
+  // pay_at_door_collected_at cannot disagree. An UPDATE fires no column
+  // default, so this must be written explicitly or the already-checked-in
+  // screen has nothing to render (RESEARCH Pitfall 8).
+  const now = new Date().toISOString();
+
+  // A mutable object so the three collected columns can be added to THIS
+  // patch on the balance-due path — the same conditional UPDATE, never a
+  // second write. On the plain path the patch keeps exactly two keys, so a
+  // ticket with no balance leaves all three collected columns NULL (D-18).
+  const patch: Record<string, string> = {
+    status: "checked_in",
+    checked_in_at: now,
   };
+  if (isPayAtDoor && collectedAmount !== undefined && collectedCurrency) {
+    // The validated decimal string exactly as it arrived — never routed
+    // through a JS number, which is the whole reason it stayed a string from
+    // the input to the column.
+    patch.pay_at_door_collected_amount = collectedAmount;
+    patch.pay_at_door_collected_currency = collectedCurrency;
+    patch.pay_at_door_collected_at = now;
+  }
 
   // THE statement that makes this phase correct. `.eq("status", "issued")`
   // is the exactly-once guard and it must be the ONLY mechanism — no status
