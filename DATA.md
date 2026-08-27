@@ -34,6 +34,9 @@
 | currency | text, nullable | `EUR` \| `RSD`, or `NULL`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies. **Nullable, no default:** `NULL` means no money was recorded on this order. A row-level CHECK (`tickets_currency_required_with_amount`) requires `currency` to be non-null whenever `paid_amount` or `pay_at_door_amount` is set — the database rejects an amount with a null currency, so decision D-06 holds even against a caller that bypasses the Server Action |
 | issued_at | timestamptz | default now() |
 | checked_in_at | timestamptz, nullable | |
+| pay_at_door_collected_amount | numeric, nullable | The amount door staff recorded as actually collected at check-in. Distinct from `pay_at_door_amount` (what was owed): decision D-16 lets the collected figure differ from the owed figure, in value and in currency, so this is a separate column rather than an overwrite. `NULL` on every ticket issued before the scanner could collect anything — reads as "nothing collected through the scanner". Written together with `pay_at_door_collected_currency`, `pay_at_door_collected_at`, `status` and `checked_in_at` in the one atomic check-in `UPDATE`. A CHECK constraint rejects a negative value (`NULL` or `>= 0`), mirroring the two Phase 2 amount columns. Added in Phase 3 (decision D-17) |
+| pay_at_door_collected_currency | text, nullable | `EUR` \| `RSD`, or `NULL`. The currency actually taken at the door. **Deliberately its own column, not a reuse of `currency`** — see the note below. A CHECK constraint restricts it to `NULL`, `EUR` or `RSD`, mirroring the closed set on `currency`. There is **no** paired CHECK tying it to `pay_at_door_collected_amount` (Phase 3 Task 1 decision: value-checks-only — the check-in Server Action writes all three collected columns together or none). Added in Phase 3 (decision D-17) |
+| pay_at_door_collected_at | timestamptz, nullable | When the door collection was recorded, set in the same atomic check-in `UPDATE`. `NULL` = nothing collected via the scanner. No CHECK. Added in Phase 3 (decision D-17) |
 
 ## Notes
 
@@ -57,6 +60,15 @@
   considering per-field pickers. Only `EUR` and `RSD` are allowed; this is a
   real two-market constraint, not a generic multi-currency abstraction, so
   there is no currency-config table and no open ISO 4217 list.
+- `pay_at_door_collected_currency` is **deliberately outside** the
+  "one currency per ticket" rule above. `currency` is documented as a single
+  value applying to both the `paid_amount` and `pay_at_door_amount` columns;
+  the collected currency is its own column precisely because decision D-16
+  allows door staff to take payment in the *other* currency than the order
+  was priced in (e.g. an order priced in RSD, cash collected in EUR). A
+  collected-currency value that differs from the ticket's `currency` is
+  therefore correct, not an inconsistency. The same closed `EUR`/`RSD` set
+  still applies — this is not a generic multi-currency opening.
 - `currency` is nullable with no default. The database enforces one
   direction with a named row-level CHECK constraint
   (`tickets_currency_required_with_amount`): the moment either
