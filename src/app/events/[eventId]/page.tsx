@@ -87,6 +87,15 @@ export default async function EventDetailPage({
           Place an order
         </Link>
 
+        {/* Secondary action next to "Place an order" — outline variant so it
+            reads as secondary against the accent primary (D-01). */}
+        <Link
+          href={`/events/${eventId}/scan`}
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Scan tickets
+        </Link>
+
         <div className="mt-8 flex flex-col gap-4">
           {ticketTypes && ticketTypes.length === 0 ? (
             <div className="flex flex-col gap-2">

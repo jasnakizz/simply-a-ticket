@@ -36,3 +36,21 @@ export type OrderState = {
     currency: string;
   };
 };
+
+// Shared contract between the checkInTicket Server Action (src/app/actions/
+// check-in.ts) and the scanner client component. Same three-key
+// errors/formError shape as the types above, plus the outcome flags the
+// scanner's state machine switches on.
+//
+// `checkedInAt` is a string, never a Date: a Server Action return value
+// crosses an RPC boundary and must be plain-serializable (a Date comes back
+// as `{}` or throws). The scanner formats it for display on the client.
+export type CheckInState = {
+  errors?: FieldErrors;
+  formError?: string;
+  ok?: boolean;
+  alreadyCheckedIn?: boolean;
+  notFound?: boolean;
+  checkedInAt?: string;
+  attendeeName?: string;
+};
