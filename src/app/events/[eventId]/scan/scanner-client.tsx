@@ -31,6 +31,16 @@ import type { ScanResult } from "@/lib/scan-result";
 import type { CheckInState } from "@/app/actions/types";
 import { formatCheckInTimestamp, formatRelativeTime } from "@/lib/date";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Phase =
   | { kind: "idle" }
@@ -54,6 +64,32 @@ const CAMERA_UNAVAILABLE_BODY =
   "Simply a Ticket can't reach a camera on this device. Check that a camera is connected and that your browser is allowed to use it, then try again.";
 const LOOKUP_ERROR_BODY =
   "The ticket couldn't be checked. Check your connection and try again.";
+
+// Per-field validation message on the pay-at-door form — same treatment as the
+// order form's FieldError: role="alert", a CircleAlert glyph, near-black. Red
+// stays reserved for the STOP-family result states and a server failure.
+function FieldError({ message }: { message: string }) {
+  return (
+    <p role="alert" className="flex items-center gap-1 text-sm text-foreground">
+      <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+      {message}
+    </p>
+  );
+}
+
+// Format a stored decimal string to exactly two places for the balance line
+// and the amount-field prefill — WITHOUT routing it through a JavaScript
+// number. 03-02 observed the driver hands a Postgres `numeric` back as a JS
+// number, so classifyScan's String() can yield "2000" for a row that reads
+// "2000.00", and a balance shown as "2000" to someone counting cash is a
+// different-looking figure. Pure string work: anything that is not a plain
+// non-negative decimal is returned untouched.
+function toTwoDecimals(raw: string): string {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(raw.trim());
+  if (!match) return raw;
+  const fraction = (match[2] ?? "").padEnd(2, "0");
+  return `${match[1]}.${fraction}`;
+}
 
 export function ScannerClient({ eventId }: { eventId: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -353,6 +389,10 @@ function ScanResultView({
     checkInTicket,
     initialCheckIn,
   );
+  // Gates the pay-at-door reveal and the "Mark as paid & check in" button.
+  // Local state — this component is keyed by the scan id, so a fresh scan
+  // starts with the box unticked.
+  const [paymentCollected, setPaymentCollected] = useState(false);
 
   if (checkInState.ok) {
     // Distinct glyph (CircleCheckBig) from the pre-check-in "Valid ticket"
@@ -414,13 +454,125 @@ function ScanResultView({
     );
   }
 
-  // valid | valid_balance_due — same header block. The pay-at-door check-in
-  // sub-flow (the "Payment collected" gate and "Mark as paid & check in") is
-  // plan 03-04; this plan wires the plain "Check in" path only, so a
-  // balance-due ticket shows the balance and "Scan next" but no primary
-  // action yet.
-  const isBalanceDue = result.kind === "valid_balance_due";
+  // valid_balance_due — the pay-at-door sub-flow (D-15 / D-16 / D-18): an
+  // emphasised balance line, a "Payment collected" checkbox that gates
+  // everything below it, then the revealed prefilled-but-editable amount and
+  // currency, then "Mark as paid & check in". The superRefine in check-in.ts
+  // is the real gate; the disabled button is only convenience.
+  if (result.kind === "valid_balance_due") {
+    const balanceDisplay = toTwoDecimals(result.balanceAmount);
+    const amountDefault =
+      checkInState.values?.collected_amount || balanceDisplay;
+    const currencyDefault =
+      checkInState.values?.collected_currency || result.balanceCurrency;
 
+    return (
+      <ResultShell icon={CircleCheck} word="Valid ticket" tone="go">
+        <div className="flex w-full flex-col items-center gap-2">
+          <AttendeeName name={result.attendeeName} />
+          {result.ticketTypeName && (
+            <dl className="flex flex-col items-center gap-1">
+              <dt className="text-sm font-semibold leading-[1.4]">
+                Ticket type
+              </dt>
+              <dd className="text-base break-words">{result.ticketTypeName}</dd>
+            </dl>
+          )}
+          {/* Body size, 600 weight, md (16px) clear above and below — an
+              in-scale emphasis so it reads as a call to collect money (D-15),
+              not another detail row. The amount is formatted to two places
+              without a numeric round-trip (see toTwoDecimals). */}
+          <p className="my-2 text-base font-semibold leading-[1.5] break-words">
+            Balance due: {balanceDisplay} {result.balanceCurrency}
+          </p>
+          {checkInState.formError && (
+            <p role="alert" className="text-base text-destructive break-words">
+              {checkInState.formError}
+            </p>
+          )}
+        </div>
+        <ActionGroup>
+          <form action={checkInAction} className="flex w-full flex-col gap-4">
+            <input type="hidden" name="token" defaultValue={token} />
+            <input type="hidden" name="event_id" defaultValue={eventId} />
+            {/* The path marker checkInSchema's superRefine switches on. */}
+            <input type="hidden" name="balance_due" defaultValue="true" />
+
+            {/* Whole row is a ≥44px tap target — this runs on a phone held in
+                one hand at a door. Unticked by default. */}
+            <label className="flex min-h-11 w-full items-center gap-2">
+              <Checkbox
+                name="payment_collected"
+                checked={paymentCollected}
+                onCheckedChange={(value) => setPaymentCollected(value === true)}
+              />
+              <span className="text-sm font-semibold leading-[1.4]">
+                Payment collected
+              </span>
+            </label>
+            {checkInState.errors?.payment_collected?.[0] && (
+              <FieldError message={checkInState.errors.payment_collected[0]} />
+            )}
+
+            {paymentCollected && (
+              <div className="flex w-full flex-col gap-4">
+                <div className="flex w-full flex-col gap-2">
+                  <Label htmlFor="collected_amount">Amount collected</Label>
+                  <Input
+                    id="collected_amount"
+                    name="collected_amount"
+                    inputMode="decimal"
+                    defaultValue={amountDefault}
+                  />
+                  {checkInState.errors?.collected_amount?.[0] && (
+                    <FieldError
+                      message={checkInState.errors.collected_amount[0]}
+                    />
+                  )}
+                </div>
+                <div className="flex w-full flex-col gap-2">
+                  <Label htmlFor="collected_currency">Currency</Label>
+                  {/* key tied to the echoed value so a rejected submit
+                      re-applies the staff member's choice rather than
+                      snapping back — same remount trick as the order form. */}
+                  <Select
+                    key={currencyDefault}
+                    name="collected_currency"
+                    defaultValue={currencyDefault}
+                  >
+                    <SelectTrigger id="collected_currency" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="RSD">RSD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {checkInState.errors?.collected_currency?.[0] && (
+                    <FieldError
+                      message={checkInState.errors.collected_currency[0]}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={!paymentCollected || checkInPending}
+              className="min-h-11 w-full"
+            >
+              {checkInPending ? "Checking in…" : "Mark as paid & check in"}
+            </Button>
+          </form>
+          <ScanNextButton onClick={onScanNext} />
+        </ActionGroup>
+      </ResultShell>
+    );
+  }
+
+  // valid (plain) — no balance, a single "Check in" button, no checkbox and
+  // no revealed fields (D-18).
   return (
     <ResultShell icon={CircleCheck} word="Valid ticket" tone="go">
       <div className="flex w-full flex-col items-center gap-2">
@@ -431,11 +583,6 @@ function ScanResultView({
             <dd className="text-base break-words">{result.ticketTypeName}</dd>
           </dl>
         )}
-        {isBalanceDue && (
-          <p className="text-base font-semibold leading-[1.5]">
-            Balance due: {result.balanceAmount} {result.balanceCurrency}
-          </p>
-        )}
         {checkInState.formError && (
           <p role="alert" className="text-base text-destructive break-words">
             {checkInState.formError}
@@ -443,19 +590,17 @@ function ScanResultView({
         )}
       </div>
       <ActionGroup>
-        {!isBalanceDue && (
-          <form action={checkInAction} className="flex w-full flex-col">
-            <input type="hidden" name="token" defaultValue={token} />
-            <input type="hidden" name="event_id" defaultValue={eventId} />
-            <Button
-              type="submit"
-              disabled={checkInPending}
-              className="min-h-11 w-full"
-            >
-              {checkInPending ? "Checking in…" : "Check in"}
-            </Button>
-          </form>
-        )}
+        <form action={checkInAction} className="flex w-full flex-col">
+          <input type="hidden" name="token" defaultValue={token} />
+          <input type="hidden" name="event_id" defaultValue={eventId} />
+          <Button
+            type="submit"
+            disabled={checkInPending}
+            className="min-h-11 w-full"
+          >
+            {checkInPending ? "Checking in…" : "Check in"}
+          </Button>
+        </form>
         <ScanNextButton onClick={onScanNext} />
       </ActionGroup>
     </ResultShell>
