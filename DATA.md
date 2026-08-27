@@ -31,6 +31,7 @@
 | status | text | `issued` \| `checked_in` |
 | paid_amount | numeric, nullable | staff-entered at order time; internal bookkeeping only — never shown to the attendee or included in the ticket email |
 | pay_at_door_amount | numeric, nullable | staff-entered at order time; amount still owed for a reservation-style order. Shown to door staff on scan — check-in requires confirming this was collected ("Mark as paid & check in") |
+| currency | text | `EUR` \| `RSD`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies |
 | issued_at | timestamptz | default now() |
 | checked_in_at | timestamptz, nullable | |
 
@@ -50,3 +51,11 @@
   deliberately surfaced to door staff during scanning, and checking in a
   ticket with an outstanding `pay_at_door_amount` requires staff to confirm
   it was collected as part of the check-in action.
+- `currency` is a single value per ticket, not one per amount column. A
+  deposit paid in EUR with a balance owed in RSD is deliberately not
+  representable — decision D-06 chose one currency per order after
+  considering per-field pickers. Only `EUR` and `RSD` are allowed; this is a
+  real two-market constraint, not a generic multi-currency abstraction, so
+  there is no currency-config table and no open ISO 4217 list.
+- `currency` is never shown to the attendee, for the same reason the two
+  amount columns are not: it is part of the staff-only bookkeeping record.
