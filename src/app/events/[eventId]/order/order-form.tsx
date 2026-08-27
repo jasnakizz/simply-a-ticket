@@ -14,6 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const initialState: OrderState = {};
 
@@ -117,6 +124,69 @@ export function OrderForm({
         {state.errors?.attendee_email?.[0] && (
           <FieldError message={state.errors.attendee_email[0]} />
         )}
+      </div>
+
+      {/* Both amounts are optional and always visible — no toggle or checkbox
+          to reveal them (D-05). Plain number inputs only: no currency symbol,
+          no running sum, nothing that totals the two figures — that styling is
+          what makes an internal bookkeeping form look like it takes an
+          attendee's money, which this app contractually does not do.
+          Server-side, amountSchema in createOrder is the check that counts: a
+          Server Action call does not carry the browser's type="number" / step
+          attributes, so those are a convenience, not the guardrail. */}
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="paid_amount">Paid amount</Label>
+        <Input
+          id="paid_amount"
+          name="paid_amount"
+          type="number"
+          step="0.01"
+          defaultValue={state.values?.paid_amount ?? ""}
+        />
+        {state.errors?.paid_amount?.[0] && (
+          <FieldError message={state.errors.paid_amount[0]} />
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="pay_at_door_amount">Pay-at-door amount</Label>
+        <Input
+          id="pay_at_door_amount"
+          name="pay_at_door_amount"
+          type="number"
+          step="0.01"
+          defaultValue={state.values?.pay_at_door_amount ?? ""}
+        />
+        {state.errors?.pay_at_door_amount?.[0] && (
+          <FieldError message={state.errors.pay_at_door_amount[0]} />
+        )}
+      </div>
+
+      {/* One currency control governing BOTH amounts, sitting below them — not
+          a picker beside each field (D-08) and not per-event (D-06). The
+          generated base-ui Select renders its own visually-hidden input
+          carrying the chosen value under the control's name, so the Server
+          Action reads the currency straight from FormData, not React state.
+          It is uncontrolled and only reads `defaultValue` on mount, so `key`
+          is tied to the echoed value: after a rejected submission React
+          remounts it showing the option the staff member had chosen instead of
+          snapping back to RSD (D-13 keep-what-you-typed). `|| "RSD"` is the
+          D-09 default for the very first render, before any state exists. */}
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="currency">Currency</Label>
+        <Select
+          key={state.values?.currency || "RSD"}
+          name="currency"
+          defaultValue={state.values?.currency || "RSD"}
+        >
+          <SelectTrigger id="currency" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="EUR">EUR</SelectItem>
+            <SelectItem value="RSD">RSD</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* disabled={pending} is the double-submit mitigation: two fast clicks

@@ -21,17 +21,42 @@ import type { OrderState } from "@/app/actions/types";
 // like any other — z.uuid() rejects a malformed id here and the foreign keys
 // on `tickets` are the database-level backstop.
 //
-// `currency` gets its form control in plan 02-04. Until then the schema
-// default supplies it so every inserted row satisfies the DB's
-// tickets_currency_required_with_amount CHECK. RSD is the D-09 default
-// (Claude's discretion), chosen to match the local market in 02-CONTEXT.md.
-// The two amount fields are intentionally NOT in this schema — this plan
-// writes no amounts; plan 02-04 adds them.
+// `currency` is a closed EUR/RSD enum with an RSD default (D-09, Claude's
+// discretion — matches the local market in 02-CONTEXT.md): every order stores
+// a currency, even a price-free one, and an order submitted with no currency
+// field at all still validates because `.default("RSD")` fills it in. The two
+// optional amount fields (plan 02-04) share `amountSchema` below.
+
+// Shared schema for both optional money fields. The value stays a *string*
+// end to end — it is never turned into a JavaScript number on this path, so
+// it cannot pick up floating-point drift before Postgres parses it into the
+// `numeric` column (this is why 19.99 stores as exactly 19.99). An empty or
+// whitespace-only input means "no amount was recorded" and becomes
+// `undefined` here, which the insert writes as SQL NULL — deliberately
+// different from a recorded `0` (D-09; Phase 3's scanner reads NULL as
+// "unknown" and 0 as "nothing to collect").
+//
+// The pattern is anchored at both ends (^…$) so a value with trailing
+// characters cannot slip through, allows at most two fractional digits, and
+// carries no leading minus — that is how "non-negative" is enforced here, by
+// the shape of the string rather than a numeric comparison. No upper bound:
+// D-09 is explicit that there is no cap.
+const amountSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === "" ? undefined : value))
+  .refine((value) => value === undefined || /^\d+(\.\d{1,2})?$/.test(value), {
+    message: "Enter a non-negative amount with up to 2 decimal places.",
+  });
+
 const orderSchema = z.object({
   event_id: z.uuid(),
   ticket_type_id: z.uuid("Select a ticket type."),
   attendee_name: z.string().trim().min(1, "Attendee name is required."),
   attendee_email: z.email("Enter a valid email address."),
+  // Both optional; a blank field becomes `undefined` and is written as NULL.
+  paid_amount: amountSchema,
+  pay_at_door_amount: amountSchema,
   currency: z.enum(["EUR", "RSD"]).default("RSD"),
 });
 
@@ -52,9 +77,10 @@ export async function createOrder(
 
   // Echoed back on every early return. React resets an uncontrolled form to
   // its defaultValue after an action settles, so without echoing the retry
-  // would land on a blanked form (D-13). All six fields, even the three this
-  // form does not render yet — empty strings until plan 02-04. `event_id` is
-  // deliberately not echoed: it comes from the page's own hidden field.
+  // would land on a blanked form (D-13). All six rendered fields — including
+  // both amounts and the currency — so a rejected submission keeps everything
+  // the staff member typed. `event_id` is deliberately not echoed: it comes
+  // from the page's own hidden field.
   const values = {
     ticket_type_id: String(rawTicketTypeId ?? ""),
     attendee_name: String(rawAttendeeName ?? ""),
@@ -69,6 +95,8 @@ export async function createOrder(
     ticket_type_id: rawTicketTypeId ?? "",
     attendee_name: rawAttendeeName ?? "",
     attendee_email: rawAttendeeEmail ?? "",
+    paid_amount: rawPaidAmount ?? "",
+    pay_at_door_amount: rawPayAtDoorAmount ?? "",
     currency: rawCurrency ?? undefined,
   });
 
@@ -78,8 +106,15 @@ export async function createOrder(
     return { errors: z.flattenError(parsed.error).fieldErrors, values };
   }
 
-  const { event_id, ticket_type_id, attendee_name, attendee_email, currency } =
-    parsed.data;
+  const {
+    event_id,
+    ticket_type_id,
+    attendee_name,
+    attendee_email,
+    paid_amount,
+    pay_at_door_amount,
+    currency,
+  } = parsed.data;
 
   const supabase = createServiceClient();
 
@@ -165,8 +200,10 @@ export async function createOrder(
     }
 
     // Only now insert. Parsed/trimmed values, never the raw ones. Both amount
-    // columns are left unset — both-null is an explicitly legal state and
-    // plan 02-04 supplies them.
+    // columns are written from the strings amountSchema produced — `null` when
+    // the field was left blank (never coerced to 0), and never routed through
+    // a JS number so the two-decimal value Postgres stores is exactly what was
+    // typed.
     const { data: ticket, error: insertError } = await supabase
       .from("tickets")
       .insert({
@@ -175,6 +212,8 @@ export async function createOrder(
         attendee_name,
         attendee_email,
         qr_token: qrToken,
+        paid_amount: paid_amount ?? null,
+        pay_at_door_amount: pay_at_door_amount ?? null,
         currency,
       })
       .select("id")
