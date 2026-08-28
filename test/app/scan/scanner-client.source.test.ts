@@ -318,3 +318,151 @@ describe("WR-02 / WR-03: camera lifecycle guards", () => {
     expect(codeLines).not.toContain("double-invocation");
   });
 });
+
+describe("SCAN-04: every result state has its own glyph and its own word", () => {
+  // The SCAN-04 acceptance contract, mechanically enforced (04-UI-SPEC
+  // "SCAN-04 Acceptance Contract", clauses a–d; D-09 — a verification pass on
+  // the Phase 3 contract, not a redesign). Extract the (glyph, word, tone)
+  // triple from every <ResultShell> invocation in the component source and
+  // assert all three dimensions stay unique across the seven terminal result
+  // states, so a future edit that reuses another state's glyph or another
+  // state's status word — which would make those two states distinguishable by
+  // colour alone, regressing the contract for colourblind staff and for anyone
+  // reading the screen in glare — fails the build by name.
+
+  // clauses (a)/(b): the seven contracted status words.
+  const CONTRACTED_WORDS = [
+    "Valid ticket",
+    "Checked in",
+    "Already checked in",
+    "Ticket not found",
+    "Wrong event",
+    "Camera unavailable",
+    "No connection",
+  ];
+  // clause (c): the five destructive-red STOP states that share a colour and
+  // must each be told apart by glyph + word + body copy alone.
+  const STOP_GLYPHS = ["CircleAlert", "CircleX", "Ban", "CameraOff", "WifiOff"];
+
+  // Every `<ResultShell ...>` opening tag. Attributes are parsed individually
+  // off each matched tag so a reordering of icon / word / tone cannot slip past
+  // the extraction. Scoped to ResultShell only: the bare `<CircleAlert>` inside
+  // FieldError and the `<LoaderCircle>` spinners are deliberately not picked up.
+  const shellTags = content.match(/<ResultShell\b[^>]*>/g) ?? [];
+  const invocations = shellTags.map((tag) => {
+    const icon = tag.match(/icon=\{([A-Za-z0-9_]+)\}/);
+    const word = tag.match(/word="([^"]+)"/);
+    const tone = tag.match(/tone="([^"]+)"/);
+    return {
+      tag,
+      icon: icon ? icon[1] : null,
+      word: word ? word[1] : null,
+      tone: tone ? tone[1] : null,
+    };
+  });
+
+  it("extracts at least 8 ResultShell pairs (7 terminal states — Valid ticket renders twice)", () => {
+    expect(
+      invocations.length,
+      "fewer than 8 <ResultShell> invocations found — a result state was deleted or renamed",
+    ).toBeGreaterThanOrEqual(8);
+  });
+
+  it("every ResultShell invocation names a glyph", () => {
+    for (const inv of invocations) {
+      expect(
+        inv.icon,
+        `a <ResultShell> invocation has no icon= glyph: ${inv.tag}`,
+      ).not.toBeNull();
+    }
+  });
+
+  it("every ResultShell carries a tone of 'stop' or 'go', and never a tone without a status word", () => {
+    for (const inv of invocations) {
+      expect(
+        inv.tone,
+        `a <ResultShell> invocation is missing a tone prop: ${inv.tag}`,
+      ).not.toBeNull();
+      expect(
+        ["stop", "go"],
+        `<ResultShell word="${inv.word}"> has tone="${inv.tone}" — must be "stop" or "go"`,
+      ).toContain(inv.tone);
+      // Colour (tone) is only ever reinforcement — it must never appear
+      // without a status word carrying the same meaning in text.
+      expect(
+        inv.word,
+        `a <ResultShell> carries tone="${inv.tone}" but no status word — colour would be the only signal: ${inv.tag}`,
+      ).not.toBeNull();
+    }
+  });
+
+  it("the distinct status words are exactly the seven contracted SCAN-04 words (both directions)", () => {
+    const words = [...new Set(invocations.map((i) => i.word))];
+    for (const w of words) {
+      expect(
+        CONTRACTED_WORDS,
+        `unexpected result-state word "${w}" — not one of the seven SCAN-04 contracted words`,
+      ).toContain(w);
+    }
+    for (const w of CONTRACTED_WORDS) {
+      expect(
+        words,
+        `contracted SCAN-04 word "${w}" is no longer rendered by any <ResultShell>`,
+      ).toContain(w);
+    }
+    expect(words.length).toBe(CONTRACTED_WORDS.length);
+  });
+
+  it("the two 'Valid ticket' variants share one glyph, and every other word maps to exactly one glyph", () => {
+    const wordToGlyphs = new Map<string, Set<string>>();
+    for (const inv of invocations) {
+      if (!wordToGlyphs.has(inv.word!)) wordToGlyphs.set(inv.word!, new Set());
+      wordToGlyphs.get(inv.word!)!.add(inv.icon!);
+    }
+    for (const [word, glyphs] of wordToGlyphs) {
+      expect(
+        glyphs.size,
+        `status word "${word}" is rendered with more than one glyph: ${[...glyphs].join(", ")}`,
+      ).toBe(1);
+    }
+    // The GO state that renders twice is still one word backed by one glyph.
+    expect(wordToGlyphs.get("Valid ticket")).toEqual(new Set(["CircleCheck"]));
+  });
+
+  it("no glyph is shared by two different status words — the 'no two terminal states share a glyph' clause", () => {
+    const glyphToWords = new Map<string, Set<string>>();
+    for (const inv of invocations) {
+      if (!glyphToWords.has(inv.icon!)) glyphToWords.set(inv.icon!, new Set());
+      glyphToWords.get(inv.icon!)!.add(inv.word!);
+    }
+    for (const [glyph, words] of glyphToWords) {
+      expect(
+        words.size,
+        `glyph ${glyph} is used by more than one result state: ${[...words].join(
+          ", ",
+        )} — those states would collide with colour removed`,
+      ).toBe(1);
+    }
+  });
+
+  it("each of the five STOP-family glyphs is used by exactly one ResultShell", () => {
+    const icons = invocations.map((i) => i.icon);
+    for (const glyph of STOP_GLYPHS) {
+      expect(
+        icons.filter((g) => g === glyph).length,
+        `STOP-family glyph ${glyph} must appear exactly once as a <ResultShell> icon`,
+      ).toBe(1);
+    }
+  });
+
+  it("ResultShell renders its glyph aria-hidden at the contracted size-16 glyph size", () => {
+    const shellStart = content.indexOf("function ResultShell");
+    const shellEnd = content.indexOf("\nfunction ", shellStart + 1);
+    expect(shellStart).toBeGreaterThan(-1);
+    expect(shellEnd).toBeGreaterThan(shellStart);
+    const shellBody = content.slice(shellStart, shellEnd);
+    // The status word is the accessible label; the glyph is decorative and
+    // fixed at 64px so it stays legible in glare without crowding the word.
+    expect(shellBody).toMatch(/<Icon aria-hidden="true"[^/]*size-16/);
+  });
+});
