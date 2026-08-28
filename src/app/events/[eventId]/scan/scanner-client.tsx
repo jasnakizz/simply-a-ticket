@@ -302,6 +302,16 @@ export function ScannerClient({ eventId }: { eventId: string }) {
               Try again
             </Button>
           </ActionGroup>
+          {/* D-01 (supersedes Phase 3 D-10): one of the two screens where the
+              manual field is shown WITHOUT a tap. lg (24px) gap below the
+              action group (the ResultShell children gap). No autoFocus here —
+              raising the on-screen keyboard would cover the CameraOff glyph
+              and the status word the operator is still reading; the field is
+              visible and one tap away. */}
+          <div className="flex w-full flex-col gap-2">
+            <p className="text-base break-words">{MANUAL_HELPER}</p>
+            <ManualTokenField onSubmit={resolveScan} />
+          </div>
         </ResultShell>
       )}
 
@@ -332,6 +342,7 @@ export function ScannerClient({ eventId }: { eventId: string }) {
           token={phase.token}
           eventId={eventId}
           onScanNext={startScan}
+          onManualSubmit={resolveScan}
         />
       )}
     </div>
@@ -489,11 +500,16 @@ function ScanResultView({
   token,
   eventId,
   onScanNext,
+  onManualSubmit,
 }: {
   result: ScanResult;
   token: string;
   eventId: string;
   onScanNext: () => void;
+  // The parent's component-scope resolveScan, threaded in so the not-found
+  // branch (rendered here, not in ScannerClient) re-keys through the same
+  // single lookup funnel a camera decode uses.
+  onManualSubmit: (token: string) => void;
 }) {
   // The check-in state lives here, not in the parent: this component is
   // keyed by the scan id, so a fresh scan remounts it and resets
@@ -538,6 +554,14 @@ function ScanResultView({
     return (
       <ResultShell icon={CircleX} word="Ticket not found" tone="stop">
         <p className="text-base break-words">{NOT_FOUND_BODY}</p>
+        {/* D-01: auto-shown (no tap) so staff can immediately re-key a
+            mistyped or misread code. No autoFocus (same reason as Camera
+            unavailable). ScanResultView is keyed by scanId, so the next
+            lookup remounts it and the field resets — no manual clearing. */}
+        <div className="flex w-full flex-col gap-2">
+          <p className="text-base break-words">{MANUAL_HELPER}</p>
+          <ManualTokenField onSubmit={onManualSubmit} />
+        </div>
         <ActionGroup>
           <ScanNextButton onClick={onScanNext} />
         </ActionGroup>
