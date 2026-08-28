@@ -163,6 +163,9 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   const [scanId, setScanId] = useState(0);
   const controlsRef = useRef<IScannerControls | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // WR-02: a synchronous in-flight guard for startScan. Set true before the
+  // first await, cleared in that function's finally — see the comment there.
+  const startingRef = useRef(false);
 
   // Stop the camera on unmount — backing out of the page must not leave the
   // camera light on (RESEARCH Pitfall 10).
@@ -203,9 +206,19 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   );
 
   const startScan = useCallback(async () => {
-    // Guard against React's development double-invocation opening two camera
-    // streams (RESEARCH Pitfall 9).
-    if (controlsRef.current) return;
+    // WR-02: refuse a second entry while the camera is still opening. The
+    // real hazard is the async window between this call and
+    // `await reader.decodeFromConstraints(...)` resolving: `controlsRef.current`
+    // is assigned only AFTER that await, so a fast double-tap on "Start
+    // scanning" / "Try again" would pass a `controlsRef.current`-only guard
+    // and open a second getUserMedia stream with no controls object to stop
+    // it — leaving the camera light on (03-REVIEW WR-02, closes AR-03-01).
+    // `startScan` is an onClick handler, so React Strict Mode does NOT
+    // double-invoke it; this guard exists purely for the human double-tap.
+    // `startingRef` is set synchronously below, before any await, and cleared
+    // in `finally` on both the success and the camera-failure exit.
+    if (controlsRef.current || startingRef.current) return;
+    startingRef.current = true;
 
     setScanId((n) => n + 1);
     setPhase({ kind: "starting" });
@@ -221,6 +234,13 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       delayBetweenScanAttempts: 100,
     });
 
+    // WR-03: one-shot flag. ZXing fires the decode callback ~10x/second and
+    // `scanControls.stop()` does not guarantee that an already-queued frame
+    // will not still deliver a second `result`. Without this, resolveScan and
+    // setPhase could run twice for one scan — bumping scanId twice and
+    // swapping the rendered result state out from under the operator.
+    let handled = false;
+
     try {
       const controls = await reader.decodeFromConstraints(
         // `ideal`, never `exact`: a hard constraint rejects outright on any
@@ -230,8 +250,9 @@ export function ScannerClient({ eventId }: { eventId: string }) {
         (result, _error, scanControls) => {
           // Ignore the error argument entirely — the library raises a
           // not-found exception on essentially every empty frame (~10x/sec).
-          // Act only when a result is actually decoded.
-          if (!result) return;
+          // Act only on the FIRST actually-decoded result (WR-03).
+          if (handled || !result) return;
+          handled = true;
           scanControls.stop();
           controlsRef.current = null;
           // resolveScan sets { kind: "checking" } itself now.
@@ -246,6 +267,10 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       // use, or an over-constrained request all arrive here.
       controlsRef.current = null;
       setPhase({ kind: "camera-unavailable" });
+    } finally {
+      // Cleared on both exits so the next legitimate "Start scanning" /
+      // "Try again" / "Scan next" is not locked out (WR-02).
+      startingRef.current = false;
     }
   }, [resolveScan]);
 
