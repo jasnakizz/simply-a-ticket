@@ -76,10 +76,20 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
 //      that would shift across a timezone boundary. A check-in timestamp is an
 //      instant, not a calendar day, so there is no day to shift.
 //   2. formatEventDate pins UTC because it renders on the server, where an
-//      unpinned timezone produces a server/client hydration mismatch. This
-//      string renders only inside the "use client" scanner component, so there
-//      is no hydration risk — and door staff read a check-in time against
-//      their own wall clock, not UTC.
+//      unpinned timezone produces a server/client hydration mismatch. A
+//      "use client" component is NOT exempt from that: it is still
+//      server-rendered for the initial HTML and then hydrated. The reason
+//      there is no mismatch today is narrower — the result and
+//      already-checked-in branches are unreachable at first paint (the
+//      initial scanner `phase` is `idle` and the initial `useActionState`
+//      value is the empty check-in object), so neither this helper nor
+//      formatRelativeTime is ever called during server rendering. If a
+//      result branch ever becomes reachable during SSR (an SSR'd scan
+//      result, a refactor that seeds the check-in state), this helper must
+//      pin `timeZone` and take an explicit `now` the way formatEventDate
+//      above it does, or it will produce a Date-dependent hydration
+//      mismatch. Left unpinned deliberately because door staff read a
+//      check-in time against their own wall clock, not UTC (Phase 3 D-09).
 // If app-wide consistency is preferred instead, this is the one line to change.
 export function formatCheckInTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
