@@ -170,6 +170,12 @@ export async function createOrder(
       ticketTypeName: ticketType.name,
       ticketTypeDescription: ticketType.description,
       qrBase64,
+      // D-12 change-order step 4: thread the still-owed figure and its currency
+      // through to the email. Both are already destructured from parsed.data
+      // above — no new query, no new variable. The already-paid figure is
+      // deliberately NOT passed; it flows only into the insert below (EMAIL-03).
+      payAtDoorAmount: pay_at_door_amount,
+      currency,
     });
 
     if (emailError) {
