@@ -4,6 +4,7 @@ import {
   formatEventDate,
   formatRelativeTime,
   formatCheckInTimestamp,
+  toUtcMidnightIso,
 } from "@/lib/date";
 
 /**
@@ -114,5 +115,88 @@ describe("CHECKIN-01 / D-09: formatCheckInTimestamp (absolute line)", () => {
 describe("formatEventDate regression — the existing helper is not disturbed", () => {
   it("still renders a known instant as the same UTC-pinned date string", () => {
     expect(formatEventDate("2026-08-27T00:00:00.000Z")).toBe("27 August 2026");
+  });
+});
+
+describe("EVENTS-02: toUtcMidnightIso anchors a bare date to UTC midnight", () => {
+  /**
+   * An <input type="date"> gives us a bare "YYYY-MM-DD" string with no
+   * timezone info. toUtcMidnightIso anchors explicitly to UTC midnight (Z)
+   * so the stored calendar day never shifts based on server timezone or
+   * client timezone.
+   */
+
+  it("converts a bare date string '2026-08-27' to UTC midnight ISO", () => {
+    const result = toUtcMidnightIso("2026-08-27");
+    expect(result).toBe("2026-08-27T00:00:00.000Z");
+  });
+
+  it("produces a valid ISO 8601 string ending in Z (UTC)", () => {
+    const result = toUtcMidnightIso("2026-08-27");
+    expect(result).toMatch(/\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+  });
+
+  it("preserves the exact calendar day (no shift) for early-month date", () => {
+    const result = toUtcMidnightIso("2026-01-05");
+    expect(result).toBe("2026-01-05T00:00:00.000Z");
+  });
+
+  it("preserves the exact calendar day (no shift) for late-month date", () => {
+    const result = toUtcMidnightIso("2026-12-31");
+    expect(result).toBe("2026-12-31T00:00:00.000Z");
+  });
+
+  it("sets time to exactly 00:00:00 (midnight), not 23:59:59 or any other offset", () => {
+    const result = toUtcMidnightIso("2026-06-15");
+    expect(result).toContain("T00:00:00.000Z");
+  });
+
+  it("parses the date correctly and produces a Date object that stringifies to the expected ISO", () => {
+    const inputDate = "2026-03-20";
+    const result = toUtcMidnightIso(inputDate);
+    // Verify it's a valid ISO string by parsing and re-stringifying
+    const parsed = new Date(result);
+    expect(parsed.toISOString()).toBe(result);
+  });
+
+  it("does not shift the day by timezone — a known date always produces the same ISO string", () => {
+    // Call the function multiple times with the same input to verify
+    // deterministic behavior (no timezone-dependent shifts)
+    const input = "2026-07-04";
+    const result1 = toUtcMidnightIso(input);
+    const result2 = toUtcMidnightIso(input);
+    expect(result1).toBe(result2);
+    expect(result1).toBe("2026-07-04T00:00:00.000Z");
+  });
+
+  it("handles leap year dates correctly (Feb 29)", () => {
+    // 2024 was a leap year
+    const result = toUtcMidnightIso("2024-02-29");
+    expect(result).toBe("2024-02-29T00:00:00.000Z");
+  });
+
+  it("anchors to the start of the calendar day (00:00:00), the contract for event_date storage", () => {
+    // The implementation constructs `new Date(\`${dateInput}T00:00:00Z\`)`
+    // so the time must always be exactly midnight
+    const result = toUtcMidnightIso("2026-09-15");
+    const isoDate = new Date(result);
+    expect(isoDate.getUTCHours()).toBe(0);
+    expect(isoDate.getUTCMinutes()).toBe(0);
+    expect(isoDate.getUTCSeconds()).toBe(0);
+    expect(isoDate.getUTCMilliseconds()).toBe(0);
+  });
+
+  it("returns a string, not a Date object", () => {
+    const result = toUtcMidnightIso("2026-08-27");
+    expect(typeof result).toBe("string");
+  });
+
+  it("produces output that can be stored in a timestamptz column and rendered back deterministically", () => {
+    // This tests the real contract: the stored value, when passed to
+    // formatEventDate (which also pins UTC), produces the original day back
+    const input = "2026-08-27";
+    const iso = toUtcMidnightIso(input);
+    const rendered = formatEventDate(iso);
+    expect(rendered).toBe("27 August 2026");
   });
 });
