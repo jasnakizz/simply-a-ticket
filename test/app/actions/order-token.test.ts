@@ -96,6 +96,54 @@ describe("ISSUE-01: crypto.randomUUID() usage in createOrder", () => {
   });
 });
 
+describe("EMAIL-03 / SC5: createOrder sends the ticket email before it inserts the row", () => {
+  const ordersPath = join(__dirname, '../../../src/app/actions/orders.ts');
+
+  // Strip comment-only lines before any position search, using the same idiom
+  // the first case in this file uses. src/app/actions/orders.ts has several
+  // explanatory comments between the send and the insert that mention both
+  // call sites; a future one must not be able to shift a position and
+  // silently satisfy or break these checks.
+  function codeOnly(source: string): string {
+    return source
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+  }
+
+  it("the attendee is never issued a ticket row for an email that was never sent — sendTicketEmail precedes the tickets insert", () => {
+    // The Server Action's own comment ("Nothing has touched the database yet")
+    // is only true while the send comes first. This locks that ordering: an
+    // automated failure if anyone moves the insert above the send.
+    const code = codeOnly(readFileSync(ordersPath, 'utf-8'));
+
+    const sendIndex = code.indexOf('sendTicketEmail(');
+    const insertIndex = code.indexOf('from("tickets")');
+
+    expect(sendIndex).toBeGreaterThan(-1);
+    expect(insertIndex).toBeGreaterThan(-1);
+    expect(sendIndex).toBeLessThan(insertIndex);
+  });
+
+  it("the still-owed money arguments reach the sendTicketEmail call (payAtDoorAmount + currency)", () => {
+    // The caller half of the money thread: plan 02 proved buildTicketEmailHtml
+    // renders the band, this proves createOrder actually feeds it. Fails if
+    // either argument name is dropped from the call site.
+    const code = codeOnly(readFileSync(ordersPath, 'utf-8'));
+
+    const callStart = code.indexOf('sendTicketEmail(');
+    expect(callStart).toBeGreaterThan(-1);
+
+    // The call passes a single object literal; it closes at the first '});'.
+    const callEnd = code.indexOf('});', callStart);
+    expect(callEnd).toBeGreaterThan(callStart);
+
+    const callText = code.slice(callStart, callEnd);
+    expect(callText).toContain('payAtDoorAmount:');
+    expect(callText).toContain('currency,');
+  });
+});
+
 describe("ISSUE-01: Token independence from ticket id", () => {
   it("qrToken and ticket.id should be different values", () => {
     // This is verified structurally: qrToken is generated as randomUUID()
