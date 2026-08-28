@@ -21,6 +21,7 @@ import {
   CircleCheck,
   CircleCheckBig,
   CircleX,
+  Keyboard,
   LoaderCircle,
   WifiOff,
   type LucideIcon,
@@ -50,6 +51,7 @@ type Phase =
   | { kind: "scanning" }
   | { kind: "checking" }
   | { kind: "camera-unavailable" }
+  | { kind: "manual" }
   | { kind: "no-connection"; token: string }
   | { kind: "result"; result: ScanResult; token: string };
 
@@ -66,6 +68,16 @@ const CAMERA_UNAVAILABLE_BODY =
   "Simply a Ticket can't reach a camera on this device. Check that a camera is connected and that your browser is allowed to use it, then try again.";
 const LOOKUP_ERROR_BODY =
   "The ticket couldn't be checked. Check your connection and try again.";
+
+// SCAN-03 manual-entry copy, verbatim from the 04-UI-SPEC Copywriting
+// Contract. Module-level (not inline JSX text) for the same reasons as the
+// constants above: a literal apostrophe survives react/no-unescaped-entities
+// and the contracted wording is greppable in one place.
+const MANUAL_LINK_LABEL = "Enter code manually";
+const MANUAL_FIELD_LABEL = "Ticket code";
+const MANUAL_FIELD_PLACEHOLDER = "Paste or type the ticket code";
+const MANUAL_SUBMIT_LABEL = "Check ticket";
+const MANUAL_HELPER = "Camera can't read the code? Enter it by hand.";
 
 // D-05: the client-side wait bound that turns a silent hang on "Checking
 // ticket…" into a visible "No connection" state. This is the single value to
@@ -241,15 +253,37 @@ export function ScannerClient({ eventId }: { eventId: string }) {
         </p>
       )}
 
-      {phase.kind === "idle" && (
+      {(phase.kind === "idle" || phase.kind === "manual") && (
         <div className="flex w-full flex-col items-center gap-4">
           <p className="text-base text-muted-foreground text-center">
             Point the camera at an attendee&apos;s ticket QR code to check them
             in.
           </p>
-          <Button onClick={startScan} className="min-h-11 w-full">
-            Start scanning
-          </Button>
+          <div className="flex w-full flex-col items-center gap-2">
+            <Button onClick={startScan} className="min-h-11 w-full">
+              Start scanning
+            </Button>
+            {/* D-01: the manual fallback is reached from idle via a disclosure
+                link — the common SCAN-03 case is a working camera and one code
+                that will not decode, not a broken camera. Lower-priority
+                escape hatch: --foreground underlined link text, never the
+                accent fill reserved for primary buttons (04-UI-SPEC Color).
+                sm (8px) gap below "Start scanning". */}
+            <button
+              type="button"
+              onClick={() => setPhase({ kind: "manual" })}
+              aria-expanded={phase.kind === "manual"}
+              className="flex min-h-11 w-full items-center justify-center gap-1 text-base text-foreground underline underline-offset-4"
+            >
+              <Keyboard aria-hidden="true" className="size-4 shrink-0" />
+              {MANUAL_LINK_LABEL}
+            </button>
+          </div>
+          {phase.kind === "manual" && (
+            // The only placement that autofocuses — the operator asked for the
+            // field here, so move focus to the input and let them type.
+            <ManualTokenField onSubmit={resolveScan} autoFocus />
+          )}
         </div>
       )}
 
@@ -348,6 +382,56 @@ function ScanNextButton({ onClick }: { onClick: () => void }) {
     <Button variant="outline" onClick={onClick} className="min-h-11 w-full">
       Scan next
     </Button>
+  );
+}
+
+// SCAN-03 (D-01 / D-02 / D-03): the manual fallback for a QR that will not
+// decode. The trimmed raw string is handed straight to `onSubmit` — the
+// caller passes the component-scope `resolveScan`, so the manual path shares
+// the SAME single lookupTicket call site, the SAME scanId bump, and the SAME
+// server tokenSchema as a camera decode. Deliberately NOT here: any
+// client-side format, length, or UUID-shape gate — a bare crypto.randomUUID()
+// has no wrapper to parse, and the server schema is the only gate (D-02). The
+// Input never binds `value`/`defaultValue` and no screen renders a token back
+// as readable text (D-03); autofill/autocorrect are off so the token does not
+// linger in the browser. Enter submits natively via the <form> — no key
+// handler. Used in three places; only the idle-screen reveal passes autoFocus.
+function ManualTokenField({
+  onSubmit,
+  autoFocus,
+}: {
+  onSubmit: (token: string) => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <form
+      className="flex w-full flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const raw = new FormData(e.currentTarget).get("token");
+        onSubmit(String(raw ?? "").trim());
+      }}
+    >
+      <div className="flex w-full flex-col gap-2">
+        <Label htmlFor="token">{MANUAL_FIELD_LABEL}</Label>
+        <Input
+          id="token"
+          name="token"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoFocus={autoFocus}
+          placeholder={MANUAL_FIELD_PLACEHOLDER}
+          className="min-h-11"
+        />
+      </div>
+      <Button type="submit" className="min-h-11 w-full">
+        {MANUAL_SUBMIT_LABEL}
+      </Button>
+    </form>
   );
 }
 
