@@ -22,6 +22,12 @@ function isoBefore(now: Date, seconds: number): string {
   return new Date(now.getTime() - seconds * 1000).toISOString();
 }
 
+// The forward-skew twin of isoBefore: an instant `seconds` AHEAD of `now`,
+// i.e. a server timestamp seen by a phone whose clock lags the server.
+function isoAfter(now: Date, seconds: number): string {
+  return new Date(now.getTime() + seconds * 1000).toISOString();
+}
+
 describe("CHECKIN-01 / D-09: formatRelativeTime bucket boundaries (injected now)", () => {
   it("returns 'just now' for an instant 5 seconds before now", () => {
     expect(formatRelativeTime(isoBefore(NOW, 5), NOW)).toBe("just now");
@@ -79,6 +85,18 @@ describe("CHECKIN-01 / D-09: formatRelativeTime bucket boundaries (injected now)
     const out = formatRelativeTime(new Date().toISOString());
     expect(typeof out).toBe("string");
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe("WR-01: forward clock skew is clamped to the past", () => {
+  it("renders 'just now' for a server timestamp 2 minutes ahead of the phone clock", () => {
+    // A phone clock lagging the server would otherwise fall through to the
+    // minutes bucket and render future-tense "in 2 minutes".
+    expect(formatRelativeTime(isoAfter(NOW, 120), NOW)).toBe("just now");
+  });
+
+  it("renders 'just now' for a forward skew of 3 days (clamp applies at every magnitude)", () => {
+    expect(formatRelativeTime(isoAfter(NOW, 86_400 * 3), NOW)).toBe("just now");
   });
 });
 
