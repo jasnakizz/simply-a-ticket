@@ -319,6 +319,83 @@ describe("WR-02 / WR-03: camera lifecycle guards", () => {
   });
 });
 
+describe("CR-01 / CR-02: the post-await camera assignment is guarded", () => {
+  // Same slice technique as the WR-02 / WR-03 block above: locate the
+  // startScan useCallback in the comment-stripped source and cut to its
+  // `}, [resolveScan]);` close. The two blockers the phase verifier confirmed
+  // (04-VERIFICATION.md `gaps:`) both live in this body's post-await tail, and
+  // both passed the old green gate because every prior assertion is a
+  // source-string check that never pins the ORDER of the guards against the
+  // ref/phase assignment — which is the property that was violated.
+  const ssStart = codeLines.indexOf("const startScan = useCallback(");
+  const ssEndAnchor = "}, [resolveScan]);";
+  const ssEnd = codeLines.indexOf(ssEndAnchor, ssStart) + ssEndAnchor.length;
+  const ssBody = codeLines.slice(ssStart, ssEnd);
+
+  // Four load-bearing positions in the post-await tail. Each is asserted
+  // > -1 before any comparison so a rename fails loudly rather than passing
+  // on a misleading -1 < -1 style comparison.
+  const awaitIdx = ssBody.indexOf("await reader.decodeFromConstraints");
+  // `controlsRef.current = controls` is distinct from the callback's
+  // `controlsRef.current = null`; `if (handled) return` is distinct from the
+  // callback's `if (handled || !result) return`.
+  const cancelledGuardIdx = ssBody.indexOf("if (cancelledRef.current)");
+  const handledGuardIdx = ssBody.indexOf("if (handled) return");
+  const assignIdx = ssBody.indexOf("controlsRef.current = controls");
+  const phaseFlipIdx = ssBody.indexOf('setPhase({ kind: "scanning" })');
+
+  it("extracted the startScan body and all four post-await anchors", () => {
+    expect(ssStart, "const startScan = useCallback( not found — renamed?").toBeGreaterThan(-1);
+    expect(awaitIdx, "await reader.decodeFromConstraints not found").toBeGreaterThan(-1);
+    expect(cancelledGuardIdx, "if (cancelledRef.current) guard not found").toBeGreaterThan(-1);
+    expect(handledGuardIdx, "if (handled) return guard not found").toBeGreaterThan(-1);
+    expect(assignIdx, "controlsRef.current = controls not found").toBeGreaterThan(-1);
+    expect(phaseFlipIdx, 'setPhase({ kind: "scanning" }) not found').toBeGreaterThan(-1);
+  });
+
+  it("declares cancelledRef with useRef(false) in the component", () => {
+    expect(content).toMatch(/const\s+cancelledRef\s*=\s*useRef\(false\)/);
+  });
+
+  it("CR-01 lock: `if (handled) return` sits between the await and the ref assignment", () => {
+    expect(awaitIdx).toBeLessThan(handledGuardIdx);
+    expect(handledGuardIdx).toBeLessThan(assignIdx);
+  });
+
+  it("CR-02 lock: `if (cancelledRef.current)` sits between the await and the ref assignment, and stops + returns", () => {
+    expect(awaitIdx).toBeLessThan(cancelledGuardIdx);
+    expect(cancelledGuardIdx).toBeLessThan(assignIdx);
+    const branch = ssBody.slice(cancelledGuardIdx, assignIdx);
+    expect(branch).toContain("controls.stop()");
+    expect(branch).toMatch(/\breturn\b/);
+  });
+
+  it("ordering rationale: the cancellation guard precedes the handled guard so a teardown always reaches a stop", () => {
+    expect(cancelledGuardIdx).toBeLessThan(handledGuardIdx);
+  });
+
+  it("both guards precede the phase flip back to \"scanning\"", () => {
+    expect(cancelledGuardIdx).toBeLessThan(phaseFlipIdx);
+    expect(handledGuardIdx).toBeLessThan(phaseFlipIdx);
+  });
+
+  it("Strict-Mode re-arm: the unmount effect re-arms cancelledRef false on mount and sets it true in the cleanup, in that order", () => {
+    const stopIdx = codeLines.indexOf("controlsRef.current?.stop()");
+    expect(stopIdx, "unmount cleanup controlsRef.current?.stop() not found").toBeGreaterThan(-1);
+    const effStart = codeLines.lastIndexOf("useEffect(", stopIdx);
+    const effEndAnchor = "}, []);";
+    const effEnd = codeLines.indexOf(effEndAnchor, effStart) + effEndAnchor.length;
+    const effBody = codeLines.slice(effStart, effEnd);
+    const rearmIdx = effBody.indexOf("cancelledRef.current = false");
+    const setIdx = effBody.indexOf("cancelledRef.current = true");
+    expect(rearmIdx, "cancelledRef.current = false re-arm not in the unmount effect body").toBeGreaterThan(-1);
+    expect(setIdx, "cancelledRef.current = true not in the unmount cleanup").toBeGreaterThan(-1);
+    // false re-arm in the effect body, true set in the returned cleanup —
+    // not the other way round (that would latch it true under Strict Mode).
+    expect(rearmIdx).toBeLessThan(setIdx);
+  });
+});
+
 describe("SCAN-04: every result state has its own glyph and its own word", () => {
   // The SCAN-04 acceptance contract, mechanically enforced (04-UI-SPEC
   // "SCAN-04 Acceptance Contract", clauses a–d; D-09 — a verification pass on
