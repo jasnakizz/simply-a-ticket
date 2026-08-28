@@ -22,6 +22,7 @@ import {
   CircleCheckBig,
   CircleX,
   LoaderCircle,
+  WifiOff,
   type LucideIcon,
 } from "lucide-react";
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
@@ -30,6 +31,7 @@ import { checkInTicket, lookupTicket } from "@/app/actions/check-in";
 import type { ScanResult } from "@/lib/scan-result";
 import type { CheckInState } from "@/app/actions/types";
 import { formatCheckInTimestamp, formatRelativeTime } from "@/lib/date";
+import { withTimeout } from "@/lib/with-timeout";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -48,7 +50,7 @@ type Phase =
   | { kind: "scanning" }
   | { kind: "checking" }
   | { kind: "camera-unavailable" }
-  | { kind: "lookup-error" }
+  | { kind: "no-connection"; token: string }
   | { kind: "result"; result: ScanResult; token: string };
 
 const initialCheckIn: CheckInState = {};
@@ -64,6 +66,11 @@ const CAMERA_UNAVAILABLE_BODY =
   "Simply a Ticket can't reach a camera on this device. Check that a camera is connected and that your browser is allowed to use it, then try again.";
 const LOOKUP_ERROR_BODY =
   "The ticket couldn't be checked. Check your connection and try again.";
+
+// D-05: the client-side wait bound that turns a silent hang on "Checking
+// ticket…" into a visible "No connection" state. This is the single value to
+// tune if on-device UAT shows false positives on a slow-but-live link.
+const TIMEOUT_MS = 10_000;
 
 // Per-field validation message on the pay-at-door form — same treatment as the
 // order form's FieldError: role="alert", a CircleAlert glyph, near-black. Red
@@ -108,6 +115,35 @@ export function ScannerClient({ eventId }: { eventId: string }) {
     };
   }, []);
 
+  // Every entry path funnels through here: the camera decode below, the
+  // "Try again" button on the no-connection state, and (in a later plan) the
+  // manual-entry submit. One lookupTicket call site, one scanId bump, one
+  // generic failure path.
+  const resolveScan = useCallback(
+    async (token: string) => {
+      setScanId((n) => n + 1);
+      setPhase({ kind: "checking" });
+      try {
+        const res = await withTimeout(lookupTicket(token, eventId), TIMEOUT_MS);
+        if (res.kind === "error") {
+          // A returned { kind: "error" } and any throw in the catch below are
+          // the SAME generic failure (D-05). Never branch on the reason and
+          // never read the caught value — a raw error must not reach the
+          // screen. The token rides the Phase so "Try again" re-runs the
+          // identical call (D-07).
+          setPhase({ kind: "no-connection", token });
+          return;
+        }
+        setPhase({ kind: "result", result: res, token });
+      } catch {
+        // withTimeout's TimeoutError (a hung request) or a rejected POST
+        // (offline) — one path, token retained.
+        setPhase({ kind: "no-connection", token });
+      }
+    },
+    [eventId],
+  );
+
   const startScan = useCallback(async () => {
     // Guard against React's development double-invocation opening two camera
     // streams (RESEARCH Pitfall 9).
@@ -127,19 +163,6 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       delayBetweenScanAttempts: 100,
     });
 
-    async function resolveScan(token: string) {
-      try {
-        const res = await lookupTicket(token, eventId);
-        if (res.kind === "error") {
-          setPhase({ kind: "lookup-error" });
-          return;
-        }
-        setPhase({ kind: "result", result: res, token });
-      } catch {
-        setPhase({ kind: "lookup-error" });
-      }
-    }
-
     try {
       const controls = await reader.decodeFromConstraints(
         // `ideal`, never `exact`: a hard constraint rejects outright on any
@@ -153,7 +176,7 @@ export function ScannerClient({ eventId }: { eventId: string }) {
           if (!result) return;
           scanControls.stop();
           controlsRef.current = null;
-          setPhase({ kind: "checking" });
+          // resolveScan sets { kind: "checking" } itself now.
           void resolveScan(result.getText());
         },
       );
@@ -166,7 +189,7 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       controlsRef.current = null;
       setPhase({ kind: "camera-unavailable" });
     }
-  }, [eventId]);
+  }, [resolveScan]);
 
   const cameraActive = phase.kind === "starting" || phase.kind === "scanning";
 
@@ -248,14 +271,21 @@ export function ScannerClient({ eventId }: { eventId: string }) {
         </ResultShell>
       )}
 
-      {phase.kind === "lookup-error" && (
-        // Not one of the five designed result states: a non-throwing lookup
-        // failure has no bespoke screen this phase (an explicit no-connection
-        // state is Phase 4 / SCAN-05). This is a minimal honest terminal
-        // state instead of a silent hang on "Checking ticket…".
-        <ResultShell icon={CircleAlert} word="Something went wrong" tone="stop">
+      {phase.kind === "no-connection" && (
+        // SCAN-05 / D-06: a failed, rejected, or timed-out lookup lands here
+        // instead of hanging on "Checking ticket…". Its own glyph (WifiOff)
+        // and status word ("No connection") keep the one-unique-pair-per-state
+        // rule (SCAN-04). The body is the existing LOOKUP_ERROR_BODY constant
+        // verbatim — no user-visible string churn, and never a raw error.
+        <ResultShell icon={WifiOff} word="No connection" tone="stop">
           <p className="text-base break-words">{LOOKUP_ERROR_BODY}</p>
           <ActionGroup>
+            <Button
+              onClick={() => resolveScan(phase.token)}
+              className="min-h-11 w-full"
+            >
+              Try again
+            </Button>
             <ScanNextButton onClick={startScan} />
           </ActionGroup>
         </ResultShell>
