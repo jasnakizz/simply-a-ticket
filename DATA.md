@@ -30,8 +30,8 @@
 | qr_token | text, unique | random, unguessable (not the row id) |
 | status | text | `issued` \| `checked_in` |
 | paid_amount | numeric, nullable | staff-entered at order time; internal bookkeeping only — never shown to the attendee or included in the ticket email |
-| pay_at_door_amount | numeric, nullable | staff-entered at order time; amount still owed for a reservation-style order. Shown to door staff on scan — check-in requires confirming this was collected ("Mark as paid & check in") |
-| currency | text, nullable | `EUR` \| `RSD`, or `NULL`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies. **Nullable, no default:** `NULL` means no money was recorded on this order. A row-level CHECK (`tickets_currency_required_with_amount`) requires `currency` to be non-null whenever `paid_amount` or `pay_at_door_amount` is set — the database rejects an amount with a null currency, so decision D-06 holds even against a caller that bypasses the Server Action |
+| pay_at_door_amount | numeric, nullable | staff-entered at order time; amount still owed for a reservation-style order. Shown to door staff on scan — check-in requires confirming this was collected ("Mark as paid & check in"). Since Phase 5 (decision D-12) this still-owed figure is also shown to the attendee in the ticket email, in a conditional "please bring to the door" block rendered only when a positive amount is owed |
+| currency | text, nullable | `EUR` \| `RSD`, or `NULL`. One currency per order, applying to **both** amount columns above. Added in Phase 2 (decision D-06/D-07) — the original draft had bare `numeric` amounts with no currency concept, which is ambiguous the moment the same venue sells in two currencies. **Nullable, no default:** `NULL` means no money was recorded on this order. A row-level CHECK (`tickets_currency_required_with_amount`) requires `currency` to be non-null whenever `paid_amount` or `pay_at_door_amount` is set — the database rejects an amount with a null currency, so decision D-06 holds even against a caller that bypasses the Server Action. Since Phase 5 (decision D-12) the currency code also appears in the attendee's ticket email, alongside the still-owed `pay_at_door_amount` in the pay-at-the-door block — and only there; the closed `EUR`/`RSD` set, the nullability rule, and the named `tickets_currency_required_with_amount` CHECK are all unchanged by that addition |
 | issued_at | timestamptz | default now() |
 | checked_in_at | timestamptz, nullable | |
 | pay_at_door_collected_amount | numeric, nullable | The amount door staff recorded as actually collected at check-in. Distinct from `pay_at_door_amount` (what was owed): decision D-16 lets the collected figure differ from the owed figure, in value and in currency, so this is a separate column rather than an overwrite. `NULL` on every ticket issued before the scanner could collect anything — reads as "nothing collected through the scanner". Written together with `pay_at_door_collected_currency`, `pay_at_door_collected_at`, `status` and `checked_in_at` in the one atomic check-in `UPDATE`. A CHECK constraint rejects a negative value (`NULL` or `>= 0`), mirroring the two Phase 2 amount columns. Added in Phase 3 (decision D-17) |
@@ -53,7 +53,10 @@
   the attendee or door staff. `pay_at_door_amount` is the opposite — it's
   deliberately surfaced to door staff during scanning, and checking in a
   ticket with an outstanding `pay_at_door_amount` requires staff to confirm
-  it was collected as part of the check-in action.
+  it was collected as part of the check-in action. Since Phase 5 (decision
+  D-12) the still-owed `pay_at_door_amount`, and its `currency`, are also
+  shown to the attendee in the ticket email — a conditional "please bring to
+  the door" block that renders only when a positive amount is owed.
 - `currency` is a single value per ticket, not one per amount column. A
   deposit paid in EUR with a balance owed in RSD is deliberately not
   representable — decision D-06 chose one currency per order after
@@ -81,5 +84,17 @@
   records `currency` as `NULL` too, so `NULL` reads as "no money recorded
   on this order". Every read site handles three cases: `EUR`, `RSD`,
   `NULL`.
-- `currency` is never shown to the attendee, for the same reason the two
-  amount columns are not: it is part of the staff-only bookkeeping record.
+- `currency` is shown to the attendee when — and only when — it accompanies
+  a still-owed `pay_at_door_amount` in the ticket email's pay-at-the-door
+  block (Phase 5, decision D-12). In every other context it is staff-only
+  bookkeeping, for the same reason the `paid_amount` figure is: it is part
+  of the staff-only record, not attendee-facing data.
+- Phase 5 decision D-12 partially reverses the earlier "no money in the
+  ticket email" rule. The reversal is deliberately partial. The still-owed
+  `pay_at_door_amount` and its `currency` now reach the attendee's ticket
+  email; the already-paid `paid_amount` figure, by contrast, is still
+  never shown to the attendee or included in the ticket email. The type
+  `SendTicketEmailParams` in `src/lib/email.ts` is the mechanical guard that
+  keeps the reversal partial — it permits exactly `payAtDoorAmount` and
+  `currency`, and `paid_amount` / `paidAmount` is not a field it will ever
+  carry.
