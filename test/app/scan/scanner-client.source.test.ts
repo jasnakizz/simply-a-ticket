@@ -98,3 +98,113 @@ describe("SCAN-04: the no-connection state has its own glyph and its own word", 
     expect(count(content, "icon={CircleAlert}")).toBe(1);
   });
 });
+
+describe("SCAN-03: manual token entry funnels through the same path as a camera decode", () => {
+  // The ManualTokenField body, extracted from the file text (start of its
+  // declaration to the next top-level `function`), for the no-client-gate and
+  // no-token-echo assertions.
+  const mtfStart = content.indexOf("function ManualTokenField");
+  const mtfEnd = content.indexOf("\nfunction ", mtfStart + 1);
+  const mtfBody = content.slice(mtfStart, mtfEnd);
+
+  it("declares ManualTokenField exactly once and renders it exactly three times", () => {
+    expect(count(content, "function ManualTokenField")).toBe(1);
+    expect(count(content, "<ManualTokenField")).toBe(3);
+  });
+
+  it("passes autoFocus on exactly one of the three placements (the idle reveal)", () => {
+    const autoFocused = content.match(
+      /<ManualTokenField\b[^>]*\bautoFocus\b[^>]*\/>/g,
+    );
+    expect(autoFocused).not.toBeNull();
+    expect(autoFocused!.length).toBe(1);
+  });
+
+  it("wires the three placements to resolveScan / onManualSubmit as specified", () => {
+    expect(
+      count(content, "<ManualTokenField onSubmit={resolveScan} autoFocus />"),
+    ).toBe(1);
+    expect(count(content, "<ManualTokenField onSubmit={resolveScan} />")).toBe(
+      1,
+    );
+    expect(
+      count(content, "<ManualTokenField onSubmit={onManualSubmit} />"),
+    ).toBe(1);
+  });
+
+  it("submit handler trims the raw string and passes it straight through", () => {
+    const handler = mtfBody.match(
+      /onSubmit=\{\(e\)\s*=>\s*\{([\s\S]*?)\}\}/,
+    );
+    expect(handler).not.toBeNull();
+    const handlerBody = handler![1];
+    expect(handlerBody).toContain("onSubmit(String(");
+    expect(handlerBody).toContain(".trim()");
+    // No early return / bespoke error before the funnel is reached.
+    expect(handlerBody).not.toContain("return");
+  });
+
+  it("keeps a single resolution funnel — one lookupTicket, no direct check-in", () => {
+    expect(count(codeLines, "lookupTicket(")).toBe(1);
+    expect(count(codeLines, "checkInTicket(")).toBeLessThanOrEqual(1);
+  });
+
+  it("has no client-side format, length, or shape gate in the field body (D-02)", () => {
+    expect(mtfBody).not.toMatch(/\.length\s*[<>=]/);
+    expect(mtfBody).not.toMatch(/\btest\(/);
+    expect(mtfBody).not.toMatch(/uuid/i);
+  });
+
+  it("never echoes a token: no value / defaultValue binding on the Input (D-03)", () => {
+    expect(mtfBody).not.toContain("defaultValue");
+    expect(mtfBody).not.toMatch(/\svalue=/);
+    expect(content).toContain('autoComplete="off"');
+    expect(content).toContain('autoCapitalize="off"');
+    expect(content).toContain('autoCorrect="off"');
+    expect(content).toContain("spellCheck={false}");
+  });
+
+  it("uses the 04-UI-SPEC Copywriting Contract strings verbatim", () => {
+    expect(content).toContain('"Enter code manually"');
+    expect(content).toContain('"Ticket code"');
+    expect(content).toContain('"Paste or type the ticket code"');
+    expect(content).toContain('"Check ticket"');
+  });
+
+  it("threads the parent resolveScan into ScanResultView via onManualSubmit", () => {
+    expect(count(content, "onManualSubmit={resolveScan}")).toBe(1);
+    const srvStart = content.indexOf("function ScanResultView({");
+    const srvParamsEnd = content.indexOf("}) {", srvStart);
+    expect(srvStart).toBeGreaterThan(-1);
+    expect(srvParamsEnd).toBeGreaterThan(srvStart);
+    expect(content.slice(srvStart, srvParamsEnd)).toContain("onManualSubmit");
+  });
+});
+
+describe("SCAN-03: the server schema is the only gate", () => {
+  const checkInPath = join(
+    __dirname,
+    "../../../src/app/actions/check-in.ts",
+  );
+  const checkInContent = readFileSync(checkInPath, "utf-8");
+
+  it("still declares tokenSchema as z.string().trim().min(1)", () => {
+    expect(checkInContent).toMatch(
+      /const\s+tokenSchema\s*=\s*z\.string\(\)\.trim\(\)\.min\(1\)/,
+    );
+  });
+
+  it("safeParses the raw token before it reaches the tickets query", () => {
+    const luStart = checkInContent.indexOf(
+      "export async function lookupTicket",
+    );
+    expect(luStart).toBeGreaterThan(-1);
+    const safeParseIdx = checkInContent.indexOf(
+      "tokenSchema.safeParse",
+      luStart,
+    );
+    const queryIdx = checkInContent.indexOf('.from("tickets")', luStart);
+    expect(safeParseIdx).toBeGreaterThan(-1);
+    expect(queryIdx).toBeGreaterThan(safeParseIdx);
+  });
+});
