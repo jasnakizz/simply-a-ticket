@@ -43,9 +43,22 @@ const relativeTimeFormat = new Intl.RelativeTimeFormat("en-GB", {
 // the clock: that is what makes every bucket boundary assertable in a test
 // without waiting. Same instinct as the rest of src/lib.
 export function formatRelativeTime(iso: string, now: Date = new Date()): string {
-  // Signed: negative = in the past. Rounded to whole seconds so exact
-  // boundary inputs (60s, 3600s, 86400s) land cleanly on the next bucket.
-  const deltaSec = Math.round((new Date(iso).getTime() - now.getTime()) / 1000);
+  // Signed and clamped at or below zero, for two reasons:
+  //   1. A check-in is always in the past, so a negative-going delta is the
+  //      only meaningful direction. Rounded to whole seconds first so exact
+  //      boundary inputs (60s, 3600s, 86400s) land cleanly on the next bucket.
+  //   2. `checked_in_at` comes from the server clock while `now` defaults to
+  //      the door phone's wall clock. A phone lagging the server produces a
+  //      positive delta, which `Intl.RelativeTimeFormat` (numeric: "always")
+  //      would render as a future phrase — "Checked in in 2 minutes" — on a
+  //      screen describing something that already happened. The operator
+  //      cannot act on the clock disagreement, only on whether the person is
+  //      already through the door, so any forward skew reads honestly as
+  //      "just now".
+  const deltaSec = Math.min(
+    0,
+    Math.round((new Date(iso).getTime() - now.getTime()) / 1000),
+  );
   const absSec = Math.abs(deltaSec);
 
   if (absSec < 60) return "just now";
