@@ -166,11 +166,30 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   // WR-02: a synchronous in-flight guard for startScan. Set true before the
   // first await, cleared in that function's finally — see the comment there.
   const startingRef = useRef(false);
+  // CR-02: records that the component tore down while a camera open was still
+  // in flight. `controlsRef` cannot express this — it is null for the entire
+  // `decodeFromConstraints` window (assigned only after that await resolves),
+  // which is exactly what defeats the unmount cleanup. This ref is the
+  // post-await signal that the stream which just arrived belongs to a dead
+  // component and must be released here rather than parked on a ref that
+  // nothing will ever read again.
+  const cancelledRef = useRef(false);
 
   // Stop the camera on unmount — backing out of the page must not leave the
   // camera light on (RESEARCH Pitfall 10).
   useEffect(() => {
+    // CR-02 / Strict Mode: re-arm on every mount. Strict Mode is on by default
+    // for the App Router (Next >= 13.5.1) and next.config.ts does not disable
+    // it, so in `next dev` React mounts, runs the cleanup, then remounts.
+    // Without this re-arm that dev-only cleanup would latch `cancelledRef`
+    // true forever and every later `startScan` would stop the camera the
+    // instant it opened — the scanner would look completely broken locally
+    // while working in production. Not defensive padding; it is load-bearing.
+    cancelledRef.current = false;
     return () => {
+      // CR-02: mark teardown BEFORE stopping, so a camera open still in flight
+      // can observe it after its await resolves and release its own stream.
+      cancelledRef.current = true;
       controlsRef.current?.stop();
       controlsRef.current = null;
     };
@@ -259,6 +278,37 @@ export function ScannerClient({ eventId }: { eventId: string }) {
           void resolveScan(result.getText());
         },
       );
+      // Two guards sit between the await and the ref/phase assignment,
+      // cancellation FIRST — the order is deliberate (see below).
+      //
+      // CR-02 teardown guard: the component unmounted while the camera was
+      // still opening. `controlsRef.current` was null for that whole window so
+      // the unmount cleanup stopped nothing; the stream we just acquired must
+      // be released here or nothing ever will. Per BrowserCodeReader, a
+      // controls stop() reaches finalizeCallback -> disposeMediaStream, which
+      // is what actually turns the camera light off, and it is safe to call
+      // even if the decode callback already stopped it (stopScan is idempotent).
+      // Never assign `controlsRef.current` on this path — a dead ref on a dead
+      // component is precisely the CR-02 leak.
+      if (cancelledRef.current) {
+        controls.stop();
+        return;
+      }
+      // CR-01 one-shot guard: the synchronous first zxing decode already fired
+      // (zxing runs its first decode attempt synchronously inside
+      // decodeFromStream, before this await resolves). It has already stopped
+      // the scan, already nulled `controlsRef.current`, and already started
+      // `resolveScan` (phase -> "checking"). Leaving `controlsRef.current` null
+      // is the CORRECT end state — it is what lets the next `startScan` past
+      // its `if (controlsRef.current || startingRef.current) return;` entry
+      // guard. Falling through here would re-point the ref at stopped controls
+      // and flip the phase back to "scanning" over a result the operator is
+      // already looking at.
+      //
+      // Cancellation is checked first so a teardown ALWAYS reaches a stop(),
+      // even when both flags are set, rather than exiting via this `handled`
+      // bail and relying on the callback having stopped things.
+      if (handled) return;
       controlsRef.current = controls;
       setPhase({ kind: "scanning" });
     } catch {
