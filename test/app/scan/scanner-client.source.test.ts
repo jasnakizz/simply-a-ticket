@@ -208,3 +208,113 @@ describe("SCAN-03: the server schema is the only gate", () => {
     expect(queryIdx).toBeGreaterThan(safeParseIdx);
   });
 });
+
+describe("SCAN-05: a failed check-in is contained inside the reducer", () => {
+  // checkInWithGuard body, extracted from the comment-stripped view so a
+  // design note can neither satisfy nor break a gate.
+  const cwgStart = codeLines.indexOf("async function checkInWithGuard");
+  const cwgEnd = codeLines.indexOf("export function ScannerClient", cwgStart);
+  const cwgBody = codeLines.slice(cwgStart, cwgEnd);
+
+  it("passes checkInWithGuard to useActionState, never the raw Server Action", () => {
+    expect(count(content, "useActionState(checkInWithGuard")).toBe(1);
+    expect(codeLines).not.toContain("useActionState(checkInTicket");
+  });
+
+  it("calls checkInTicket exactly once, wrapped in withTimeout", () => {
+    expect(count(codeLines, "checkInTicket(")).toBe(1);
+    expect(codeLines).toContain("withTimeout(checkInTicket(");
+  });
+
+  it("wraps the call in a try and catches — and never re-throws", () => {
+    expect(cwgStart).toBeGreaterThan(-1);
+    expect(cwgEnd).toBeGreaterThan(cwgStart);
+    expect(cwgBody).toMatch(/\btry\b/);
+    expect(cwgBody).toMatch(/\bcatch\b/);
+    expect(cwgBody).not.toContain("throw");
+  });
+
+  it("returns the fixed CHECKIN_NETWORK_ERROR constant and echoes the collected fields", () => {
+    expect(cwgBody).toContain("formError: CHECKIN_NETWORK_ERROR");
+    expect(cwgBody).toContain("collected_amount");
+    expect(cwgBody).toContain("collected_currency");
+  });
+
+  it("never reads the caught value into rendered state", () => {
+    expect(cwgBody).not.toContain("error.message");
+    expect(cwgBody).not.toContain("error.code");
+    expect(cwgBody).not.toContain("String(error");
+    expect(cwgBody).not.toContain("JSON.stringify");
+  });
+
+  it("uses the exact string the Server Action already returns (no divergent copy)", () => {
+    const m = content.match(
+      /const CHECKIN_NETWORK_ERROR\s*=\s*("[^"]*")/,
+    );
+    expect(m).not.toBeNull();
+    const literal = JSON.parse(m![1]) as string;
+
+    const checkInPath = join(
+      __dirname,
+      "../../../src/app/actions/check-in.ts",
+    );
+    const checkInContent = readFileSync(checkInPath, "utf-8");
+    expect(checkInContent).toContain(literal);
+  });
+
+  it("leaves the CHECKIN-02 exactly-once UPDATE in check-in.ts untouched", () => {
+    const checkInPath = join(
+      __dirname,
+      "../../../src/app/actions/check-in.ts",
+    );
+    const checkInContent = readFileSync(checkInPath, "utf-8");
+    const updStart = checkInContent.indexOf(".update(patch)");
+    expect(updStart).toBeGreaterThan(-1);
+    const afterUpd = checkInContent.indexOf('.from("tickets")', updStart);
+    expect(afterUpd).toBeGreaterThan(updStart);
+    const updStmt = checkInContent.slice(updStart, afterUpd);
+    expect(updStmt).toContain('.eq("status", "issued")');
+    expect(updStmt).toContain(".maybeSingle()");
+  });
+});
+
+describe("WR-02 / WR-03: camera lifecycle guards", () => {
+  // startScan body, comment-stripped.
+  const ssStart = codeLines.indexOf("const startScan = useCallback(");
+  const ssEndAnchor = "}, [resolveScan]);";
+  const ssEnd = codeLines.indexOf(ssEndAnchor, ssStart) + ssEndAnchor.length;
+  const ssBody = codeLines.slice(ssStart, ssEnd);
+
+  it("declares startingRef with useRef(false)", () => {
+    expect(content).toMatch(/const\s+startingRef\s*=\s*useRef\(false\)/);
+  });
+
+  it("sets startingRef.current = true synchronously before the first await", () => {
+    expect(ssStart).toBeGreaterThan(-1);
+    const setIdx = ssBody.indexOf("startingRef.current = true");
+    const awaitIdx = ssBody.indexOf("await ");
+    expect(setIdx).toBeGreaterThan(-1);
+    expect(awaitIdx).toBeGreaterThan(-1);
+    expect(setIdx).toBeLessThan(awaitIdx);
+  });
+
+  it("clears startingRef.current in a finally block", () => {
+    const finallyIdx = ssBody.indexOf("finally");
+    expect(finallyIdx).toBeGreaterThan(-1);
+    expect(ssBody.slice(finallyIdx)).toContain("startingRef.current = false");
+  });
+
+  it("declares a one-shot handled flag and checks it before stop()", () => {
+    expect(ssBody).toContain("let handled = false");
+    const handledGuardIdx = ssBody.indexOf("if (handled");
+    const stopIdx = ssBody.indexOf(".stop()");
+    expect(handledGuardIdx).toBeGreaterThan(-1);
+    expect(stopIdx).toBeGreaterThan(-1);
+    expect(handledGuardIdx).toBeLessThan(stopIdx);
+    expect(ssBody).toContain("handled = true");
+  });
+
+  it("drops the stale React double-invocation rationale", () => {
+    expect(codeLines).not.toContain("double-invocation");
+  });
+});
