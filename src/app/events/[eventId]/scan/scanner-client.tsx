@@ -84,6 +84,14 @@ const MANUAL_HELPER = "Camera can't read the code? Enter it by hand.";
 // tune if on-device UAT shows false positives on a slow-but-live link.
 const TIMEOUT_MS = 10_000;
 
+// D-08: the failed-check-in message. A VERBATIM copy of the string
+// checkInTicket already returns for a caught database error
+// (src/app/actions/check-in.ts:226 and :252) — this introduces no new
+// user-visible copy. If a future edit changes one and not the other, the
+// Task 3 cross-file assertion in scanner-client.source.test.ts fails.
+const CHECKIN_NETWORK_ERROR =
+  "Something went wrong checking this ticket in. Check your connection and try again.";
+
 // Per-field validation message on the pay-at-door form — same treatment as the
 // order form's FieldError: role="alert", a CircleAlert glyph, near-black. Red
 // stays reserved for the STOP-family result states and a server failure.
@@ -108,6 +116,44 @@ function toTwoDecimals(raw: string): string {
   if (!match) return raw;
   const fraction = (match[2] ?? "").padEnd(2, "0");
   return `${match[1]}.${fraction}`;
+}
+
+// D-08: the reducer actually passed to useActionState — a CLIENT wrapper
+// around the checkInTicket Server Action, never the raw action. A rejected or
+// hung check-in POST raised inside the useActionState transition bubbles to
+// the nearest error boundary (src/app/events/error.tsx) and collapses the
+// subtree, taking the scanned ticket with it (04-RESEARCH Pitfall 2). A
+// .catch() on the OUTSIDE of the dispatch cannot stop that. Catching HERE,
+// inside the reducer, and returning a CheckInState value is the only fix.
+//
+// - The same TIMEOUT_MS wait bound as the lookup applies (D-05: one wait
+//   bound for both calls, not two that can drift apart) so a hung check-in
+//   does not sit forever on "Checking in…".
+// - Every normal checkInTicket return (ok / alreadyCheckedIn / notFound /
+//   the zod-rejection { errors, values } / its own caught-DB { formError })
+//   passes straight through. Only a throw, a rejection, or a timeout is
+//   converted into a returned value.
+// - The caught value is NEVER read: no message, no code, no stack, no
+//   database payload reaches rendered state — only the fixed contracted
+//   constant (Security V7 / SCAN-05 privacy prohibition). Never re-throws.
+// - The values echo shape is copied from check-in.ts:159-165 so a hand-typed
+//   collected amount and currency survive a network-failed balance-due
+//   submit and the amount input does not snap back on retry.
+async function checkInWithGuard(
+  prevState: CheckInState,
+  formData: FormData,
+): Promise<CheckInState> {
+  try {
+    return await withTimeout(checkInTicket(prevState, formData), TIMEOUT_MS);
+  } catch {
+    return {
+      formError: CHECKIN_NETWORK_ERROR,
+      values: {
+        collected_amount: String(formData.get("collected_amount") ?? ""),
+        collected_currency: String(formData.get("collected_currency") ?? ""),
+      },
+    };
+  }
 }
 
 export function ScannerClient({ eventId }: { eventId: string }) {
@@ -515,10 +561,11 @@ function ScanResultView({
   // keyed by the scan id, so a fresh scan remounts it and resets
   // useActionState — the "just checked in" screen never bleeds into the next
   // ticket, and no effect is needed to sync it.
-  const [checkInState, checkInAction, checkInPending] = useActionState(
-    checkInTicket,
-    initialCheckIn,
-  );
+  // useActionState's first arg is checkInWithGuard, the client reducer above —
+  // never the raw checkInTicket Server Action (D-08). Kept on one line so the
+  // wrapper wiring is greppable as a single token.
+  const [checkInState, checkInAction, checkInPending] =
+    useActionState(checkInWithGuard, initialCheckIn);
   // Gates the pay-at-door reveal and the "Mark as paid & check in" button.
   // Local state — this component is keyed by the scan id, so a fresh scan
   // starts with the box unticked.
