@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -96,6 +96,180 @@ describe("buildTicketEmailHtml — pay-at-the-door band (05-02 tracer)", () => {
     const html = await build({ payAtDoorAmount: "2000", currency: null });
 
     expect(html).not.toContain("Please bring to the door");
+  });
+});
+
+describe("buildTicketEmailHtml — six-section Modernist structure (05-02 Task 3)", () => {
+  const base = {
+    to: "attendee@example.com",
+    attendeeName: "Miloš Novak",
+    eventName: "Kolektiv Night",
+    eventDate: "Fri 12 Sep 2026",
+    eventLocation: "Depo, Novi Sad",
+    ticketTypeName: "General admission",
+    ticketTypeDescription: "Standing, doors 20:00",
+    qrBase64: "Zm9v",
+  };
+
+  async function build(extra: Record<string, unknown> = {}): Promise<string> {
+    const { buildTicketEmailHtml } = await import("@/lib/email");
+    return buildTicketEmailHtml({
+      ...base,
+      ...extra,
+    } as Parameters<typeof buildTicketEmailHtml>[0]);
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("carries every fixed handoff-contract anchor verbatim", async () => {
+    const html = await build();
+
+    for (const needle of [
+      "border-top:6px solid #ec3013",
+      "width:600px",
+      "max-width:600px",
+      "border-bottom:2px solid #201e1d",
+      "cid:ticket-qr",
+      'alt="QR ticket code for ',
+      "Ticket confirmed",
+      "Questions, or need to transfer your ticket?",
+      "Keep this email",
+    ]) {
+      expect(html).toContain(needle);
+    }
+  });
+
+  it("declares both colour-scheme metas (D-17)", async () => {
+    const html = await build();
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(html).toContain(
+      '<meta name="supported-color-schemes" content="light dark">',
+    );
+    expect(html.match(/content="light dark"/g)).toHaveLength(2);
+  });
+
+  it("orders the sections by strictly increasing index", async () => {
+    const html = await build({ payAtDoorAmount: "2000", currency: "RSD" });
+
+    const anchors = [
+      "Your ticket is ready", // preheader span
+      "Ticket confirmed", // masthead status label
+      "You&rsquo;re in,", // greeting headline
+      "Ticket holder", // ticket-stub label
+      "Please bring to the door", // optional band
+      "Keep this email", // CTA reassurance sentence
+      "Questions, or need to transfer your ticket?", // footer reply sentence
+    ].map((a) => html.indexOf(a));
+
+    expect(anchors.every((i) => i >= 0)).toBe(true);
+    for (let i = 1; i < anchors.length; i++) {
+      expect(anchors[i]).toBeGreaterThan(anchors[i - 1]);
+    }
+  });
+
+  it("stays under the Gmail 102400-byte clip for a worst-case params set", async () => {
+    const html = await build({
+      attendeeName: "Aleksandra-Konstancja Wiśniewska-Đurđević".repeat(2),
+      eventName:
+        "Kolektiv Night — Winter Solstice All-Nighter, Hall B".repeat(2),
+      eventLocation:
+        "Kulturni Centar Depo, Bulevar Despota Stefana 5, Novi Sad",
+      ticketTypeName: "General admission — late release",
+      ticketTypeDescription:
+        "Standing only. Doors 20:00, first act 21:30. Cloakroom on site. Re-entry with a wristband. Over-18s only, photo ID required at the door.".repeat(
+          2,
+        ),
+      payAtDoorAmount: "2000.00",
+      currency: "RSD",
+    });
+
+    expect(Buffer.byteLength(html, "utf8")).toBeLessThan(102400);
+  });
+
+  it("closes the ticket stub with exactly one 2px ink rule in both band variants", async () => {
+    const withoutBand = await build();
+    const withBand = await build({ payAtDoorAmount: "2000", currency: "RSD" });
+
+    const count = (s: string) =>
+      s.split("border-top:2px solid #201e1d").length - 1;
+
+    // Band absent: only the CTA slot's top rule closes the stub.
+    expect(count(withoutBand)).toBe(1);
+    // Band present: the band's top rule and the CTA slot's top rule — one rule
+    // at each boundary, never doubled.
+    expect(count(withBand)).toBe(2);
+  });
+
+  it("falls back to the event name in the masthead when ORGANISER_NAME is unset", async () => {
+    vi.stubEnv("ORGANISER_NAME", undefined);
+    const html = await build();
+
+    expect(html).toContain(
+      'letter-spacing:-0.3px; color:#201e1d;">Kolektiv Night</td>',
+    );
+  });
+
+  it("renders ORGANISER_NAME identically in the masthead and the footer when set", async () => {
+    vi.stubEnv("ORGANISER_NAME", "Depo Kolektiv");
+    const html = await build();
+
+    expect(html).toContain(
+      'letter-spacing:-0.3px; color:#201e1d;">Depo Kolektiv</td>',
+    );
+    expect(html).toContain('<p style="margin:0;">Depo Kolektiv</p>');
+  });
+
+  it('uses the "there" first-name fallback for an empty or whitespace-only name', async () => {
+    expect(await build({ attendeeName: "" })).toContain(
+      "You&rsquo;re in, there.",
+    );
+    expect(await build({ attendeeName: "   " })).toContain(
+      "You&rsquo;re in, there.",
+    );
+  });
+
+  it("escapes a hostile attendee name everywhere it is interpolated", async () => {
+    const html = await build({ attendeeName: `Ann "The Wall" <O'Brien>` });
+
+    expect(html).toContain("&quot;");
+    expect(html).toContain("&#39;");
+    expect(html).toContain("&lt;");
+    expect(html).toContain("&gt;");
+    // The raw markup form never reaches the body, including the alt attribute.
+    expect(html).not.toContain(`Ann "The Wall" <O'Brien>`);
+    expect(html).not.toContain(`<O'Brien>`);
+  });
+
+  it("leaves no placeholder residue, no hyperlink, and no inline-data image", async () => {
+    const html = await build({ payAtDoorAmount: "2000", currency: "RSD" });
+
+    expect(html).not.toContain("{{");
+    expect(html).not.toContain("<a ");
+    expect(html).not.toContain("data:image");
+  });
+
+  it("keeps the QR image source and the attachment identifier paired and unchanged", async () => {
+    const html = await build();
+    const source = readFileSync(
+      join(__dirname, "../../src/lib/email.ts"),
+      "utf-8",
+    );
+
+    expect(html).toContain('src="cid:ticket-qr"');
+    expect(source).toContain('contentId: "ticket-qr"');
+    expect(source).toContain('filename: "ticket-qr.png"');
+  });
+
+  it("does not touch the frozen subject expression", () => {
+    const source = readFileSync(
+      join(__dirname, "../../src/lib/email.ts"),
+      "utf-8",
+    );
+
+    expect(source).toContain("subject: `Your ticket for ${eventName}`");
   });
 });
 
