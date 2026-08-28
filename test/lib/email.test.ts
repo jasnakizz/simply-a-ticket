@@ -63,15 +63,15 @@ describe("ISSUE-03: escapeHtml implementation", () => {
 describe("ISSUE-03: sendTicketEmail structure", () => {
   // We test the structure by importing and examining the type,
   // since the function requires a real Resend client.
-  // The key requirement is that SendTicketEmailParams excludes money fields.
+  // Per the D-12 partial reversal, SendTicketEmailParams now permits the
+  // still-owed pay-at-the-door figure and its currency, while the already-paid
+  // figure stays structurally excluded (EMAIL-03).
 
-  it("SendTicketEmailParams type does not include paid_amount", () => {
-    // Import the type to verify it exists and has the right shape
-    // This is a compile-time check; we verify the property absence
-    // by checking that we can't assign an object with paid_amount to it.
-
-    // Using TypeScript's type system to verify this at runtime
-    // We create a value that matches the expected shape
+  it("SendTicketEmailParams carries payAtDoorAmount + currency but never the already-paid figure", () => {
+    // A value matching the shape the email is now permitted to carry: the eight
+    // always-present fields plus the two D-12 additions. The already-paid figure
+    // (paid_amount / paidAmount) is deliberately not on this object — that half
+    // of D-12 is not reversed and this is EMAIL-03's guard.
     const validParams = {
       to: "test@example.com",
       attendeeName: "John Doe",
@@ -81,45 +81,67 @@ describe("ISSUE-03: sendTicketEmail structure", () => {
       ticketTypeName: "VIP",
       ticketTypeDescription: "VIP access",
       qrBase64: "abc123",
+      payAtDoorAmount: "2000.00",
+      currency: "RSD" as const,
     };
 
-    // This should compile without error
+    // The always-present fields are still there.
     expect(validParams).toHaveProperty("to");
     expect(validParams).toHaveProperty("attendeeName");
+
+    // The two D-12 additions ARE present now, and carry the expected types.
+    expect(validParams).toHaveProperty("payAtDoorAmount");
+    expect(typeof validParams.payAtDoorAmount).toBe("string");
+    expect(validParams).toHaveProperty("currency");
+    expect(["EUR", "RSD"]).toContain(validParams.currency);
+
+    // The already-paid figure is still absent, in both naming forms.
     expect(validParams).not.toHaveProperty("paid_amount");
-    expect(validParams).not.toHaveProperty("pay_at_door_amount");
-    expect(validParams).not.toHaveProperty("currency");
+    expect(validParams).not.toHaveProperty("paidAmount");
   });
 
-  it("email HTML contains cid:ticket-qr reference", async () => {
-    // Since sendTicketEmail is hard to test without real Resend,
-    // we verify by checking the source code structure
-    // The implementation should have the CID reference in the HTML template
+  it("email HTML references the QR by cid and never inlines it as a data URI", () => {
+    // Assert against the real module text, not a literal declared here — the
+    // same pattern the escapeHtml cases above use. A local literal would keep
+    // passing even if src/lib/email.ts changed underneath it.
+    const emailPath = join(__dirname, '../../src/lib/email.ts');
+    const source = readFileSync(emailPath, 'utf-8');
 
-    const htmlTemplate = `<div>
-  <p>Hi \${name},</p>
-  <img src="cid:ticket-qr" alt="Ticket QR code" width="320" height="320" />
-</div>`;
-
-    expect(htmlTemplate).toContain("cid:ticket-qr");
-    expect(htmlTemplate).toContain("alt=");
-    expect(htmlTemplate).toContain("width=");
-    expect(htmlTemplate).not.toContain("data:image");
+    // The QR is delivered as the cid:ticket-qr attachment reference (D-16)...
+    expect(source).toContain("cid:ticket-qr");
+    expect(source).toContain("alt=");
+    // ...and never as an inline data: image, which would drop the token bytes
+    // straight into the HTML body.
+    expect(source).not.toContain("data:image");
   });
 
-  it("attachment structure includes contentId for CID reference", () => {
-    // Verify the attachment structure used in the email
-    const attachment = {
-      content: "iVBORw0KGgo...",
-      filename: "ticket-qr.png",
-      contentId: "ticket-qr",
-    };
+  it("the real attachment pairs contentId ticket-qr with a .png filename and no contentDisposition", () => {
+    // Again against the shipped module text rather than a hand-written object.
+    const emailPath = join(__dirname, '../../src/lib/email.ts');
+    const source = readFileSync(emailPath, 'utf-8');
 
-    expect(attachment).toHaveProperty("contentId");
-    expect(attachment.contentId).toBe("ticket-qr");
-    expect(attachment).toHaveProperty("filename");
-    expect(attachment.filename).toMatch(/\.png$/);
-    expect(attachment).not.toHaveProperty("contentDisposition");
+    // The attachment identifier the cid: reference is paired with.
+    expect(source).toContain('contentId: "ticket-qr"');
+    // The attachment filename ends in the image extension.
+    expect(source).toMatch(/filename:\s*"[^"]+\.png"/);
+    // No content-disposition property is set on the attachment — leaving it out
+    // is what keeps the QR inline rather than a downloadable file.
+    expect(source).not.toContain("contentDisposition");
+  });
+
+  it("src/lib/email.ts carries no already-paid identifier once comments are stripped", () => {
+    // Strip comment-only lines first — src/lib/email.ts's own guard comment
+    // names paid_amount / paidAmount to explain why they are forbidden, so a
+    // future explanatory comment must not be able to self-invalidate this gate.
+    // Same idiom as test/app/actions/order-token.test.ts's negative check.
+    const emailPath = join(__dirname, '../../src/lib/email.ts');
+    const codeOnly = readFileSync(emailPath, 'utf-8')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+
+    expect(codeOnly).not.toContain("paid_amount");
+    expect(codeOnly).not.toContain("paidAmount");
   });
 
   it("email subject is NOT escaped (raw eventName)", () => {
