@@ -5,22 +5,16 @@
 // (validation, token, QR, email, insert) all happens server-side in
 // createOrder — this file just wires the form to it and renders what comes
 // back. Mirrors AddTicketTypeForm.
-import { useActionState } from "react";
-import { CircleAlert } from "lucide-react";
+import { useActionState, useState, useId } from "react";
+import { CircleAlert, ChevronDown } from "lucide-react";
 
 import { createOrder } from "@/app/actions/orders";
 import type { OrderState } from "@/app/actions/types";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 const initialState: OrderState = {};
 
@@ -28,7 +22,7 @@ function FieldError({ message }: { message: string }) {
   // Per-field errors stay in --foreground (not --destructive): red is
   // reserved for a real external system failing, not a forgotten field.
   return (
-    <p role="alert" className="flex items-center gap-1 text-sm text-foreground">
+    <p role="alert" className="flex items-center gap-1 text-[12px] text-foreground">
       <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
       {message}
     </p>
@@ -41,7 +35,8 @@ function FormError({ message }: { message: string }) {
   // a screen reader announces it, a CircleAlert icon, icon+text in a row with a
   // gap-1), so it stays distinguishable from a per-field message even without
   // colour vision. What differs on purpose: the icon and text use the
-  // destructive colour and the text is Body size (16px) instead of small.
+  // destructive colour and the text is Body size instead of the smaller
+  // per-field step.
   // `message` is only ever one of the two contracted strings createOrder
   // returns in `state.formError` — never a raw Postgres or Resend error.
   //
@@ -51,7 +46,7 @@ function FormError({ message }: { message: string }) {
   return (
     <p
       role="alert"
-      className="flex items-center gap-1 text-base font-normal leading-[1.5] text-destructive"
+      className="flex items-center gap-1 text-[15px] font-normal leading-[1.55] text-destructive"
     >
       <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
       {message}
@@ -70,6 +65,25 @@ export function OrderForm({
 }) {
   const [state, formAction, pending] = useActionState(createOrder, initialState);
 
+  // D-07: the only two pieces of client state on this form, both
+  // presentation-only. Nothing here touches createOrder, the zod schema, or
+  // the useActionState wiring above.
+  //
+  // panelOpen — the "Ticket type, payment" disclosure. Collapsed on mount and
+  //   after a rejected submit (D-08); the fields inside stay in the DOM via the
+  //   `hidden` attribute so they still post into FormData while collapsed.
+  const [panelOpen, setPanelOpen] = useState(false);
+  // currency — controlled value for the SegmentedControl. Initialising from the
+  //   echoed value (D-10) is what preserves the v1 keep-what-you-typed
+  //   behaviour after a rejected submit, which the v1 currency dropdown got
+  //   from a `key`-remount.
+  const [currency, setCurrency] = useState(state.values?.currency || "RSD");
+  // Stable id linking the disclosure trigger's aria-controls to its panel.
+  const panelId = useId();
+
+  const labelClassName =
+    "text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground";
+
   return (
     <form action={formAction} className="flex flex-col gap-4">
       {/* defaultValue, not value: this input is never edited, it only carries
@@ -84,51 +98,12 @@ export function OrderForm({
           field never lands here; it renders inline through FieldError instead. */}
       {state.formError && <FormError message={state.formError} />}
 
-      {/* Ticket-type picker — the page's primary visual anchor: it is the
-          first control, carries the most text, and is the only non-text-entry
-          decision on the form. A radio list, not a <select>, so each option's
-          description stays visible (D-02). */}
+      {/* Fast path — attendee name and email, always visible above the
+          disclosure. These are the two fields a staffer fills on every order. */}
       <div className="flex flex-col gap-2">
-        <p
-          id="ticket-type-label"
-          className="text-sm font-semibold leading-[1.4]"
-        >
-          Ticket type
-        </p>
-        <RadioGroup
-          name="ticket_type_id"
-          aria-labelledby="ticket-type-label"
-          defaultValue={state.values?.ticket_type_id || undefined}
-          className="gap-4"
-        >
-          {ticketTypes.map((ticketType) => (
-            <label
-              key={ticketType.id}
-              // border is always present but transparent, so selecting an
-              // option changes its colour without nudging the layout. The
-              // accent border pairs with the radio dot's own data-checked
-              // accent from the generated RadioGroupItem.
-              className="flex gap-2 rounded-md border border-transparent bg-muted p-2 has-[[data-checked]]:border-primary"
-            >
-              <RadioGroupItem value={ticketType.id} className="mt-1" />
-              <span className="flex flex-col gap-1">
-                <span className="text-sm font-semibold leading-[1.4] break-words">
-                  {ticketType.name}
-                </span>
-                <span className="text-base font-normal leading-[1.5] break-words">
-                  {ticketType.description}
-                </span>
-              </span>
-            </label>
-          ))}
-        </RadioGroup>
-        {state.errors?.ticket_type_id?.[0] && (
-          <FieldError message={state.errors.ticket_type_id[0]} />
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="attendee_name">Attendee name</Label>
+        <Label htmlFor="attendee_name" className={labelClassName}>
+          Attendee name
+        </Label>
         <Input
           id="attendee_name"
           name="attendee_name"
@@ -141,7 +116,9 @@ export function OrderForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="attendee_email">Attendee email</Label>
+        <Label htmlFor="attendee_email" className={labelClassName}>
+          Attendee email
+        </Label>
         {/* Native required + type="email" save a round-trip, but the zod check
             in createOrder is the one that matters — a Server Action is
             callable directly whether or not JavaScript ran. */}
@@ -157,76 +134,144 @@ export function OrderForm({
         )}
       </div>
 
-      {/* Both amounts are optional and always visible — no toggle or checkbox
-          to reveal them (D-05). Plain number inputs only: no currency symbol,
-          no running sum, nothing that totals the two figures — that styling is
-          what makes an internal bookkeeping form look like it takes an
-          attendee's money, which this app contractually does not do.
-          Server-side, amountSchema in createOrder is the check that counts: a
-          Server Action call does not carry the browser's type="number" / step
-          attributes, so those are a convenience, not the guardrail. */}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="paid_amount">Paid amount</Label>
-        <Input
-          id="paid_amount"
-          name="paid_amount"
-          type="number"
-          step="0.01"
-          defaultValue={state.values?.paid_amount ?? ""}
+      {/* Disclosure trigger — the explicit button type is critical: a bare
+          submit-type button inside a form submits it. */}
+      <button
+        type="button"
+        onClick={() => setPanelOpen((open) => !open)}
+        aria-expanded={panelOpen}
+        aria-controls={panelId}
+        className={buttonVariants({
+          variant: "outline",
+          className: "w-full justify-between min-h-[44px]",
+        })}
+      >
+        Ticket type, payment
+        <ChevronDown
+          aria-hidden="true"
+          className={`size-4 transition-transform${panelOpen ? " rotate-180" : ""}`}
         />
-        {state.errors?.paid_amount?.[0] && (
-          <FieldError message={state.errors.paid_amount[0]} />
-        )}
+      </button>
+
+      {/* `hidden` (not a conditional render) keeps the radios and amount inputs
+          in the DOM — and therefore in FormData — while the panel is collapsed.
+          That is what makes D-08's collapsed-always safe. */}
+      <div
+        id={panelId}
+        hidden={!panelOpen}
+        className="border border-border border-t-0 p-4 flex flex-col gap-4"
+      >
+        {/* Ticket-type picker. D-09: the first type is pre-selected so the
+            collapsed panel is still submittable — an order can now be placed on
+            a type the staffer did not explicitly tick. Form default only; no
+            action or schema change. */}
+        <div className="flex flex-col gap-2">
+          <p id="ticket-type-label" className={labelClassName}>
+            TICKET TYPE
+          </p>
+          <RadioGroup
+            name="ticket_type_id"
+            aria-labelledby="ticket-type-label"
+            defaultValue={state.values?.ticket_type_id || ticketTypes[0]?.id}
+            className="gap-4"
+          >
+            {ticketTypes.map((ticketType) => (
+              <label
+                key={ticketType.id}
+                // border is always present but transparent, so selecting an
+                // option changes its colour without nudging the layout.
+                className="flex gap-2 border border-transparent bg-muted p-3 has-[[data-checked]]:border-primary"
+              >
+                <RadioGroupItem value={ticketType.id} className="mt-1" />
+                <span className="flex flex-col gap-1">
+                  <span className="text-[12px] font-extrabold break-words">
+                    {ticketType.name}
+                  </span>
+                  <span className="text-[12px] text-muted-foreground break-words">
+                    {ticketType.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </RadioGroup>
+          {state.errors?.ticket_type_id?.[0] && (
+            <FieldError message={state.errors.ticket_type_id[0]} />
+          )}
+        </div>
+
+        {/* Both amounts are staff bookkeeping and both optional. Plain number
+            inputs only — no currency symbol, no running sum. Server-side,
+            amountSchema in createOrder is the check that counts. */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="paid_amount" className={labelClassName}>
+              Paid now
+            </Label>
+            <Input
+              id="paid_amount"
+              name="paid_amount"
+              type="number"
+              step="0.01"
+              defaultValue={state.values?.paid_amount ?? ""}
+            />
+            {state.errors?.paid_amount?.[0] && (
+              <FieldError message={state.errors.paid_amount[0]} />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="pay_at_door_amount" className={labelClassName}>
+              Owed at door
+            </Label>
+            <Input
+              id="pay_at_door_amount"
+              name="pay_at_door_amount"
+              type="number"
+              step="0.01"
+              defaultValue={state.values?.pay_at_door_amount ?? ""}
+            />
+            {state.errors?.pay_at_door_amount?.[0] && (
+              <FieldError message={state.errors.pay_at_door_amount[0]} />
+            )}
+          </div>
+        </div>
+
+        {/* One currency control governing BOTH amounts. The explicit group
+            name is not optional: without it SegmentedControl falls back to a
+            generated id and the currency value silently vanishes from
+            FormData. The Server Action still reads it straight from FormData,
+            unchanged. */}
+        <div className="flex flex-col gap-2">
+          <p className={labelClassName}>CURRENCY</p>
+          <SegmentedControl
+            name="currency"
+            options={[
+              { value: "RSD", label: "RSD" },
+              { value: "EUR", label: "EUR" },
+            ]}
+            value={currency}
+            onValueChange={setCurrency}
+          />
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          {"Amounts are staff bookkeeping — never shown in the attendee's email."}
+        </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="pay_at_door_amount">Pay-at-door amount</Label>
-        <Input
-          id="pay_at_door_amount"
-          name="pay_at_door_amount"
-          type="number"
-          step="0.01"
-          defaultValue={state.values?.pay_at_door_amount ?? ""}
-        />
-        {state.errors?.pay_at_door_amount?.[0] && (
-          <FieldError message={state.errors.pay_at_door_amount[0]} />
-        )}
-      </div>
-
-      {/* One currency control governing BOTH amounts, sitting below them — not
-          a picker beside each field (D-08) and not per-event (D-06). The
-          generated base-ui Select renders its own visually-hidden input
-          carrying the chosen value under the control's name, so the Server
-          Action reads the currency straight from FormData, not React state.
-          It is uncontrolled and only reads `defaultValue` on mount, so `key`
-          is tied to the echoed value: after a rejected submission React
-          remounts it showing the option the staff member had chosen instead of
-          snapping back to RSD (D-13 keep-what-you-typed). `|| "RSD"` is the
-          D-09 default for the very first render, before any state exists. */}
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="currency">Currency</Label>
-        <Select
-          key={state.values?.currency || "RSD"}
-          name="currency"
-          defaultValue={state.values?.currency || "RSD"}
+      {/* The pending-disabled submit button is the double-submit mitigation:
+          two fast clicks would otherwise mean two tickets and two emails. No
+          idempotency key — for a single-operator staff tool the disabled
+          button is the proportionate control. */}
+      <div className="border-t-2 border-border pt-3 pb-5 grid gap-2">
+        <Button
+          type="submit"
+          disabled={pending}
+          className="min-h-[52px] justify-start text-left"
         >
-          <SelectTrigger id="currency" className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="EUR">EUR</SelectItem>
-            <SelectItem value="RSD">RSD</SelectItem>
-          </SelectContent>
-        </Select>
+          {pending ? "Issuing…" : "Issue ticket · send email"}
+        </Button>
       </div>
-
-      {/* disabled={pending} is the double-submit mitigation: two fast clicks
-          would otherwise mean two tickets and two emails. No idempotency key
-          — for a single-operator staff tool the disabled button is the
-          proportionate control. */}
-      <Button type="submit" disabled={pending}>
-        {pending ? "Confirming…" : "Confirm order"}
-      </Button>
     </form>
   );
 }
