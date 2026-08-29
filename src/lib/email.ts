@@ -120,19 +120,22 @@ export function buildTicketEmailHtml(params: SendTicketEmailParams): string {
     ? escapeHtml(formatMoney(payAtDoorAmount, currency))
     : "";
 
-  // The pay-at-the-door row: markup verbatim from
+  // The pay-at-the-door row: structure from
   // design_handoff_ticket_email/ticket-email-a-stub.html lines 86-92, with the
   // amount token replaced by the computed figure and the note token by the
-  // escaped PAYMENT_NOTE. The whole row is present or entirely absent — never a
-  // zero band, never an empty row (D-12). Its own top rule closes the ticket
-  // stub; the CTA slot below also carries a top rule, so when this row is
-  // absent the stub is still closed by exactly one 2px ink rule.
+  // escaped PAYMENT_NOTE. Phase 5 post-checkpoint amendment: the amount is 18px/
+  // 24px (matching the ticket-type value) rather than the handoff's 34px display,
+  // and the band padding is 20px (was 30px), so the red field fits its text
+  // instead of dominating the message. The whole row is present or entirely
+  // absent — never a zero band, never an empty row (D-12). Its own top rule
+  // closes the ticket stub; the CTA slot below also carries a top rule, so when
+  // this row is absent the stub is still closed by exactly one 2px ink rule.
   const bandRow = hasBalance
     ? `
   <tr>
-    <td class="px" align="left" bgcolor="#ec3013" style="background-color:#ec3013; padding:30px 40px; border-top:2px solid #201e1d;">
+    <td class="px" align="left" bgcolor="#ec3013" style="background-color:#ec3013; padding:20px 40px; border-top:2px solid #201e1d;">
       <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; line-height:14px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#ffffff;">Please bring to the door</p>
-      <p style="margin:0 0 10px 0; font-family:Arial,Helvetica,sans-serif; font-size:34px; line-height:36px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-1px; color:#ffffff;">${amountDue}</p>
+      <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:18px; line-height:24px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-0.2px; color:#ffffff;">${amountDue}</p>
       <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:22px; mso-line-height-rule:exactly; color:#ffffff;">${escapeHtml(PAYMENT_NOTE)}</p>
     </td>
   </tr>`
