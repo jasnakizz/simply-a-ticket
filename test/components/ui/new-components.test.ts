@@ -119,6 +119,17 @@ describe("DS-04 — Toast is a dumb chip (D-09)", () => {
     expect(code["toast.tsx"]).toContain("2600");
     expect(code["toast.tsx"]).toContain("clearTimeout");
   });
+
+  it("WR-07 — holds the dismiss callback in a ref and keys the timer effect on the message alone", () => {
+    const src = code["toast.tsx"];
+    // The callback is held in a ref rather than depended on directly.
+    expect(src).toMatch(/useRef\(\s*onDismiss\s*\)/);
+    // The timer effect's dependency array is the message alone...
+    expect(src).toContain("[message]");
+    // ...and never the re-arming [message, onDismiss] pair that let an
+    // unrelated parent re-render restart the ~2.6s clock.
+    expect(src).not.toContain("[message, onDismiss]");
+  });
 });
 
 describe("DS-04 — ScanBar is framework-Link-coupled and hides its arrow", () => {
@@ -221,9 +232,41 @@ describe("DS-04 render smoke — renders standalone from props alone (ROADMAP #3
     );
     expect(betweenFigures).not.toContain("text-primary");
 
+    // WR-05 regression floor: the two-item strip is pixel-identical to what
+    // shipped — exactly one vertical divider between the two cells, the bottom
+    // rule on each cell (not the container), and the container's own class list
+    // free of the bottom rule.
+    expect((html.match(/border-r-2/g) ?? []).length).toBe(1);
+    expect((html.match(/border-b-2/g) ?? []).length).toBe(2);
+    const twoContainerTag = html.slice(0, html.indexOf(">"));
+    expect(twoContainerTag).toContain('data-slot="counts-strip"');
+    expect(twoContainerTag).not.toContain("border-b-2");
+
     const empty = renderToStaticMarkup(
       React.createElement(CountsStrip, { items: [] }),
     );
     expect(empty).toBe("");
+  });
+
+  it("CountsStrip WR-05 — an odd-length items array draws no dangling divider and no rule over an empty track", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CountsStrip, {
+        items: [
+          { value: "1", label: "One" },
+          { value: "2", label: "Two" },
+          { value: "3", label: "Three" },
+        ],
+      }),
+    );
+    // Exactly one right-hand divider — between the first two cells only. The
+    // final cell sits alone in an incomplete row and carries no right rule.
+    expect((html.match(/border-r-2/g) ?? []).length).toBe(1);
+    // The bottom rule is on each cell — three cells, three occurrences — so it
+    // never spans the empty second track of the incomplete row.
+    expect((html.match(/border-b-2/g) ?? []).length).toBe(3);
+    // The container element's own class list does not carry the bottom rule.
+    const containerTag = html.slice(0, html.indexOf(">"));
+    expect(containerTag).toContain('data-slot="counts-strip"');
+    expect(containerTag).not.toContain("border-b-2");
   });
 });

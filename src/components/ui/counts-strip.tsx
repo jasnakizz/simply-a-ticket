@@ -10,6 +10,11 @@ import { cn } from "@/lib/utils"
 // the count, not about drawing an empty shell — a rendered grid with no cells
 // would leave an orphan 2px bottom rule under nothing, which reads as a layout
 // bug rather than an empty state. Radius is zero — no corner class here.
+//
+// Odd case: the grid still does not reflow to the item count. The bottom rule
+// lives on each cell (not the container) and the right rule is suppressed on
+// the final cell, so an incomplete last row simply draws fewer rules rather
+// than a rule spanning an empty grid track or a divider dangling off the end.
 
 type CountsStripItem = {
   value: string
@@ -33,14 +38,16 @@ function CountsStrip({
   return (
     <div
       data-slot="counts-strip"
-      className={cn("grid grid-cols-2 border-b-2 border-border", className)}
+      className={cn("grid grid-cols-2", className)}
     >
       {items.map((item, index) => (
         <div
           key={`${item.label}-${index}`}
           className={cn(
-            "px-4 py-3",
-            index % 2 === 0 && "border-r-2 border-border"
+            "px-4 py-3 border-b-2 border-border",
+            index % 2 === 0 &&
+              index !== items.length - 1 &&
+              "border-r-2 border-border"
           )}
         >
           <div

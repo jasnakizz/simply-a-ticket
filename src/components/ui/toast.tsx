@@ -7,6 +7,11 @@
 // There is deliberately no app-wide toast mechanism and no root-layout wiring:
 // no wrapper, no shared store, no library. The component owns only its own
 // ~2.6s auto-dismiss timer.
+//
+// The dismiss callback is held in a ref, refreshed by a passive effect, so the
+// timer effect can key on `message` alone: the documented call pattern passes an
+// inline arrow, so depending the timer on the callback identity would re-arm the
+// ~2.6s clock on every unrelated parent re-render.
 
 import * as React from "react"
 
@@ -19,10 +24,16 @@ type ToastProps = {
 }
 
 function Toast({ message, onDismiss, className }: ToastProps) {
+  const onDismissRef = React.useRef(onDismiss)
+
   React.useEffect(() => {
-    const t = setTimeout(onDismiss, 2600)
+    onDismissRef.current = onDismiss
+  })
+
+  React.useEffect(() => {
+    const t = setTimeout(() => onDismissRef.current(), 2600)
     return () => clearTimeout(t)
-  }, [message, onDismiss])
+  }, [message])
 
   return (
     <div
