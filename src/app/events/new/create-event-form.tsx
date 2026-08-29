@@ -18,9 +18,12 @@ import { Textarea } from "@/components/ui/textarea";
 
 const initialState: CreateEventState = {};
 
+const labelClassName =
+  "text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground";
+
 function FieldError({ message }: { message: string }) {
   return (
-    <p role="alert" className="flex items-center gap-1 text-sm text-foreground">
+    <p role="alert" className="flex items-center gap-1 text-[12px] text-foreground">
       <CircleAlert aria-hidden="true" className="size-4" />
       {message}
     </p>
@@ -31,11 +34,13 @@ export function CreateEventForm() {
   const [state, formAction, pending] = useActionState(createEvent, initialState);
 
   return (
-    <form action={formAction} className="flex flex-col gap-4 p-6">
+    <form action={formAction} className="flex flex-col gap-4">
       {state.formError && <FieldError message={state.formError} />}
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="name">Name</Label>
+        <Label htmlFor="name" className={labelClassName}>
+          Name
+        </Label>
         <Input
           id="name"
           name="name"
@@ -46,7 +51,9 @@ export function CreateEventForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="description">Description</Label>
+        <Label htmlFor="description" className={labelClassName}>
+          Description
+        </Label>
         <Textarea
           id="description"
           name="description"
@@ -59,7 +66,9 @@ export function CreateEventForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="event_date">Date</Label>
+        <Label htmlFor="event_date" className={labelClassName}>
+          Date
+        </Label>
         <Input
           id="event_date"
           name="event_date"
@@ -73,7 +82,9 @@ export function CreateEventForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="location">Location</Label>
+        <Label htmlFor="location" className={labelClassName}>
+          Location
+        </Label>
         <Input
           id="location"
           name="location"
@@ -85,9 +96,15 @@ export function CreateEventForm() {
         )}
       </div>
 
-      <Button type="submit" disabled={pending}>
-        {pending ? "Creating…" : "Create event"}
-      </Button>
+      <div className="border-t-2 border-border pt-3 pb-5 grid gap-2">
+        <Button
+          type="submit"
+          disabled={pending}
+          className="min-h-[52px] justify-start text-left"
+        >
+          {pending ? "Creating…" : "Create event"}
+        </Button>
+      </div>
     </form>
   );
 }
