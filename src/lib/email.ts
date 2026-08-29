@@ -134,9 +134,9 @@ export function buildTicketEmailHtml(params: SendTicketEmailParams): string {
     ? `
   <tr>
     <td class="px" align="left" bgcolor="#ec3013" style="background-color:#ec3013; padding:20px 40px; border-top:2px solid #201e1d;">
-      <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; line-height:14px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#ffffff;">Please bring to the door</p>
-      <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:18px; line-height:24px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-0.2px; color:#ffffff;">${amountDue}</p>
-      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:22px; mso-line-height-rule:exactly; color:#ffffff;">${escapeHtml(PAYMENT_NOTE)}</p>
+      <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; line-height:12px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#ffffff;">Please bring to the door</p>
+      <p style="margin:0 0 8px 0; font-family:Arial,Helvetica,sans-serif; font-size:18px; line-height:26px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-0.2px; color:#ffffff;">${amountDue}</p>
+      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:22px; mso-line-height-rule:exactly; color:#ffffff;">${escapeHtml(PAYMENT_NOTE)}</p>
     </td>
   </tr>`
     : "";
@@ -197,7 +197,7 @@ export function buildTicketEmailHtml(params: SendTicketEmailParams): string {
     <td class="px" style="padding:40px 40px 32px 40px; border-bottom:2px solid #201e1d;">
       <p style="margin:0 0 18px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; line-height:14px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#6d6664;">${evDate} &mdash; ${evLocation}</p>
       <h1 class="h1" style="margin:0 0 18px 0; font-family:Arial,Helvetica,sans-serif; font-size:30px; line-height:34px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-1px; color:#201e1d;">Hello, ${firstName}.</h1>
-      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:17px; line-height:27px; mso-line-height-rule:exactly; color:#3d3937;">Your ticket for <strong style="color:#201e1d;">${evName}</strong> is ready. The QR code below is your ticket &mdash; show it on your phone at the door and we&rsquo;ll scan you straight in. No printing needed.</p>
+      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:17px; line-height:27px; mso-line-height-rule:exactly; color:#3d3937;">Your ticket for <strong style="color:#201e1d;">${evName}</strong> is ready. The QR code below is your ticket. Show it on your phone at the door and we&rsquo;ll scan you straight in. No printing needed.</p>
     </td>
   </tr>
 
