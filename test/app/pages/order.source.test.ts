@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { readCode } from "./helpers";
+import { readCode, readSrc } from "./helpers";
 
 /**
  * PAGE-07 / PAGE-11 source contract for the Phase 7 order-path restyle
@@ -23,6 +23,9 @@ import { readCode } from "./helpers";
  */
 
 const form = readCode("src/app/events/[eventId]/order/order-form.tsx");
+// Raw (comment-included) source — used ONLY by the WR-01 gate below, whose
+// target IS a comment line that readCode would strip before it could be seen.
+const formRaw = readSrc("src/app/events/[eventId]/order/order-form.tsx");
 const shell = readCode("src/app/events/[eventId]/order/page.tsx");
 
 describe("PAGE-07 — the order still posts every field createOrder reads (load-bearing)", () => {
@@ -85,14 +88,14 @@ describe("PAGE-07 / D-07 — exactly two presentation-only useState calls, no ef
   });
 });
 
-describe("PAGE-07 / D-08 / D-09 — collapsed-always disclosure, pre-selected first type", () => {
+describe("PAGE-07 / D-08 (amended 07-06) / D-09 — collapsed by default, opens on a panel-field error, first type pre-selected", () => {
   it("wires aria-expanded and aria-controls on the trigger", () => {
     expect(form).toContain("aria-expanded");
     expect(form).toContain("aria-controls");
   });
 
-  it("hides the panel with the hidden attribute, not a conditional render", () => {
-    expect(form).toContain("hidden={");
+  it("hides the panel with the exact two-term hidden expression, not a substring or a conditional render", () => {
+    expect(form).toContain("hidden={!panelOpen && !panelHasError}");
   });
 
   it("has exactly one type=button (the disclosure trigger only)", () => {
@@ -108,6 +111,121 @@ describe("PAGE-07 / D-08 / D-09 — collapsed-always disclosure, pre-selected fi
 
   it("pre-selects the first ticket type (D-09 fallback)", () => {
     expect(form).toContain("ticketTypes[0]");
+  });
+});
+
+/**
+ * PAGE-07 / CR-01 — the gap 07-VERIFICATION found: the three in-panel
+ * FieldError elements render inside a `hidden` container that only the manual
+ * trigger ever opened, so a `createOrder` rejection of `ticket_type_id`,
+ * `paid_amount`, or `pay_at_door_amount` with the panel collapsed produced
+ * zero visible feedback — a silent dead-end. The fix derives the panel's
+ * visibility (and the trigger's aria-expanded + the chevron) from those same
+ * three errors via a plain `panelHasError` const, not a new hook.
+ *
+ * These gates pin the fix mechanically AND lock the structural invariant that
+ * every error rendered inside the panel region is also a term in what opens
+ * the panel — so adding a fourth in-panel field later cannot silently
+ * re-create CR-01 for that field.
+ */
+describe("PAGE-07 / CR-01 — a rejected panel field is visible, not silent", () => {
+  it("derives panelHasError exactly once as a plain const (declaration + three consumers)", () => {
+    expect(form).toContain("const panelHasError = Boolean(");
+    const hits = form.split("panelHasError").length - 1;
+    expect(hits).toBeGreaterThan(3);
+  });
+
+  // The declaration slice: from `const panelHasError` to the first `;` after it.
+  const declSlice = (() => {
+    const start = form.indexOf("const panelHasError");
+    if (start === -1) return "";
+    const end = form.indexOf(";", start);
+    if (end === -1) return "";
+    return form.slice(start, end);
+  })();
+
+  it("derives panelHasError from state.errors?.ticket_type_id?.[0]", () => {
+    expect(declSlice).toContain("state.errors?.ticket_type_id?.[0]");
+  });
+
+  it("derives panelHasError from state.errors?.paid_amount?.[0]", () => {
+    expect(declSlice).toContain("state.errors?.paid_amount?.[0]");
+  });
+
+  it("derives panelHasError from state.errors?.pay_at_door_amount?.[0]", () => {
+    expect(declSlice).toContain("state.errors?.pay_at_door_amount?.[0]");
+  });
+
+  it("does not fold the always-visible attendee fields into panelHasError", () => {
+    expect(declSlice).not.toContain("attendee_name");
+    expect(declSlice).not.toContain("attendee_email");
+  });
+
+  it("wires panelHasError into the panel container's hidden attribute", () => {
+    expect(form).toContain("hidden={!panelOpen && !panelHasError}");
+  });
+
+  it("wires panelHasError into the trigger's aria-expanded (effective expanded state)", () => {
+    expect(form).toContain("aria-expanded={panelOpen || panelHasError}");
+  });
+
+  it("wires panelHasError into the ChevronDown rotation (chevron agrees with the panel)", () => {
+    expect(form).toContain('panelOpen || panelHasError ? " rotate-180"');
+  });
+
+  it("carries the fix with no extra useState (still exactly two)", () => {
+    expect((form.match(/useState\(/g) ?? []).length).toBe(2);
+  });
+
+  it("carries the fix with no useEffect", () => {
+    expect(form).not.toMatch(/useEffect/);
+  });
+
+  // Structural regression lock — the panel region and the derivation stay in
+  // lock-step. Anchors: `id={panelId}` opens the panel; `border-t-2
+  // border-border` is the footer wrapper that sits after it closes.
+  const panelStart = form.indexOf("id={panelId}");
+  const panelEnd = form.indexOf("border-t-2 border-border");
+
+  it("has real panel-region anchors (id={panelId} before the footer wrapper)", () => {
+    expect(panelStart).toBeGreaterThan(-1);
+    expect(panelEnd).toBeGreaterThan(-1);
+    expect(panelEnd).toBeGreaterThan(panelStart);
+  });
+
+  const panelRegionFields = (() => {
+    if (panelStart === -1 || panelEnd === -1 || panelEnd <= panelStart) return [];
+    const region = form.slice(panelStart, panelEnd);
+    const names = new Set<string>();
+    const re = /state\.errors\?\.([a-zA-Z_]+)\?\.\[0\]/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(region)) !== null) {
+      if (m[1]) names.add(m[1]);
+    }
+    return [...names].sort();
+  })();
+
+  it("renders errors for exactly ticket_type_id, paid_amount, pay_at_door_amount inside the panel region", () => {
+    expect(panelRegionFields).toEqual([
+      "paid_amount",
+      "pay_at_door_amount",
+      "ticket_type_id",
+    ]);
+  });
+
+  it("has every in-panel error field as a term in the panelHasError derivation", () => {
+    for (const name of panelRegionFields) {
+      expect(declSlice).toContain(name);
+    }
+  });
+
+  // WR-01: this ONE gate reads the raw (comment-included) file on purpose —
+  // the target is a comment line, and readCode would strip it before the
+  // assertion could see it. The stale clause claimed the panel force-collapses
+  // after a rejected submit, which directly contradicts rendering in-panel
+  // errors (open-on-error wins).
+  it("WR-01: the raw source no longer claims the panel collapses after a rejected submit", () => {
+    expect(formRaw).not.toContain("after a rejected submit");
   });
 });
 
