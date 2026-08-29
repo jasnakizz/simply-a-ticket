@@ -1,4 +1,4 @@
-# Spec — Ticketify
+# Spec — Simply a Ticket
 
 ## What it is
 

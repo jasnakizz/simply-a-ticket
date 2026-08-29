@@ -1,4 +1,4 @@
-# Ticketify — your launchpad for a 3-day build
+# Simply a Ticket — your launchpad for a 3-day build
 
 This repo is your launchpad for a three-day build: an event ticketing app —
 built by you, shipped live by you — using Claude Code and the open GSD
