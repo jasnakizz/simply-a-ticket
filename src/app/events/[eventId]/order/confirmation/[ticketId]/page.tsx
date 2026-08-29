@@ -6,7 +6,7 @@ import { formatEventDate } from "@/lib/date";
 import { generateQrDataUrl } from "@/lib/qr";
 import { buttonVariants } from "@/components/ui/button";
 
-// force-dynamic so a bookmarked confirmation URL always re-reads live data
+// Dynamic rendering so a bookmarked confirmation URL always re-reads live data
 // rather than serving a build-time snapshot.
 export const dynamic = "force-dynamic";
 
@@ -21,8 +21,8 @@ export default async function OrderConfirmationPage({
 
   // Scoped by BOTH id and event_id — the same defence createOrder uses. A
   // ticket id from another event must not render under this event's URL.
-  // Note: qr_token is read to regenerate the on-screen QR, and it never
-  // leaves this server render — it is not put in the URL or the markup.
+  // Note: the token column is read to regenerate the on-screen QR, and it
+  // never leaves this server render — it is not put in the URL or the markup.
   const { data: ticket, error: ticketError } = await supabase
     .from("tickets")
     .select(
@@ -62,16 +62,21 @@ export default async function OrderConfirmationPage({
 
   return (
     <div className="flex flex-col flex-1 items-center">
-      <div className="w-full max-w-md px-6 py-6 flex flex-col gap-4">
-        <h1 className="text-2xl font-semibold leading-[1.2]">
-          Your ticket is ready
-        </h1>
-        <p className="text-base font-normal leading-[1.5] break-words">
+      <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+            SENT
+          </p>
+          <h1 className="text-[40px] font-extrabold leading-[1.0] tracking-[-0.03em]">
+            Your ticket is ready
+          </h1>
+        </div>
+        <p className="text-[15px] leading-[1.55] break-words">
           A ticket has been emailed to {ticket.attendee_email}. Here&apos;s a
           copy of the QR code for your records:
         </p>
 
-        <div className="flex items-center justify-center rounded-md bg-muted p-6">
+        <div className="flex items-center justify-center bg-[var(--color-surface)] p-6">
           {/* eslint-disable-next-line @next/next/no-img-element -- a base64
               data URL from qrcode; next/image optimization adds nothing here */}
           <img
@@ -82,60 +87,71 @@ export default async function OrderConfirmationPage({
           />
         </div>
 
-        {/* xl gap (mt-4 on top of the parent's gap-4 = 32px) between the QR
-            and these rows, per the UI-SPEC spacing map. Row order follows the
-            UI-SPEC: event, date, location, ticket type, description, attendee.
-            The two money figures the staff member just entered are
-            deliberately absent here — this screen is often seen by the
-            attendee and those figures are staff-only (ORDER-04 / ORDER-05),
-            the same non-disclosure rule the ticket email follows. Every value
-            carries break-words so a long name or a paragraph-length
-            description wraps in full instead of being clipped. */}
-        <dl className="mt-4 flex flex-col gap-2">
+        {/* Row order per the UI-SPEC: event, date, location, ticket type,
+            description, attendee. Both money figures are intentionally omitted
+            — this screen is often seen by the attendee and those are internal
+            bookkeeping (ORDER-04 / ORDER-05). Every value wraps via
+            break-words so a long name or paragraph description is never
+            clipped. */}
+        <dl className="flex flex-col gap-3">
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Event</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Event</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {event.name}
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Date</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Date</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {formatEventDate(event.event_date)}
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Location</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Location</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {event.location}
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Ticket type</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Ticket type</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {ticketType.name}
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Details</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Details</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {ticketType.description}
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-sm font-semibold leading-[1.4]">Attendee</dt>
-            <dd className="text-base font-normal leading-[1.5] break-words">
+            <dt className="text-[12px] text-muted-foreground">Attendee</dt>
+            <dd className="text-[12px] font-extrabold break-words">
               {ticket.attendee_name}
             </dd>
           </div>
         </dl>
 
-        <Link
-          href={`/events/${eventId}`}
-          className={buttonVariants({ variant: "ghost" })}
-        >
-          Back to event
-        </Link>
+        <div className="border-t-2 border-border pt-3 pb-5 grid gap-2">
+          <Link
+            href={`/events/${eventId}/order`}
+            className={buttonVariants({
+              variant: "default",
+              className: "min-h-[52px] justify-start text-left",
+            })}
+          >
+            Add another
+          </Link>
+          <Link
+            href={`/events/${eventId}`}
+            className={buttonVariants({
+              variant: "ghost",
+              className: "min-h-[44px] justify-start text-left",
+            })}
+          >
+            Back to event
+          </Link>
+        </div>
       </div>
     </div>
   );
