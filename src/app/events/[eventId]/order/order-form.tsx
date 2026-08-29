@@ -70,16 +70,36 @@ export function OrderForm({
   // the useActionState wiring above.
   //
   // panelOpen — the "Ticket type, payment" disclosure. Collapsed on mount and
-  //   after a rejected submit (D-08); the fields inside stay in the DOM via the
-  //   `hidden` attribute so they still post into FormData while collapsed.
+  //   toggled only by the trigger button for the happy path. The panel ALSO
+  //   reveals itself whenever panelHasError is true — i.e. when createOrder
+  //   rejected one of its own three fields (ticket_type_id / paid_amount /
+  //   pay_at_door_amount) — because those FieldError messages render inside it
+  //   and would otherwise never reach the screen (CR-01). This open-on-error
+  //   reveal is Jasna's gap-closure amendment to D-08, which originally said
+  //   the panel never force-opens on a validation error.
+  //   `hidden` is an attribute, not a conditional render, so the radios and
+  //   both amount inputs stay in the DOM — and therefore in FormData — while
+  //   the panel is collapsed.
   const [panelOpen, setPanelOpen] = useState(false);
-  // currency — controlled value for the SegmentedControl. Initialising from the
-  //   echoed value (D-10) is what preserves the v1 keep-what-you-typed
-  //   behaviour after a rejected submit, which the v1 currency dropdown got
-  //   from a `key`-remount.
+  // currency — controlled value for the SegmentedControl. What preserves the
+  //   v1 keep-what-you-typed behaviour once createOrder has bounced the form
+  //   is this controlled state surviving the useActionState re-render — NOT the
+  //   initialiser below. A useState initialiser runs once on mount, <OrderForm>
+  //   is mounted without a `key`, so state.values is undefined when it runs;
+  //   the echoed value is only the fallback for a genuine remount (D-10).
   const [currency, setCurrency] = useState(state.values?.currency || "RSD");
   // Stable id linking the disclosure trigger's aria-controls to its panel.
   const panelId = useId();
+
+  // panelHasError — a plain derived const, NOT a hook, so the D-07 budget
+  // (two useState + one useId, no effect) is untouched. True when createOrder
+  // rejected any of the three in-panel fields; read through ?.[0] so it is
+  // exactly co-extensive with "an in-panel FieldError will render".
+  const panelHasError = Boolean(
+    state.errors?.ticket_type_id?.[0] ||
+      state.errors?.paid_amount?.[0] ||
+      state.errors?.pay_at_door_amount?.[0],
+  );
 
   const labelClassName =
     "text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground";
@@ -139,7 +159,7 @@ export function OrderForm({
       <button
         type="button"
         onClick={() => setPanelOpen((open) => !open)}
-        aria-expanded={panelOpen}
+        aria-expanded={panelOpen || panelHasError}
         aria-controls={panelId}
         className={buttonVariants({
           variant: "outline",
@@ -149,7 +169,7 @@ export function OrderForm({
         Ticket type, payment
         <ChevronDown
           aria-hidden="true"
-          className={`size-4 transition-transform${panelOpen ? " rotate-180" : ""}`}
+          className={`size-4 transition-transform${panelOpen || panelHasError ? " rotate-180" : ""}`}
         />
       </button>
 
@@ -158,7 +178,7 @@ export function OrderForm({
           That is what makes D-08's collapsed-always safe. */}
       <div
         id={panelId}
-        hidden={!panelOpen}
+        hidden={!panelOpen && !panelHasError}
         className="border border-border border-t-0 p-4 flex flex-col gap-4"
       >
         {/* Ticket-type picker. D-09: the first type is pre-selected so the
