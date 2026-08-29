@@ -2,14 +2,12 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-archivo);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-geist-sans);
+  --font-heading: var(--font-archivo);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -48,31 +46,70 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* ===== DS-05: Modernist role -> shadcn variable mapping =====
+ * Every Modernist role below lands on the EXISTING shadcn variable name in
+ * :root — no parallel --color-bg / --color-accent name is invented for a role
+ * that already owns a shadcn variable, and no hex literal appears inside the
+ * @theme inline bridge above (Pitfalls 1 & 12).
+ *
+ * ground              -> --background                            -> #f3f2f2
+ * ink                 -> --foreground                            -> #201e1d   (also the GO signal colour)
+ * surface             -> --card, --popover                       -> #eae9e9
+ * ink-on-surface      -> --card-foreground, --popover-foreground -> #201e1d
+ * accent (the one red) -> --primary                              -> #ec3013
+ * text-on-accent      -> --primary-foreground                    -> #f3f2f2
+ * secondary fill      -> --secondary                             -> #eae9e9
+ * ink-on-secondary    -> --secondary-foreground                  -> #201e1d
+ * muted fill          -> --muted                                 -> #eae9e9
+ * muted text          -> --muted-foreground                      -> color-mix(in srgb, #201e1d 65%, transparent)
+ *                        (65% confirmed by Jasna 2026-08-29 over Modernist's canonical 55%,
+ *                        which is ~3:1 and fails AA under 18.66px)
+ * subtle hover tint   -> --accent                                -> #fff2ef   (NOT the red — the Select item highlight)
+ * text-on-tint        -> --accent-foreground                     -> #7c1405
+ * STOP / alarm        -> --destructive                           -> #ec3013
+ * divider             -> --border, --input                       -> color-mix(in srgb, #201e1d 40%, transparent)
+ * focus outline       -> --ring                                  -> #ec3013
+ * radius              -> --radius                                -> 0px
+ * charts and sidebar  -> --chart-1..5, --sidebar-*               -> left as-is, unused
+ *
+ * GO/STOP contract (D-03..D-06), binding on Phases 8 & 9:
+ * GO = ink (--foreground). STOP = red (--destructive = #ec3013).
+ * --primary and --destructive are both #ec3013 — the primary button is an action
+ * control, not a status signal (D-04), so its red fill does not violate
+ * red-means-stop. Full-bleed red poster field only on not-found and wrong-event
+ * (D-05); already-checked-in keeps the neutral-800 dark field; camera-unavailable
+ * and no-connection use an ink/neutral field with a red glyph and status word.
+ * Colour is never the only signal — every terminal state keeps its glyph + status
+ * word + body-copy triple (D-06). Recorded here in Phase 6, implemented in
+ * Phase 8, verified in greyscale in Phase 9.
+ * ===== end DS-05 ===== */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  color-scheme: light;
+
+  --background: #f3f2f2;
+  --foreground: #201e1d;
+  --card: #eae9e9;
+  --card-foreground: #201e1d;
+  --popover: #eae9e9;
+  --popover-foreground: #201e1d;
+  --primary: #ec3013;
+  --primary-foreground: #f3f2f2;
+  --secondary: #eae9e9;
+  --secondary-foreground: #201e1d;
+  --muted: #eae9e9;
+  --muted-foreground: color-mix(in srgb, #201e1d 65%, transparent);
+  --accent: #fff2ef;
+  --accent-foreground: #7c1405;
+  --destructive: #ec3013;
+  --border: color-mix(in srgb, #201e1d 40%, transparent);
+  --input: color-mix(in srgb, #201e1d 40%, transparent);
+  --ring: #ec3013;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0px;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -81,50 +118,44 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-}
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Modernist ramp + elevation — plain author-defined custom properties with no
+   * @theme counterpart. Safe to reference as arbitrary values downstream, e.g.
+   * bg-[var(--color-surface)] / shadow-[var(--shadow-lg)]. Values verbatim from
+   * design_handoff_ticketing_mobile/design/modernist-styles.css lines 5-63. */
+  --color-surface: #eae9e9;
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
+  --color-accent-100: #fff2ef;
+  --color-accent-400: #ff9783;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  hr {
+    border: 0;
+    height: 2px;
+    background: var(--border);
   }
 }
