@@ -235,7 +235,7 @@ ${bandRow}
   <!-- Section 5 — CTA slot (D-05): button + link removed, 2px top+bottom rules kept -->
   <tr>
     <td class="px" style="padding:32px 40px; border-top:2px solid #201e1d; border-bottom:2px solid #201e1d;">
-      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:22px; mso-line-height-rule:exactly; color:#3d3937;">Keep this email &mdash; the QR code above is your ticket. No printout or app needed.</p>
+      <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:14px; line-height:22px; mso-line-height-rule:exactly; color:#3d3937;">Keep this email, the QR code above is your ticket. No printout or app needed.</p>
     </td>
   </tr>
 
@@ -245,7 +245,7 @@ ${bandRow}
        events row) is recorded in 05-CONTEXT.md Deferred Ideas. -->
   <tr>
     <td class="px" style="padding:26px 40px 34px 40px; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:20px; mso-line-height-rule:exactly; color:#6d6664;">
-      <p style="margin:0 0 10px 0;">This mailbox is not monitored &mdash; please do not reply to this email.</p>
+      <p style="margin:0 0 10px 0;">This mailbox is not monitored, please do not reply to this email.</p>
       <p style="margin:0;">${organiserName}</p>
     </td>
   </tr>
