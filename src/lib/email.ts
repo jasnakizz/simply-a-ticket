@@ -163,7 +163,7 @@ export function buildTicketEmailHtml(params: SendTicketEmailParams): string {
     .container { width: 100% !important; }
     .px { padding-left: 24px !important; padding-right: 24px !important; }
     .stack { display: block !important; width: 100% !important; padding: 0 0 20px 0 !important; }
-    .h1 { font-size: 30px !important; line-height: 34px !important; }
+    .h1 { font-size: 26px !important; line-height: 30px !important; }
   }
 </style>
 </head>
@@ -193,7 +193,7 @@ export function buildTicketEmailHtml(params: SendTicketEmailParams): string {
   <tr>
     <td class="px" style="padding:40px 40px 32px 40px; border-bottom:2px solid #201e1d;">
       <p style="margin:0 0 18px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; line-height:14px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase; color:#6d6664;">${evDate} &mdash; ${evLocation}</p>
-      <h1 class="h1" style="margin:0 0 18px 0; font-family:Arial,Helvetica,sans-serif; font-size:36px; line-height:40px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-1px; color:#201e1d;">You&rsquo;re in, ${firstName}.</h1>
+      <h1 class="h1" style="margin:0 0 18px 0; font-family:Arial,Helvetica,sans-serif; font-size:30px; line-height:34px; mso-line-height-rule:exactly; font-weight:bold; letter-spacing:-1px; color:#201e1d;">Hello, ${firstName}.</h1>
       <p style="margin:0; font-family:Arial,Helvetica,sans-serif; font-size:17px; line-height:27px; mso-line-height-rule:exactly; color:#3d3937;">Your ticket for <strong style="color:#201e1d;">${evName}</strong> is ready. The QR code below is your ticket &mdash; show it on your phone at the door and we&rsquo;ll scan you straight in. No printing needed.</p>
     </td>
   </tr>
@@ -236,10 +236,13 @@ ${bandRow}
     </td>
   </tr>
 
-  <!-- Section 6 — Footer (D-03/D-04): reply line + organiser name only -->
+  <!-- Section 6 — Footer (D-03/D-04): no-reply notice + organiser name only.
+       Phase 5 post-checkpoint amendment — the earlier line promised a monitored
+       reply inbox that does not exist; a v3 idea (contact_email/phone on the
+       events row) is recorded in 05-CONTEXT.md Deferred Ideas. -->
   <tr>
     <td class="px" style="padding:26px 40px 34px 40px; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:20px; mso-line-height-rule:exactly; color:#6d6664;">
-      <p style="margin:0 0 10px 0;">Questions, or need to transfer your ticket? Reply to this email &mdash; a person reads it.</p>
+      <p style="margin:0 0 10px 0;">This mailbox is not monitored &mdash; please do not reply to this email.</p>
       <p style="margin:0;">${organiserName}</p>
     </td>
   </tr>

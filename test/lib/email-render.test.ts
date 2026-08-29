@@ -134,7 +134,7 @@ describe("buildTicketEmailHtml — six-section Modernist structure (05-02 Task 3
       "cid:ticket-qr",
       'alt="QR ticket code for ',
       "Ticket confirmed",
-      "Questions, or need to transfer your ticket?",
+      "This mailbox is not monitored",
       "Keep this email",
     ]) {
       expect(html).toContain(needle);
@@ -157,11 +157,11 @@ describe("buildTicketEmailHtml — six-section Modernist structure (05-02 Task 3
     const anchors = [
       "Your ticket is ready", // preheader span
       "Ticket confirmed", // masthead status label
-      "You&rsquo;re in,", // greeting headline
+      "Hello,", // greeting headline
       "Ticket holder", // ticket-stub label
       "Please bring to the door", // optional band
       "Keep this email", // CTA reassurance sentence
-      "Questions, or need to transfer your ticket?", // footer reply sentence
+      "This mailbox is not monitored", // footer no-reply notice
     ].map((a) => html.indexOf(a));
 
     expect(anchors.every((i) => i >= 0)).toBe(true);
@@ -223,12 +223,8 @@ describe("buildTicketEmailHtml — six-section Modernist structure (05-02 Task 3
   });
 
   it('uses the "there" first-name fallback for an empty or whitespace-only name', async () => {
-    expect(await build({ attendeeName: "" })).toContain(
-      "You&rsquo;re in, there.",
-    );
-    expect(await build({ attendeeName: "   " })).toContain(
-      "You&rsquo;re in, there.",
-    );
+    expect(await build({ attendeeName: "" })).toContain("Hello, there.");
+    expect(await build({ attendeeName: "   " })).toContain("Hello, there.");
   });
 
   it("escapes a hostile attendee name everywhere it is interpolated", async () => {
