@@ -84,8 +84,7 @@ export default async function OrderPage({
               No ticket types yet
             </h2>
             <p className="text-[15px] leading-[1.55] text-muted-foreground">
-              No ticket types yet — add one on the event page before selling a
-              ticket.
+              {"No ticket types yet — add one on the event page before selling a ticket."}
             </p>
             <Link
               href={`/events/${eventId}`}
