@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatEventDate } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { OrderForm } from "./order-form";
 
@@ -45,53 +44,60 @@ export default async function OrderPage({
     throw ticketTypesError;
   }
 
+  // This guard is what keeps OrderForm from ever receiving an empty array:
+  // the island has no dead blocked-state branch because this shell never
+  // mounts it with nothing to select.
   const hasTicketTypes = ticketTypes && ticketTypes.length > 0;
 
   return (
     <div className="flex flex-col flex-1 items-center">
-      {/* max-w-md px-6 matches the event detail page so the two line up;
-          pt-16 is the UI-SPEC's page-level top spacing (3xl). */}
-      <div className="w-full max-w-md px-6 pt-16 pb-6 flex flex-col gap-6">
+      <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
         <Link
           href={`/events/${eventId}`}
-          className={buttonVariants({ variant: "ghost" })}
+          className={buttonVariants({
+            variant: "ghost",
+            className: "px-0 justify-start",
+          })}
         >
-          Back to event
+          ← Cancel
         </Link>
 
-        {/* gap-12 (2xl) is the UI-SPEC's major section break between the page
-            heading block and the form. */}
-        <div className="flex flex-col gap-12">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-2xl font-semibold leading-[1.2] break-words">
-              Order tickets — {event.name}
-            </h1>
-            <p className="text-base font-normal leading-[1.5] text-muted-foreground break-words">
-              {formatEventDate(event.event_date)} · {event.location}
-            </p>
-          </div>
-
-          {hasTicketTypes ? (
-            <OrderForm eventId={eventId} ticketTypes={ticketTypes} />
-          ) : (
-            // Nothing to pick, so no form — a dead end otherwise. Mirrors the
-            // event detail page's own empty state.
-            <div className="flex flex-col gap-2">
-              <h2 className="text-2xl font-semibold leading-[1.2]">
-                No ticket types yet
-              </h2>
-              <p className="text-base font-normal leading-[1.5] text-muted-foreground">
-                Add a ticket type on the event page before starting an order.
-              </p>
-              <Link
-                href={`/events/${eventId}`}
-                className={buttonVariants({ variant: "outline" })}
-              >
-                Back to event
-              </Link>
-            </div>
-          )}
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground break-words">
+            {event.name}
+          </p>
+          <h1 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+            Add a sold ticket
+          </h1>
+          <p className="text-[12px] text-muted-foreground">
+            The QR arrives in their inbox the moment you save.
+          </p>
         </div>
+
+        {hasTicketTypes ? (
+          <OrderForm eventId={eventId} ticketTypes={ticketTypes} />
+        ) : (
+          // Nothing to pick, so no form — a dead end otherwise. Mirrors the
+          // event detail page's own empty state.
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+              No ticket types yet
+            </h2>
+            <p className="text-[15px] leading-[1.55] text-muted-foreground">
+              No ticket types yet — add one on the event page before selling a
+              ticket.
+            </p>
+            <Link
+              href={`/events/${eventId}`}
+              className={buttonVariants({
+                variant: "outline",
+                className: "min-h-[44px] justify-start text-left",
+              })}
+            >
+              Add a ticket type
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
