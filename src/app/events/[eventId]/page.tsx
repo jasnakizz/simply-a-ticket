@@ -6,6 +6,7 @@ import { formatEventDate } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanBar } from "@/components/ui/scan-bar";
+import { CountsStrip } from "@/components/ui/counts-strip";
 import { AddTicketTypeForm } from "./add-ticket-type-form";
 
 // Same reasoning as /events: staff need the current data, not a build-time
@@ -89,41 +90,73 @@ export default async function EventDetailPage({
           href={`/events/${eventId}/scan`}
         />
 
+        <div className="flex flex-col gap-3">
+          <Badge variant="neutral">SAMPLE</Badge>
+          <CountsStrip
+            size="dashboard"
+            items={[
+              { value: "128", label: "CHECKED IN", accent: true },
+              { value: "214", label: "TICKETS SOLD" },
+            ]}
+          />
+          <div className="h-[10px] bg-[var(--color-neutral-300)]">
+            <div className="h-full bg-primary w-[60%]" />
+          </div>
+          <p className="text-[12px] text-muted-foreground">
+            4 tickets still owe{" "}
+            <span className="font-extrabold">1 200 RSD</span> at the door.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            LAST THROUGH THE DOOR
+          </p>
+          <p className="text-[15px] leading-[1.55] text-muted-foreground">
+            No check-ins yet — attendees appear here as they come through the door.
+          </p>
+        </div>
+
         <div className="flex flex-col gap-4">
           {ticketTypes && ticketTypes.length === 0 ? (
             <div className="flex flex-col gap-2">
-              <h2 className="text-2xl font-semibold leading-[1.2]">
+              <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
                 No ticket types yet
               </h2>
-              <p className="text-base font-normal leading-[1.5] text-muted-foreground">
+              <p className="text-[15px] leading-[1.55] text-muted-foreground">
                 Add a ticket type below to start selling this event.
               </p>
             </div>
           ) : (
-            <ul className="flex flex-col">
-              {ticketTypes?.map((ticketType, index) => (
-                <li
-                  key={ticketType.id}
-                  className={
-                    index === 0
-                      ? "flex flex-col gap-1 py-3"
-                      : "flex flex-col gap-1 border-t border-border py-3"
-                  }
-                >
-                  <p className="text-sm font-semibold leading-[1.4] break-words">
-                    {ticketType.name}
-                  </p>
-                  <p className="text-base font-normal leading-[1.5] break-words">
-                    {ticketType.description}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                EXISTING TYPES
+              </p>
+              <ul className="flex flex-col">
+                {ticketTypes?.map((ticketType, index) => (
+                  <li
+                    key={ticketType.id}
+                    className={
+                      index === 0
+                        ? "flex flex-col gap-1 py-3"
+                        : "flex flex-col gap-1 border-t border-border py-3"
+                    }
+                  >
+                    <p className="text-[12px] font-extrabold break-words">
+                      {ticketType.name}
+                    </p>
+                    <p className="text-[12px] text-muted-foreground break-words">
+                      {ticketType.description}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
 
         <div className="flex flex-col gap-4">
-          <h2 className="text-2xl font-semibold leading-[1.2]">
+          <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
             Add ticket type
           </h2>
           <AddTicketTypeForm eventId={eventId} />
