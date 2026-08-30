@@ -76,12 +76,25 @@
  * GO = ink (--foreground). STOP = red (--destructive = #ec3013).
  * --primary and --destructive are both #ec3013 — the primary button is an action
  * control, not a status signal (D-04), so its red fill does not violate
- * red-means-stop. Full-bleed red poster field only on not-found and wrong-event
- * (D-05); already-checked-in keeps the neutral-800 dark field; camera-unavailable
- * and no-connection use an ink/neutral field with a red glyph and status word.
+ * red-means-stop. Red poster field only on not-found and wrong-event (D-05),
+ * now a full-width block inside the content column rather than a full-bleed
+ * field; already-checked-in keeps the neutral-800 glyph and status word;
+ * camera-unavailable and no-connection render on the light ground with a red
+ * glyph and status word.
  * Colour is never the only signal — every terminal state keeps its glyph + status
  * word + body-copy triple (D-06). Recorded here in Phase 6, implemented in
  * Phase 8, verified in greyscale in Phase 9.
+ *
+ * AMENDMENT 2026-08-30 (Phase 8 UAT gap G-08-2): the "dark room" scanner clause
+ * is WITHDRAWN. Every scanner state now renders on the light --background
+ * surface — idle/starting/scanning/checking/manual, camera-unavailable,
+ * no-connection, and the surrounds of all five verdict screens; there is no
+ * near-black band around a white centre panel anywhere on the route. The red
+ * poster on not-found / wrong-event is a full-width block in the content column
+ * with symmetric gutters, no negative-margin breakout. This deliberately
+ * overrides 08-CONTEXT decisions D-01, D-02, D-03, and D-04 while D-05 (the red
+ * field on exactly those two states) stands. No token value in :root changed;
+ * the @keyframes scanline rule is untouched.
  * ===== end DS-05 ===== */
 :root {
   color-scheme: light;

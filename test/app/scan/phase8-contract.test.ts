@@ -186,3 +186,46 @@ describe("Gate 9 — the page shell (page.tsx) is a Server Component", () => {
     expect(page).not.toMatch(/["']use client["']/);
   });
 });
+
+// Gate 10 note: the viewfinder frame's `border-background/25` is deliberately
+// NOT caught by the bg-foreground / text-background patterns below. That border
+// sits over the LIVE CAMERA FEED inside an overflow-hidden box, not over the
+// page ground, and is the handoff's literal viewfinder border (D-11). The
+// patterns are anchored with word boundaries so `border-background/25` cannot
+// trip them.
+describe("Gate 10 — the light scanner ground (gap G-08-2)", () => {
+  it(`${PAGE}: renders the scanner route on the app's light surface and never on the near-black ground`, () => {
+    expect(page).toContain("bg-background text-foreground");
+    expect(page).not.toMatch(/\bbg-foreground\b/);
+    expect(page).not.toMatch(/\btext-background\b/);
+  });
+
+  it(`${SCANNER}: carries no near-black ground and no light-on-dark body copy`, () => {
+    expect(scanner).not.toMatch(/\bbg-foreground\b/);
+    expect(scanner).not.toMatch(/\btext-background\b/);
+  });
+
+  it(`${SCANNER}: the camera viewport placeholder is back on the muted surface`, () => {
+    expect(scanner).toContain("aspect-square overflow-hidden bg-muted");
+  });
+
+  it(`${SCANNER}: the manual disclosure link uses the light-ground accent ramp step (accent-600, not accent-400)`, () => {
+    expect(scanner).toContain("text-[var(--color-accent-600)]");
+    expect(scanner).not.toContain("--color-accent-400");
+  });
+});
+
+describe("Gate 11 — the red poster geometry (gap G-08-4)", () => {
+  it(`${SCANNER}: keeps the accent-red field on exactly the two poster branches (D-05 stands)`, () => {
+    expect(count(scanner, /bg-destructive/g)).toBe(2);
+  });
+
+  it(`${SCANNER}: no negative-margin or self-stretch breakout survives anywhere (Option B)`, () => {
+    expect(scanner).not.toMatch(/-mx-\d/);
+    expect(scanner).not.toMatch(/\bself-stretch\b/);
+  });
+
+  it(`${SCANNER}: both poster wrappers keep the label override that stops the mono field's label turning ink-on-red`, () => {
+    expect(count(scanner, /\[&_label\]:text-primary-foreground/g)).toBe(2);
+  });
+});
