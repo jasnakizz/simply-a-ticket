@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { ScannerClient } from "./scanner-client";
@@ -36,11 +38,26 @@ export default async function ScanPage({
   }
 
   return (
-    <div className="flex flex-col flex-1 items-center">
-      <div className="w-full max-w-md px-6 py-6 flex flex-col gap-4">
-        <h1 className="text-2xl font-semibold leading-[1.2] break-words">
-          {event.name}
-        </h1>
+    <div className="flex flex-col flex-1 items-center bg-foreground text-background">
+      <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
+        {/* D-03 Modernist header: a Back link to the event dashboard, the event
+            name as an uppercase eyebrow, and a 2px 35%-white bottom rule. Back
+            navigation is chrome, so it lives here in the Server Component and
+            the frozen scanner client is untouched for it. The eyebrow <p> is
+            unconditional — an empty event name collapses it to a bare Back row
+            rather than removing the header. */}
+        <div className="flex items-baseline justify-between gap-4 pb-3 border-b-2 border-background/35">
+          <Link
+            href={`/events/${event.id}`}
+            className="inline-flex items-center gap-1 text-[14px] font-semibold text-background hover:text-[var(--color-accent-400)]"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
+            Back
+          </Link>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-background/70 break-words text-right">
+            {event.name}
+          </p>
+        </div>
         <ScannerClient eventId={event.id} />
       </div>
     </div>

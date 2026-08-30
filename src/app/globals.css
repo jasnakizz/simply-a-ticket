@@ -159,3 +159,13 @@
     background: var(--border);
   }
 }
+
+/* D-09: keyframes for the decorative viewfinder scan line's vertical sweep. */
+@keyframes scanline {
+  from {
+    top: 8%;
+  }
+  to {
+    top: 88%;
+  }
+}

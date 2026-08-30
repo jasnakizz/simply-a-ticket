@@ -327,13 +327,19 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   const cameraActive = phase.kind === "starting" || phase.kind === "scanning";
 
   return (
-    <div className="flex flex-col flex-1 items-center justify-center gap-4">
+    <div
+      className={`flex flex-col flex-1 items-center justify-center gap-4 ${
+        phase.kind === "result"
+          ? "bg-background text-foreground"
+          : "bg-foreground text-background"
+      }`}
+    >
       {/* The video element stays mounted so its ref is available the moment
           startScan runs; it is only visible while the camera is active. */}
       <div
         className={
           cameraActive
-            ? "relative w-full max-w-md aspect-square overflow-hidden rounded-lg bg-muted"
+            ? "relative w-full max-w-[560px] aspect-square overflow-hidden bg-foreground"
             : "hidden"
         }
       >
@@ -350,19 +356,18 @@ export function ScannerClient({ eventId }: { eventId: string }) {
             <p className="text-base">Starting camera…</p>
           </div>
         )}
-        {/* Live-camera framing guide (D-12): a centred square over a darkened
-            surround. The single huge translucent-black box-shadow masks
-            everything outside the square; the container's overflow-hidden
-            clips it. Decorative only — no scanning animation is contracted
-            and it changes nothing about what decodes. */}
+        {/* D-09 / D-11: the inset framing guide sits over a darkened spotlight
+            surround that helps a door operator aim; the swept accent line is
+            decorative, motion-guarded, and changes nothing about what decodes. */}
         {phase.kind === "scanning" && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            className="pointer-events-none absolute inset-y-[12%] inset-x-[10%] border-2 border-background/25 overflow-hidden"
+            style={{ boxShadow: "0 0 0 100vmax rgba(0, 0, 0, 0.35)" }}
           >
             <div
-              className="size-2/3 aspect-square rounded-lg border-2 border-white/90"
-              style={{ boxShadow: "0 0 0 100vmax rgba(0, 0, 0, 0.35)" }}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-[8%] h-[2px] bg-primary animate-[scanline_2.2s_ease-in-out_infinite_alternate] motion-reduce:animate-none"
             />
           </div>
         )}
