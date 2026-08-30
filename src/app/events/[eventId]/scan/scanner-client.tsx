@@ -345,7 +345,7 @@ export function ScannerClient({ eventId }: { eventId: string }) {
           playsInline
         />
         {phase.kind === "starting" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-background">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-foreground">
             <LoaderCircle aria-hidden="true" className="size-8 animate-spin" />
             <p className="text-[15px] leading-[1.55]">Starting camera…</p>
           </div>
@@ -368,14 +368,14 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       </div>
 
       {phase.kind === "scanning" && (
-        <p className="text-[13px] text-background/70 text-center">
+        <p className="text-[13px] text-muted-foreground text-center">
           Point at the attendee&apos;s QR code
         </p>
       )}
 
       {(phase.kind === "idle" || phase.kind === "manual") && (
         <div className="flex w-full flex-col items-center gap-4">
-          <p className="text-[15px] text-background/70 text-center">
+          <p className="text-[15px] text-muted-foreground text-center">
             Point the camera at an attendee&apos;s ticket QR code to check them
             in.
           </p>
@@ -386,12 +386,12 @@ export function ScannerClient({ eventId }: { eventId: string }) {
             >
               Start scanning
             </Button>
-            {/* Low-key escape hatch: an accent-400 underlined disclosure link, kept subordinate to the primary scan button above it. */}
+            {/* Low-key escape hatch: an underlined disclosure link on the light-ground accent ramp step, kept subordinate to the primary scan button above it. */}
             <button
               type="button"
               onClick={() => setPhase({ kind: "manual" })}
               aria-expanded={phase.kind === "manual"}
-              className="flex min-h-11 w-full items-center justify-start gap-1 text-[14px] text-[var(--color-accent-400)] underline underline-offset-4"
+              className="flex min-h-11 w-full items-center justify-start gap-1 text-[14px] text-[var(--color-accent-600)] underline underline-offset-4"
             >
               <Keyboard aria-hidden="true" className="size-4 shrink-0" />
               {MANUAL_LINK_LABEL}
@@ -406,14 +406,13 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       )}
 
       {phase.kind === "checking" && (
-        <div className="flex flex-col items-center gap-2 text-background">
+        <div className="flex flex-col items-center gap-2 text-foreground">
           <LoaderCircle aria-hidden="true" className="size-16 animate-spin" />
           <p className="text-[15px] leading-[1.55]">Checking ticket…</p>
         </div>
       )}
 
       {phase.kind === "camera-unavailable" && (
-        <div className="w-full [&_button]:text-inherit [&_button]:border-current/40">
         <ResultShell icon={CameraOff} word="Camera unavailable" tone="stop">
           <p className="text-[15px] leading-[1.55] break-words">{CAMERA_UNAVAILABLE_BODY}</p>
           <ActionGroup>
@@ -427,12 +426,10 @@ export function ScannerClient({ eventId }: { eventId: string }) {
             <ManualTokenField onSubmit={resolveScan} />
           </div>
         </ResultShell>
-        </div>
       )}
 
       {phase.kind === "no-connection" && (
         // A failed or timed-out lookup lands here rather than hanging; its own WifiOff glyph and status word keep this state distinct, and the body reuses the frozen LOOKUP_ERROR_BODY constant.
-        <div className="w-full [&_button]:text-inherit [&_button]:border-current/40">
         <ResultShell icon={WifiOff} word="No connection" tone="stop">
           <p className="text-[15px] leading-[1.55] break-words">{LOOKUP_ERROR_BODY}</p>
           <ActionGroup>
@@ -445,7 +442,6 @@ export function ScannerClient({ eventId }: { eventId: string }) {
             <ScanNextButton onClick={startScan} />
           </ActionGroup>
         </ResultShell>
-        </div>
       )}
 
       {phase.kind === "result" && (
@@ -547,7 +543,7 @@ function ManualTokenField({
       <div className="flex w-full flex-col gap-2">
         <Label
           htmlFor="token"
-          className="text-[13px] font-semibold text-primary-foreground"
+          className="text-[13px] font-semibold text-foreground"
         >
           {MANUAL_FIELD_LABEL}
         </Label>
@@ -694,7 +690,7 @@ function ScanResultView({
 
   if (checkInState.notFound || result.kind === "not_found") {
     return (
-      <div className="w-full self-stretch -mx-4 px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
+      <div className="w-full px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_label]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
       <ResultShell icon={CircleX} word="Ticket not found" tone="stop">
         <p className="text-[15px] leading-[1.55] break-words">{NOT_FOUND_BODY}</p>
         {/* Auto-shown without a tap so staff can re-key a mistyped or misread code; the view is keyed by scanId so the next lookup remounts it and clears the field. */}
@@ -713,7 +709,7 @@ function ScanResultView({
   if (result.kind === "wrong_event") {
     // A generic sentence only — the other event is never named or queried for (D-11), so a ticket scanned at the wrong door leaks nothing about it.
     return (
-      <div className="w-full self-stretch -mx-4 px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
+      <div className="w-full px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_label]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
       <ResultShell icon={Ban} word="Wrong event" tone="stop">
         <p className="text-[15px] leading-[1.55] break-words">{WRONG_EVENT_BODY}</p>
         <ActionGroup>
