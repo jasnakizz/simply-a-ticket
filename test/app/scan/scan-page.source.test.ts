@@ -3,17 +3,25 @@ import { describe, it, expect } from "vitest";
 import { readCode } from "../pages/helpers";
 
 /**
- * PAGE-04 / D-03 source contract for the Phase 8 scan-page restyle (plan 08-01).
+ * PAGE-04 / D-03 source contract for the Phase 8 scan-page restyle
+ * (plan 08-01, revised by gap-closure plan 08-05).
  *
  * `src/app/events/[eventId]/scan/page.tsx` is the UNFROZEN Server-Component
  * shell that carries the Modernist header (Back link + uppercase event-name
- * eyebrow + 2px 35%-white rule) and the dark `bg-foreground` ground for the
- * whole pre-verdict route. It has no other mechanically checkable artifact —
- * this repo has no component-test harness (see the frozen
+ * eyebrow + 2px divider-weight rule) and the app's light `--background` ground
+ * for the whole scanner route. It has no other mechanically checkable
+ * artifact — this repo has no component-test harness (see the frozen
  * `scanner-client.source.test.ts` and `create-event.source.test.ts`, which both
  * say so explicitly). This gate is A11Y-03 "cheap insurance" for the header:
  * it fails by filename on a regression so a later restyle cannot silently drop
- * the dark ground, the SP-1 column, the ArrowLeft import, or the data path.
+ * the light ground, the SP-1 column, the ArrowLeft import, or the data path.
+ *
+ * Phase 8 originally shipped a "dark room" header treatment (light-on-dark Back
+ * link, 35%-white rule, near-black ground). UAT gap G-08-2 withdrew it: the
+ * operator wants every scanner state on the app's normal light surface, so the
+ * header now reads as an ink Back link with a light-ground accent-600 hover, a
+ * muted uppercase eyebrow, and a divider-weight bottom rule. The assertions
+ * below were rewritten to pin the light treatment.
  *
  * `readCode` strips `//` / `*` / `/*` comment lines, so a design note can
  * neither satisfy nor break a gate. Do NOT add a component-test harness.
@@ -26,8 +34,8 @@ function count(haystack: string, needle: string): number {
 }
 
 describe("PAGE-04 — scan page shell (Modernist header, D-03)", () => {
-  it("renders the pre-verdict route on the dark ground", () => {
-    expect(page).toContain("bg-foreground text-background");
+  it("renders the scanner route on the app's light surface", () => {
+    expect(page).toContain("bg-background text-foreground");
   });
 
   it("adopts the Phase 7 SP-1 content column", () => {
@@ -47,13 +55,13 @@ describe("PAGE-04 — scan page shell (Modernist header, D-03)", () => {
     expect(page).toContain("href={`/events/${event.id}`}");
   });
 
-  it("renders the event name as an uppercase letter-spaced eyebrow", () => {
+  it("renders the event name as a muted uppercase letter-spaced eyebrow on the light surface", () => {
     expect(page).toContain("uppercase tracking-[0.12em]");
-    expect(page).toContain("text-background/70");
+    expect(page).toContain("text-muted-foreground");
   });
 
-  it("carries the 2px 35%-white header bottom rule", () => {
-    expect(page).toContain("border-b-2 border-background/35");
+  it("carries the 2px divider-weight header bottom rule on the light surface", () => {
+    expect(page).toContain("border-b-2 border-border");
   });
 
   it("keeps the ArrowLeft glyph decorative and correctly sized", () => {

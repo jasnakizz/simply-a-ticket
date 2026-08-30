@@ -327,19 +327,13 @@ export function ScannerClient({ eventId }: { eventId: string }) {
   const cameraActive = phase.kind === "starting" || phase.kind === "scanning";
 
   return (
-    <div
-      className={`flex flex-col flex-1 items-center justify-center gap-4 ${
-        phase.kind === "result"
-          ? "bg-background text-foreground"
-          : "bg-foreground text-background"
-      }`}
-    >
+    <div className="flex flex-col flex-1 items-center justify-center gap-4 bg-background text-foreground">
       {/* The video element stays mounted so its ref is available the moment
           startScan runs; it is only visible while the camera is active. */}
       <div
         className={
           cameraActive
-            ? "relative w-full max-w-[560px] aspect-square overflow-hidden bg-foreground"
+            ? "relative w-full max-w-[560px] aspect-square overflow-hidden bg-muted"
             : "hidden"
         }
       >
