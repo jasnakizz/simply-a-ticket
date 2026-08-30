@@ -684,7 +684,7 @@ function ScanResultView({
       <ResultShell icon={CircleCheckBig} word="Checked in" tone="go">
         <div className="flex w-full flex-col items-center gap-1">
           <AttendeeName name={checkInState.attendeeName ?? ""} />
-          <p className="text-base">Checked in just now</p>
+          <p className="text-[15px] leading-[1.55]">Checked in just now</p>
         </div>
         <ActionGroup>
           <ScanNextButton onClick={onScanNext} />
@@ -762,22 +762,22 @@ function ScanResultView({
         <div className="flex w-full flex-col items-center gap-2">
           <AttendeeName name={result.attendeeName} />
           {result.ticketTypeName && (
-            <dl className="flex flex-col items-center gap-1">
-              <dt className="text-sm font-semibold leading-[1.4]">
-                Ticket type
-              </dt>
-              <dd className="text-base break-words">{result.ticketTypeName}</dd>
+            <dl className="flex w-full items-baseline justify-between gap-4 border-t border-current/15 py-[13px]">
+              <dt className="text-[13px] text-muted-foreground">Ticket type</dt>
+              <dd className="text-[13px] font-extrabold text-right break-words">
+                {result.ticketTypeName}
+              </dd>
             </dl>
           )}
           {/* Body size, 600 weight, md (16px) clear above and below — an
               in-scale emphasis so it reads as a call to collect money (D-15),
               not another detail row. The amount is formatted to two places
               without a numeric round-trip (see toTwoDecimals). */}
-          <p className="my-2 text-base font-semibold leading-[1.5] break-words">
+          <p className="w-full bg-[var(--color-surface)] px-4 py-4 text-left text-[26px] font-extrabold leading-[1.05] tracking-[-0.02em] break-words">
             Balance due: {balanceDisplay} {result.balanceCurrency}
           </p>
           {checkInState.formError && (
-            <p role="alert" className="text-base text-destructive break-words">
+            <p role="alert" className="text-[15px] text-destructive break-words">
               {checkInState.formError}
             </p>
           )}
@@ -797,7 +797,7 @@ function ScanResultView({
                 checked={paymentCollected}
                 onCheckedChange={(value) => setPaymentCollected(value === true)}
               />
-              <span className="text-sm font-semibold leading-[1.4]">
+              <span className="text-[13px] font-semibold leading-[1.4]">
                 Payment collected
               </span>
             </label>
@@ -808,7 +808,12 @@ function ScanResultView({
             {paymentCollected && (
               <div className="flex w-full flex-col gap-4">
                 <div className="flex w-full flex-col gap-2">
-                  <Label htmlFor="collected_amount">Amount collected</Label>
+                  <Label
+                    htmlFor="collected_amount"
+                    className="text-[13px] font-semibold"
+                  >
+                    Amount collected
+                  </Label>
                   <Input
                     id="collected_amount"
                     name="collected_amount"
@@ -822,7 +827,12 @@ function ScanResultView({
                   )}
                 </div>
                 <div className="flex w-full flex-col gap-2">
-                  <Label htmlFor="collected_currency">Currency</Label>
+                  <Label
+                    htmlFor="collected_currency"
+                    className="text-[13px] font-semibold"
+                  >
+                    Currency
+                  </Label>
                   {/* key tied to the echoed value so a rejected submit
                       re-applies the staff member's choice rather than
                       snapping back — same remount trick as the order form. */}
@@ -851,7 +861,7 @@ function ScanResultView({
             <Button
               type="submit"
               disabled={!paymentCollected || checkInPending}
-              className="min-h-11 w-full"
+              className="min-h-[52px] w-full justify-start text-left"
             >
               {checkInPending ? "Checking in…" : "Mark as paid & check in"}
             </Button>
@@ -869,13 +879,15 @@ function ScanResultView({
       <div className="flex w-full flex-col items-center gap-2">
         <AttendeeName name={result.attendeeName} />
         {result.ticketTypeName && (
-          <dl className="flex flex-col items-center gap-1">
-            <dt className="text-sm font-semibold leading-[1.4]">Ticket type</dt>
-            <dd className="text-base break-words">{result.ticketTypeName}</dd>
+          <dl className="flex w-full items-baseline justify-between gap-4 border-t border-current/15 py-[13px]">
+            <dt className="text-[13px] text-muted-foreground">Ticket type</dt>
+            <dd className="text-[13px] font-extrabold text-right break-words">
+              {result.ticketTypeName}
+            </dd>
           </dl>
         )}
         {checkInState.formError && (
-          <p role="alert" className="text-base text-destructive break-words">
+          <p role="alert" className="text-[15px] text-destructive break-words">
             {checkInState.formError}
           </p>
         )}
@@ -887,7 +899,7 @@ function ScanResultView({
           <Button
             type="submit"
             disabled={checkInPending}
-            className="min-h-11 w-full"
+            className="min-h-[52px] w-full justify-start text-left"
           >
             {checkInPending ? "Checking in…" : "Check in"}
           </Button>
