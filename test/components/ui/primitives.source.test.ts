@@ -222,6 +222,16 @@ describe("DS-03 variants — the empty probe", () => {
     expect(btn).toContain("var(--color-accent-600)");
     expect(btn).toContain("var(--color-accent-700)");
   });
+
+  it("pins the ghost variant text colour to the accent-700 contrast step (D-02 / 08-REVIEW WR-01)", () => {
+    // Extract the ghost value first: the whole-file text already contains
+    // text-[var(--color-accent-700)] via the default variant's active bg, so a
+    // bare toContain against btn would pass even with the swap reverted.
+    const ghostClasses = btn.match(/ghost:\s*\n?\s*"([^"]*)"/)?.[1] ?? "";
+    expect(ghostClasses).not.toBe("");
+    expect(ghostClasses).toContain("text-[var(--color-accent-700)]");
+    expect(ghostClasses).not.toMatch(/\btext-primary\b/);
+  });
 });
 
 describe("DS-03 encoding probe — className stays the last cn() argument", () => {

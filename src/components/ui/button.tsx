@@ -14,8 +14,13 @@ const buttonVariants = cva(
           "border-border bg-transparent hover:bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] active:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)] aria-expanded:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)] aria-expanded:text-foreground",
         secondary:
           "border-border bg-transparent hover:bg-[color-mix(in_srgb,var(--foreground)_7%,transparent)] active:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)] aria-expanded:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)] aria-expanded:text-foreground",
+        // On the light ground, accent-coloured text under 24px or non-bold uses
+        // the accent-700 ramp step: the accent role measures about 3.4:1 and the
+        // 600 step about 4.28:1 against the ground, both under AA's 4.5:1 for
+        // normal-size text; the 700 step clears it at about 6.4:1. The 600 step
+        // stays the hover/active fill. Ref D-02 / 08-REVIEW item WR-01.
         ghost:
-          "text-primary hover:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] active:bg-[color-mix(in_srgb,var(--primary)_18%,transparent)] aria-expanded:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]",
+          "text-[var(--color-accent-700)] hover:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] active:bg-[color-mix(in_srgb,var(--primary)_18%,transparent)] aria-expanded:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20",
         link: "text-primary underline-offset-4 hover:underline",
