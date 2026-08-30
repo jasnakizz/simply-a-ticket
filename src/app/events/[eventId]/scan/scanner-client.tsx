@@ -548,7 +548,12 @@ function ManualTokenField({
       }}
     >
       <div className="flex w-full flex-col gap-2">
-        <Label htmlFor="token">{MANUAL_FIELD_LABEL}</Label>
+        <Label
+          htmlFor="token"
+          className="text-[13px] font-semibold text-primary-foreground"
+        >
+          {MANUAL_FIELD_LABEL}
+        </Label>
         <Input
           id="token"
           name="token"
@@ -560,10 +565,13 @@ function ManualTokenField({
           spellCheck={false}
           autoFocus={autoFocus}
           placeholder={MANUAL_FIELD_PLACEHOLDER}
-          className="min-h-11"
+          className="min-h-14 w-full font-mono text-[18px] font-semibold tracking-[0.12em] text-foreground"
         />
       </div>
-      <Button type="submit" className="min-h-11 w-full">
+      <Button
+        type="submit"
+        className="min-h-14 w-full justify-start text-left"
+      >
         {MANUAL_SUBMIT_LABEL}
       </Button>
     </form>
