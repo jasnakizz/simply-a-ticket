@@ -26,6 +26,8 @@ function count(haystack: string, needle: string): number {
 }
 
 const err = readCode("src/app/events/error.tsx");
+const notFound = readCode("src/app/not-found.tsx");
+const globalErr = readCode("src/app/global-error.tsx");
 
 describe("ERR-01 — src/app/events/error.tsx", () => {
   it("is a Client Component (every error boundary must be)", () => {
@@ -83,5 +85,119 @@ describe("ERR-01 — src/app/events/error.tsx", () => {
     expect(err).not.toMatch(/rounded-[a-z]/);
     expect(err).not.toMatch(/\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/);
     expect(err).not.toMatch(/\bdark:/);
+  });
+});
+
+describe("ERR-02 — src/app/not-found.tsx", () => {
+  it("is a Server Component (no use-client directive)", () => {
+    expect(notFound).not.toMatch(/["']use client["']/);
+  });
+
+  it("receives no boundary recovery prop — a 404 gets none", () => {
+    expect(notFound).not.toMatch(/\b(reset|retry)\b/);
+  });
+
+  it("echoes nothing about the request — no pathname hook, no headers, no search params (reflected-content control)", () => {
+    expect(notFound).not.toMatch(/usePathname/);
+    expect(notFound).not.toMatch(/headers\(/);
+    expect(notFound).not.toMatch(/searchParams/);
+  });
+
+  it("has exactly one <h1>", () => {
+    expect(count(notFound, "<h1")).toBe(1);
+  });
+
+  it("uses the app-wide SP-1 content shell and one min-h-[52px] recovery band", () => {
+    expect(notFound).toContain("max-w-[560px] px-4 py-6");
+    expect(count(notFound, "min-h-[52px]")).toBe(1);
+  });
+
+  it("styles the single recovery link with the default buttonVariants call", () => {
+    expect(notFound).toMatch(/buttonVariants\(\{\s*variant:\s*["']default["']/);
+  });
+
+  it("carries the D-04 approved copy verbatim", () => {
+    expect(notFound).toContain("PAGE NOT FOUND");
+    expect(notFound).toContain("This page doesn&apos;t exist");
+    expect(notFound).toContain("The link may be broken, or the page may have moved.");
+  });
+
+  it("holds the tree-wide token discipline (DS-06 + the token-name rule)", () => {
+    expect(notFound).not.toMatch(/#[0-9a-fA-F]{6}\b/);
+    expect(notFound).not.toMatch(/var\(--color-(accent|primary|foreground|border)\)/);
+    expect(notFound).not.toMatch(/rounded-[a-z]/);
+    expect(notFound).not.toMatch(/\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/);
+    expect(notFound).not.toMatch(/\bdark:/);
+  });
+});
+
+describe("ERR-03 — src/app/global-error.tsx", () => {
+  it("is a Client Component that renders its own document root and body", () => {
+    expect(globalErr).toMatch(/["']use client["']/);
+    expect(count(globalErr, "<html")).toBe(1);
+    expect(count(globalErr, "<body")).toBe(1);
+  });
+
+  it("re-establishes the style context — imports the global stylesheet and the framework font loader", () => {
+    expect(globalErr).toContain('import "./globals.css"');
+    expect(globalErr).toMatch(/next\/font\/google/);
+  });
+
+  it("never reads the caught object's message / stack / name (ASVS V7 leak guard)", () => {
+    expect(globalErr).not.toMatch(/error\.(message|stack|name)/);
+  });
+
+  it("surfaces only the opaque digest, and only when it is truthy", () => {
+    expect(globalErr).toMatch(/error\.digest &&/);
+  });
+
+  it("uses the same boundary recovery prop name as src/app/events/error.tsx (D-05)", () => {
+    const errProp = err.match(/\b(retry|reset)\b/)?.[0];
+    const globalProp = globalErr.match(/\b(retry|reset)\b/)?.[0];
+    expect(errProp).toBeDefined();
+    expect(globalProp).toBe(errProp);
+  });
+
+  it("secondary action is a plain anchor, not the router link component", () => {
+    expect(globalErr).not.toMatch(/from ["']next\/link["']/);
+  });
+
+  it("exports no metadata (unsupported in a Client Component)", () => {
+    expect(globalErr).not.toMatch(/export const metadata/);
+    expect(globalErr).not.toMatch(/generateMetadata/);
+  });
+
+  it("has exactly one <h1> and two min-h-[52px] recovery bands", () => {
+    expect(count(globalErr, "<h1")).toBe(1);
+    expect(count(globalErr, "min-h-[52px]")).toBe(2);
+  });
+
+  it("uses the app-wide SP-1 content shell", () => {
+    expect(globalErr).toContain("max-w-[560px] px-4 py-6");
+  });
+
+  it("authors the secondary anchor on the corrected accent ramp step (D-02)", () => {
+    expect(globalErr).toContain("text-[var(--color-accent-700)]");
+  });
+
+  it("holds the token discipline MINUS the blanket no-raw-hex rule — see the tighter rule below", () => {
+    expect(globalErr).not.toMatch(/var\(--color-(accent|primary|foreground|border)\)/);
+    expect(globalErr).not.toMatch(/rounded-[a-z]/);
+    expect(globalErr).not.toMatch(/\btext-(xs|sm|base|lg|xl|[2-9]xl)\b/);
+    expect(globalErr).not.toMatch(/\bdark:/);
+    expect(globalErr).not.toContain('variant: "ghost"');
+  });
+
+  // The blanket no-raw-hex negative assertion is deliberately NOT applied to
+  // global-error.tsx: this screen legitimately carries the phase's one
+  // sanctioned inline hex pair (the ground/ink <body> fallback for a degraded
+  // render). A blanket ban would be self-defeating. It is replaced by a
+  // STRICTER rule — exactly two six-digit hex literals, and both must be the
+  // ground and ink values — which permits the sanctioned pair and forbids a
+  // third literal creeping in.
+  it("carries exactly the two sanctioned fallback hex literals and no third", () => {
+    const hexes = globalErr.match(/#[0-9a-fA-F]{6}\b/g) ?? [];
+    expect(hexes).toHaveLength(2);
+    expect(new Set(hexes)).toEqual(new Set(["#f3f2f2", "#201e1d"]));
   });
 });
