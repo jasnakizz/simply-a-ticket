@@ -209,8 +209,15 @@ describe("Gate 10 — the light scanner ground (gap G-08-2)", () => {
     expect(scanner).toContain("aspect-square overflow-hidden bg-muted");
   });
 
-  it(`${SCANNER}: the manual disclosure link uses the light-ground accent ramp step (accent-600, not accent-400)`, () => {
-    expect(scanner).toContain("text-[var(--color-accent-600)]");
+  // 08-05 pinned this link at the accent-600 step; Phase 9 D-02 / 08-REVIEW
+  // WR-01 moved it to accent-700 for AA contrast on the light ground (accent-600
+  // measures ~4.28:1 at 14px non-bold, under 4.5:1; accent-700 ~6.4:1). The
+  // negative side now excludes BOTH the withdrawn dark-room 400 step and the
+  // superseded 600 step, so a revert to either fails here rather than passing
+  // silently.
+  it(`${SCANNER}: the manual disclosure link uses the light-ground accent ramp step (accent-700, not accent-600 and not accent-400)`, () => {
+    expect(scanner).toContain("text-[var(--color-accent-700)]");
+    expect(scanner).not.toContain("text-[var(--color-accent-600)]");
     expect(scanner).not.toContain("--color-accent-400");
   });
 });

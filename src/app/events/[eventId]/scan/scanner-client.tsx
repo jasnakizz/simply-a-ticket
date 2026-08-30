@@ -391,7 +391,7 @@ export function ScannerClient({ eventId }: { eventId: string }) {
               type="button"
               onClick={() => setPhase({ kind: "manual" })}
               aria-expanded={phase.kind === "manual"}
-              className="flex min-h-11 w-full items-center justify-start gap-1 text-[14px] text-[var(--color-accent-600)] underline underline-offset-4"
+              className="flex min-h-11 w-full items-center justify-start gap-1 text-[14px] text-[var(--color-accent-700)] underline underline-offset-4"
             >
               <Keyboard aria-hidden="true" className="size-4 shrink-0" />
               {MANUAL_LINK_LABEL}
