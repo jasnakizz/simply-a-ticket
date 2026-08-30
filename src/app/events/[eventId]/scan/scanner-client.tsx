@@ -351,9 +351,9 @@ export function ScannerClient({ eventId }: { eventId: string }) {
           playsInline
         />
         {phase.kind === "starting" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-background">
             <LoaderCircle aria-hidden="true" className="size-8 animate-spin" />
-            <p className="text-base">Starting camera…</p>
+            <p className="text-[15px] leading-[1.55]">Starting camera…</p>
           </div>
         )}
         {/* D-09 / D-11: the inset framing guide sits over a darkened spotlight
@@ -374,32 +374,30 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       </div>
 
       {phase.kind === "scanning" && (
-        <p className="text-base text-muted-foreground text-center">
+        <p className="text-[13px] text-background/70 text-center">
           Point at the attendee&apos;s QR code
         </p>
       )}
 
       {(phase.kind === "idle" || phase.kind === "manual") && (
         <div className="flex w-full flex-col items-center gap-4">
-          <p className="text-base text-muted-foreground text-center">
+          <p className="text-[15px] text-background/70 text-center">
             Point the camera at an attendee&apos;s ticket QR code to check them
             in.
           </p>
           <div className="flex w-full flex-col items-center gap-2">
-            <Button onClick={startScan} className="min-h-11 w-full">
+            <Button
+              onClick={startScan}
+              className="min-h-[52px] w-full justify-start text-left"
+            >
               Start scanning
             </Button>
-            {/* D-01: the manual fallback is reached from idle via a disclosure
-                link — the common SCAN-03 case is a working camera and one code
-                that will not decode, not a broken camera. Lower-priority
-                escape hatch: --foreground underlined link text, never the
-                accent fill reserved for primary buttons (04-UI-SPEC Color).
-                sm (8px) gap below "Start scanning". */}
+            {/* Low-key escape hatch: an accent-400 underlined disclosure link, kept subordinate to the primary scan button above it. */}
             <button
               type="button"
               onClick={() => setPhase({ kind: "manual" })}
               aria-expanded={phase.kind === "manual"}
-              className="flex min-h-11 w-full items-center justify-center gap-1 text-base text-foreground underline underline-offset-4"
+              className="flex min-h-11 w-full items-center justify-start gap-1 text-[14px] text-[var(--color-accent-400)] underline underline-offset-4"
             >
               <Keyboard aria-hidden="true" className="size-4 shrink-0" />
               {MANUAL_LINK_LABEL}
@@ -414,9 +412,9 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       )}
 
       {phase.kind === "checking" && (
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-2 text-background">
           <LoaderCircle aria-hidden="true" className="size-16 animate-spin" />
-          <p className="text-base">Checking ticket…</p>
+          <p className="text-[15px] leading-[1.55]">Checking ticket…</p>
         </div>
       )}
 
