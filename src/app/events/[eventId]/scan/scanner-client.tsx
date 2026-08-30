@@ -700,33 +700,33 @@ function ScanResultView({
 
   if (checkInState.notFound || result.kind === "not_found") {
     return (
+      <div className="w-full self-stretch -mx-4 px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
       <ResultShell icon={CircleX} word="Ticket not found" tone="stop">
-        <p className="text-base break-words">{NOT_FOUND_BODY}</p>
-        {/* D-01: auto-shown (no tap) so staff can immediately re-key a
-            mistyped or misread code. No autoFocus (same reason as Camera
-            unavailable). ScanResultView is keyed by scanId, so the next
-            lookup remounts it and the field resets — no manual clearing. */}
+        <p className="text-[15px] leading-[1.55] break-words">{NOT_FOUND_BODY}</p>
+        {/* Auto-shown without a tap so staff can re-key a mistyped or misread code; the view is keyed by scanId so the next lookup remounts it and clears the field. */}
         <div className="flex w-full flex-col gap-2">
-          <p className="text-base break-words">{MANUAL_HELPER}</p>
+          <p className="text-[15px] leading-[1.55] break-words">{MANUAL_HELPER}</p>
           <ManualTokenField onSubmit={onManualSubmit} />
         </div>
         <ActionGroup>
           <ScanNextButton onClick={onScanNext} />
         </ActionGroup>
       </ResultShell>
+      </div>
     );
   }
 
   if (result.kind === "wrong_event") {
-    // Generic sentence only — the other event is never named and never
-    // queried for (D-11), so a ticket scanned at the wrong door leaks nothing.
+    // A generic sentence only — the other event is never named or queried for (D-11), so a ticket scanned at the wrong door leaks nothing about it.
     return (
+      <div className="w-full self-stretch -mx-4 px-4 py-8 bg-destructive text-primary-foreground [&_svg]:text-primary-foreground [&>div>p]:text-primary-foreground [&_button]:bg-primary-foreground [&_button]:text-destructive [&_button]:border-current/40">
       <ResultShell icon={Ban} word="Wrong event" tone="stop">
-        <p className="text-base break-words">{WRONG_EVENT_BODY}</p>
+        <p className="text-[15px] leading-[1.55] break-words">{WRONG_EVENT_BODY}</p>
         <ActionGroup>
           <ScanNextButton onClick={onScanNext} />
         </ActionGroup>
       </ResultShell>
+      </div>
     );
   }
 
