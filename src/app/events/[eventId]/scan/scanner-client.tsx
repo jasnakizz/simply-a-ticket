@@ -614,26 +614,36 @@ function AlreadyCheckedIn({
   const hasTimestamp =
     checkedInAt !== "" && !Number.isNaN(new Date(checkedInAt).getTime());
   return (
+    // Phase 6 D-05: nothing is wrong here — the ticket was simply used. The
+    // wrapper overrides the frozen tone="stop" red with --color-neutral-800
+    // (#444141) on the glyph and the status word only. [&_svg] is a descendant
+    // selector; [&>div>p] reaches ResultShell's own status-word <p> (wrapper →
+    // ResultShell's outer <div> → its direct <p>) and NOT the body paragraphs,
+    // which sit one level deeper inside the children wrapper. Descendant
+    // specificity (0,1,1) beats the utility (0,1,0) — no !important, frozen tag
+    // untouched. Ink GO / neutral-800 used / red STOP stay three greyscale values.
+    <div className="w-full [&_svg]:text-[var(--color-neutral-800)] [&>div>p]:text-[var(--color-neutral-800)]">
     <ResultShell icon={CircleAlert} word="Already checked in" tone="stop">
       <div className="flex w-full flex-col items-center gap-1">
         <AttendeeName name={name} />
         {hasTimestamp ? (
           <>
-            <p className="text-base">
+            <p className="text-[15px] leading-[1.55]">
               Checked in {formatRelativeTime(checkedInAt)}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               {formatCheckInTimestamp(checkedInAt)}
             </p>
           </>
         ) : (
-          <p className="text-base">Checked in earlier</p>
+          <p className="text-[15px] leading-[1.55]">Checked in earlier</p>
         )}
       </div>
       <ActionGroup>
         <ScanNextButton onClick={onScanNext} />
       </ActionGroup>
     </ResultShell>
+    </div>
   );
 }
 
