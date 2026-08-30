@@ -41,25 +41,32 @@ export default async function ScanPage({
     <div className="flex flex-col flex-1 items-center bg-background text-foreground">
       <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
         {/* D-03 Modernist header: a Back link to the event dashboard, the event
-            name as an uppercase eyebrow, and a divider-weight bottom rule on the
-            app's light surface. Back navigation is chrome, so it lives here in
-            the Server Component and the frozen scanner client is untouched for
-            it. The eyebrow <p> is unconditional — an empty event name collapses
-            it to a bare Back row rather than removing the header. This header
-            deliberately overrides D-03's light-on-dark treatment per UAT gap
-            G-08-2: the near-black ground was withdrawn and the header now reads
-            on the light surface. */}
+            name as an uppercase eyebrow heading, and a divider-weight bottom
+            rule on the app's light surface. Back navigation is chrome, so it
+            lives here in the Server Component and the frozen scanner client is
+            untouched for it. The eyebrow heading is unconditional — an empty
+            event name collapses it to a bare Back row rather than removing the
+            header. This header deliberately overrides D-03's light-on-dark
+            treatment per UAT gap G-08-2: the near-black ground was withdrawn and
+            the header now reads on the light surface. Phase 9 D-03 / 08-REVIEW
+            WR-02: the eyebrow is a heading element (not a paragraph) so
+            screen-reader heading navigation lands on the screen's real title;
+            the class string is byte-identical, so there is zero visual change.
+            The visually-hidden-heading alternative was rejected because the
+            eyebrow IS the screen's title — duplicating the name in the DOM would
+            be worse. Phase 9 D-02 / 08-REVIEW WR-01: the Back-link hover colour
+            moved to the deeper accent step for AA contrast on the light ground. */}
         <div className="flex items-baseline justify-between gap-4 pb-3 border-b-2 border-border">
           <Link
             href={`/events/${event.id}`}
-            className="inline-flex items-center gap-1 text-[14px] font-semibold text-foreground hover:text-[var(--color-accent-600)]"
+            className="inline-flex items-center gap-1 text-[14px] font-semibold text-foreground hover:text-[var(--color-accent-700)]"
           >
             <ArrowLeft aria-hidden="true" className="size-4 shrink-0" />
             Back
           </Link>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground break-words text-right">
+          <h1 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground break-words text-right">
             {event.name}
-          </p>
+          </h1>
         </div>
         <ScannerClient eventId={event.id} />
       </div>

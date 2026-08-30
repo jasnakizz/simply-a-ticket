@@ -19,9 +19,16 @@ import { readCode } from "../pages/helpers";
  * Phase 8 originally shipped a "dark room" header treatment (light-on-dark Back
  * link, 35%-white rule, near-black ground). UAT gap G-08-2 withdrew it: the
  * operator wants every scanner state on the app's normal light surface, so the
- * header now reads as an ink Back link with a light-ground accent-600 hover, a
+ * header now reads as an ink Back link with a light-ground accent hover, a
  * muted uppercase eyebrow, and a divider-weight bottom rule. The assertions
  * below were rewritten to pin the light treatment.
+ *
+ * Phase 9 (plan 09-03, WR-02 / D-03): the event-name eyebrow was promoted from
+ * a paragraph to an <h1> heading element with a byte-identical class string, so
+ * screen-reader heading navigation lands on the screen's real title with zero
+ * visual change (A11Y-02). Phase 9 (WR-01 / D-02): the Back-link hover colour
+ * moved from the accent-600 step to the deeper accent-700 step for AA contrast
+ * on the light ground — previously unpinned here, now pinned positive+negative.
  *
  * `readCode` strips `//` / `*` / `/*` comment lines, so a design note can
  * neither satisfy nor break a gate. Do NOT add a component-test harness.
@@ -55,9 +62,17 @@ describe("PAGE-04 — scan page shell (Modernist header, D-03)", () => {
     expect(page).toContain("href={`/events/${event.id}`}");
   });
 
-  it("renders the event name as a muted uppercase letter-spaced eyebrow on the light surface", () => {
-    expect(page).toContain("uppercase tracking-[0.12em]");
-    expect(page).toContain("text-muted-foreground");
+  it("renders the event name as the screen's single <h1>, keeping the muted uppercase letter-spaced eyebrow class string (WR-02 / D-03)", () => {
+    expect(count(page, "<h1")).toBe(1);
+    const start = page.indexOf("<h1");
+    const h1Tag = page.slice(start, page.indexOf(">", start) + 1);
+    expect(h1Tag).toContain("uppercase tracking-[0.12em]");
+    expect(h1Tag).toContain("text-muted-foreground");
+  });
+
+  it("moves the Back-link hover colour to the accent-700 contrast step (WR-01 / D-02)", () => {
+    expect(page).toContain("hover:text-[var(--color-accent-700)]");
+    expect(page).not.toContain("color-accent-600");
   });
 
   it("carries the 2px divider-weight header bottom rule on the light surface", () => {
