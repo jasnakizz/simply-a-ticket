@@ -97,7 +97,7 @@ const CHECKIN_NETWORK_ERROR =
 // stays reserved for the STOP-family result states and a server failure.
 function FieldError({ message }: { message: string }) {
   return (
-    <p role="alert" className="flex items-center gap-1 text-sm text-foreground">
+    <p role="alert" className="flex items-center gap-1 text-[13px] text-foreground">
       <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
       {message}
     </p>
@@ -495,7 +495,7 @@ function ResultShell({
     <div className="flex w-full flex-col items-center text-center">
       {/* glyph → status word: sm (8px) */}
       <Icon aria-hidden="true" className={`size-16 ${toneClass}`} />
-      <p className={`mt-2 text-[2rem] font-semibold leading-[1.2] ${toneClass}`}>
+      <p className={`mt-3 text-[34px] font-extrabold leading-[1.05] tracking-[-0.03em] ${toneClass}`}>
         {word}
       </p>
       {/* status word → detail: md (16px); detail → actions: lg (24px) */}
@@ -509,12 +509,20 @@ function ResultShell({
 // The action column at the foot of every result state: full-width, ≥44px
 // controls stacked with an sm (8px) gap (primary action → "Scan next").
 function ActionGroup({ children }: { children: ReactNode }) {
-  return <div className="flex w-full flex-col gap-2">{children}</div>;
+  return (
+    <div className="flex w-full flex-col gap-2 border-t-2 border-current/25 pt-4">
+      {children}
+    </div>
+  );
 }
 
 function ScanNextButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button variant="outline" onClick={onClick} className="min-h-11 w-full">
+    <Button
+      variant="outline"
+      onClick={onClick}
+      className="min-h-[52px] w-full justify-start text-left"
+    >
       Scan next
     </Button>
   );
@@ -583,7 +591,9 @@ function AttendeeName({ name }: { name: string }) {
   // Heading scale (24px/600) per the Typography usage map, wrapping rather
   // than clipping a long name (break-words, reused from the confirmation page).
   return (
-    <p className="text-2xl font-semibold leading-[1.2] break-words">{name}</p>
+    <p className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em] break-words">
+      {name}
+    </p>
   );
 }
 
