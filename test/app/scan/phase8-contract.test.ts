@@ -139,8 +139,9 @@ describe("Gate 6 — D-05, no scanner toast", () => {
 });
 
 describe("Gate 7 — the scan-line animation is wired on both sides", () => {
-  it(`${GLOBALS}: declares a @keyframes rule named scanline`, () => {
-    expect(globals).toMatch(/@keyframes\s+scanline\b/);
+  it(`${GLOBALS}: declares a @keyframes rule named exactly scanline (a rename to scanline-* must fail here)`, () => {
+    expect(globals).toMatch(/@keyframes\s+scanline\s*\{/);
+    expect(globals).not.toMatch(/@keyframes\s+scanline-/);
   });
 
   it(`${SCANNER}: consumes animate-[scanline_2.2s_ease-in-out_infinite_alternate]`, () => {
