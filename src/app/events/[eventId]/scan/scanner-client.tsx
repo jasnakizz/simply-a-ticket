@@ -419,44 +419,39 @@ export function ScannerClient({ eventId }: { eventId: string }) {
       )}
 
       {phase.kind === "camera-unavailable" && (
+        <div className="w-full [&_button]:text-inherit [&_button]:border-current/40">
         <ResultShell icon={CameraOff} word="Camera unavailable" tone="stop">
-          <p className="text-base break-words">{CAMERA_UNAVAILABLE_BODY}</p>
+          <p className="text-[15px] leading-[1.55] break-words">{CAMERA_UNAVAILABLE_BODY}</p>
           <ActionGroup>
-            <Button onClick={startScan} className="min-h-11 w-full">
+            <Button onClick={startScan} className="min-h-[52px] w-full justify-start text-left">
               Try again
             </Button>
           </ActionGroup>
-          {/* D-01 (supersedes Phase 3 D-10): one of the two screens where the
-              manual field is shown WITHOUT a tap. lg (24px) gap below the
-              action group (the ResultShell children gap). No autoFocus here —
-              raising the on-screen keyboard would cover the CameraOff glyph
-              and the status word the operator is still reading; the field is
-              visible and one tap away. */}
+          {/* Shown without a tap and without moving focus, so the on-screen keyboard does not cover the glyph and status word the operator is still reading. */}
           <div className="flex w-full flex-col gap-2">
-            <p className="text-base break-words">{MANUAL_HELPER}</p>
+            <p className="text-[15px] leading-[1.55] break-words">{MANUAL_HELPER}</p>
             <ManualTokenField onSubmit={resolveScan} />
           </div>
         </ResultShell>
+        </div>
       )}
 
       {phase.kind === "no-connection" && (
-        // SCAN-05 / D-06: a failed, rejected, or timed-out lookup lands here
-        // instead of hanging on "Checking ticket…". Its own glyph (WifiOff)
-        // and status word ("No connection") keep the one-unique-pair-per-state
-        // rule (SCAN-04). The body is the existing LOOKUP_ERROR_BODY constant
-        // verbatim — no user-visible string churn, and never a raw error.
+        // A failed or timed-out lookup lands here rather than hanging; its own WifiOff glyph and status word keep this state distinct, and the body reuses the frozen LOOKUP_ERROR_BODY constant.
+        <div className="w-full [&_button]:text-inherit [&_button]:border-current/40">
         <ResultShell icon={WifiOff} word="No connection" tone="stop">
-          <p className="text-base break-words">{LOOKUP_ERROR_BODY}</p>
+          <p className="text-[15px] leading-[1.55] break-words">{LOOKUP_ERROR_BODY}</p>
           <ActionGroup>
             <Button
               onClick={() => resolveScan(phase.token)}
-              className="min-h-11 w-full"
+              className="min-h-[52px] w-full justify-start text-left"
             >
               Try again
             </Button>
             <ScanNextButton onClick={startScan} />
           </ActionGroup>
         </ResultShell>
+        </div>
       )}
 
       {phase.kind === "result" && (
