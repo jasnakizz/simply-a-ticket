@@ -5,8 +5,8 @@
 |---|---|---|
 | id | uuid, pk | |
 | name | text | |
-| description | text | |
-| event_date | timestamptz | |
+| starts_at | timestamptz | date-only, stored UTC midnight (toUtcMidnightIso). NOT NULL. Backfilled from the retired single date column in migration 0005 for every pre-existing row; a single-day event has ends_at equal to starts_at. Indexed (events_starts_at_idx) because every event list read sorts on it |
+| ends_at | timestamptz | date-only, stored UTC midnight. NOT NULL. Equal to starts_at for a single-day event; later for a multi-day one. An operator wanting a multi-day span on an existing event edits this value directly in the Supabase table editor — there is no in-app event editing |
 | location | text | |
 | created_at | timestamptz | default now() |
 
@@ -40,6 +40,14 @@
 
 ## Notes
 
+- The `events.description` column was removed in Phase 12 (EVENT-V4-02,
+  12-CONTEXT.md decision D-03) — the create-event form no longer collects
+  it and no event screen renders it. `ticket_types.description` is a
+  different column on a different table and is unaffected by that removal.
+- `events.starts_at` and `events.ends_at` are date-only by convention —
+  stored as UTC-midnight `timestamptz` values with no meaningful
+  time-of-day component. A future time-of-day requirement (`EVENT-Vx-02`)
+  is deferred, not designed for here.
 - `qr_token` must be a separate random value from `id` — never encode the
   raw database id in a QR code that a stranger could photograph and reuse
   to probe the API.
