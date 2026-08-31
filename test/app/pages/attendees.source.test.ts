@@ -200,3 +200,153 @@ describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one sh
     expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+/**
+ * D-12 (plan 11-02) — the per-row check-in mark: a Belgrade-pinned wall-clock
+ * time, a guarded timestamp, a green 4px left bar, and no fourth badge variant.
+ *
+ * `attendees` is the comment-stripped source (helpers.readCode), so a design
+ * note in the file can neither satisfy nor break a gate. Every `it` is named
+ * for the single property it protects; each was proven to fail BY NAME via a
+ * one-line break-check recorded in 11-02-SUMMARY.md.
+ */
+describe("D-12 — the row check-in mark is pinned to the Belgrade wall clock and a guarded timestamp", () => {
+  const badge = readCode("src/components/ui/badge.tsx");
+
+  it("imports formatCheckInClock from the date module and neither of the other two time helpers", () => {
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bformatCheckInClock\b[^}]*\}\s*from\s*"@\/lib\/date"/,
+    );
+    expect(attendees).not.toContain("formatRelativeTime");
+    expect(attendees).not.toContain("formatCheckInTimestamp");
+  });
+
+  it("guards the check-in timestamp with the string-and-parseable-instant shape before it ever calls the formatter", () => {
+    const guardIdx = attendees.search(/typeof checkedInAt === "string"/);
+    const emptyIdx = attendees.search(/checkedInAt !== ""/);
+    const parseIdx = attendees.search(
+      /!Number\.isNaN\(new Date\(checkedInAt\)\.getTime\(\)\)/,
+    );
+    const callIdx = attendees.search(/formatCheckInClock\(checkedInAt\)/);
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(emptyIdx).toBeGreaterThan(-1);
+    expect(parseIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(guardIdx);
+    expect(callIdx).toBeGreaterThan(parseIdx);
+  });
+
+  it("calls the wall-clock formatter from exactly one site, on the true side of the guard, with : null as the else", () => {
+    expect((attendees.match(/formatCheckInClock\(/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(
+      /\?\s*formatCheckInClock\(checkedInAt\)\s*:\s*null/,
+    );
+  });
+
+  it("drives the green bar and the check-in line off the same fact (isCheckedIn) so a bar without a time is unreachable", () => {
+    expect(attendees).toMatch(/const isCheckedIn = checkInClock !== null/);
+    expect(attendees).toMatch(
+      /isCheckedIn\s+\?\s+"border-l-\[var\(--color-checked-in\)\]"/,
+    );
+    expect(attendees).toMatch(/\{isCheckedIn \? \(/);
+  });
+
+  it("renders the check-in phrase and the not-arrived phrase from the UI-SPEC verbatim, exactly once each", () => {
+    expect((attendees.match(/Checked in \{checkInClock\}/g) ?? []).length).toBe(
+      1,
+    );
+    expect((attendees.match(/Not arrived/g) ?? []).length).toBe(1);
+  });
+
+  it("carries both the coloured and the transparent 4px left-border class so alignment holds in both states", () => {
+    expect(attendees).toContain("border-l-4");
+    expect(attendees).toContain("border-l-[var(--color-checked-in)]");
+    expect(attendees).toContain("border-l-transparent");
+  });
+
+  it("references the checked-in colour only through the custom property — no six-digit hex literal in the file", () => {
+    expect(attendees).not.toMatch(/#[0-9a-fA-F]{6}/);
+    expect(
+      (attendees.match(/var\(--color-checked-in\)/g) ?? []).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("adds no fourth Badge variant — the page uses only variant=\"neutral\" and the Badge component keeps its three shipped variants", () => {
+    const badgeAttrs = attendees.match(/variant="[a-z-]+"/g) ?? [];
+    expect(badgeAttrs.length).toBeGreaterThanOrEqual(1);
+    expect(badgeAttrs.every((v) => v === 'variant="neutral"')).toBe(true);
+    expect(badge).toMatch(
+      /variant:\s*\{[\s\S]*?accent:[\s\S]*?neutral:[\s\S]*?outline:[\s\S]*?\}/,
+    );
+    expect(badge).not.toMatch(/checked-in|success|\bgreen\b/i);
+    expect(badge).not.toContain("var(--color-checked-in)");
+  });
+});
+
+/**
+ * D-13 (plan 11-02) — the row's right-hand side: exactly one of three mutually
+ * exclusive door-money states, decided by a single if / else-if / else chain
+ * with the collected branch evaluated first.
+ *
+ * `attendees` is the comment-stripped source. Every `it` is named for the one
+ * property it protects; each was proven to fail BY NAME via a one-line
+ * break-check recorded in 11-02-SUMMARY.md.
+ */
+describe("D-13 — the row shows exactly one of three mutually exclusive door-money states", () => {
+  it("fetches the pay-at-door amount, the row currency and the collected amount (text cast) on the list read — and not the collected currency", () => {
+    expect(listChain).toContain("pay_at_door_amount::text");
+    expect(listChain).toContain("pay_at_door_collected_amount::text");
+    expect(listChain).toMatch(/,\s*currency\s*,/);
+    expect(listChain).not.toContain("pay_at_door_collected_currency");
+  });
+
+  it("expresses the three states as one if / else-if / else chain, not three independent conditionals over the collected column", () => {
+    expect((attendees.match(/\bisCollected\b/g) ?? []).length).toBe(2);
+    expect(attendees).toMatch(/\{isCollected \? \(/);
+    expect(attendees).toMatch(/\) : owedLabel !== null \? \(/);
+    expect(attendees).toMatch(/\) : null\}/);
+  });
+
+  it("evaluates the collected-present branch before the owes branch — a paid row can never also read as owing", () => {
+    const collectedIdx = attendees.search(/\{isCollected \? \(/);
+    const owesIdx = attendees.search(/owedLabel !== null \? \(/);
+    expect(collectedIdx).toBeGreaterThan(-1);
+    expect(owesIdx).toBeGreaterThan(-1);
+    expect(collectedIdx).toBeLessThan(owesIdx);
+  });
+
+  it("recognises a collected amount by the shared anchored decimal shape, including a zero decimal string", () => {
+    expect(attendees).toContain('typeof collectedAmount === "string"');
+    expect(attendees).toContain(
+      "/^\\d+(?:\\.\\d{1,2})?$/.test(collectedAmount)",
+    );
+  });
+
+  it("expresses the owes predicate over the amount STRING — anchored shape plus a strictly-positive digit test, no numeric coercion", () => {
+    expect(attendees).toContain('typeof doorAmount === "string"');
+    expect(attendees).toContain("/^\\d+(?:\\.\\d{1,2})?$/.test(doorAmount)");
+    expect(attendees).toContain("/[1-9]/.test(doorAmount)");
+    expect(attendees).not.toMatch(/\bNumber\(/);
+    expect(attendees).not.toMatch(/parseFloat|parseInt|toFixed/);
+  });
+
+  it("renders the outstanding amount only through the shared formatter, with the row's own currency", () => {
+    expect(attendees).toMatch(
+      /owedLabel =[\s\S]*?formatMoney\(doorAmount, doorCurrency\)/,
+    );
+    expect(attendees).not.toMatch(/"EUR"|"RSD"/);
+  });
+
+  it("carries the paid-at-door label from the UI-SPEC verbatim, exactly once", () => {
+    expect((attendees.match(/Paid at door/g) ?? []).length).toBe(1);
+  });
+
+  it("keeps the owed amount and the paid label visually distinct per the UI-SPEC (accent-700 extrabold vs muted)", () => {
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]",
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[12px] text-muted-foreground",
+    );
+  });
+});
