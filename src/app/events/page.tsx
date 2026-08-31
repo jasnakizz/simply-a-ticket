@@ -28,21 +28,26 @@ export default async function EventsPage() {
   }
 
   // D-15: the scan-bar target and the highlighted row are the first event
-  // whose starts_at is on or after the server's current UTC calendar day,
+  // whose ends_at is on or after the server's current UTC calendar day,
   // falling back to the earliest event when every one is in the past. The
   // list is already ordered ascending by starts_at (with created_at as the
   // stable secondary sort), so one forward scan finds the row.
   //
   // The comparison contract: todayUtcDay below is a 10-character
-  // "YYYY-MM-DD" slice, while starts_at arrives from PostgREST as a full
+  // "YYYY-MM-DD" slice, while ends_at arrives from PostgREST as a full
   // UTC ISO timestamp (e.g. "2026-09-01T00:00:00+00:00"). ">=" between the
   // two is a lexicographic PREFIX comparison — correct only because
   // ISO-8601 is zero-padded and the calendar day is a prefix of the
-  // timestamp. An event starting exactly today is on the boundary and IS
+  // timestamp. An event ending exactly today is on the boundary and IS
   // picked (the comparison is inclusive, not strictly after).
+  //
+  // Picking on ends_at rather than starts_at (WR-01) is what keeps a
+  // currently-running multi-day event selected: for a single-day event
+  // ends_at === starts_at, so this is a strict widening, not a behavior
+  // change, for the common case.
   const todayUtcDay = new Date().toISOString().slice(0, 10);
   const pickedEvent = events?.length
-    ? (events.find((event) => event.starts_at >= todayUtcDay) ?? events[0])
+    ? (events.find((event) => event.ends_at >= todayUtcDay) ?? events[0])
     : undefined;
 
   return (

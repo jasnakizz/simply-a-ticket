@@ -109,7 +109,7 @@ describe("EVENT-V4-04 / EVENT-V4-06 — new date columns drive order, pick and d
   });
 
   it("picks on a >= comparison against the UTC-day slice (boundary inclusive)", () => {
-    expect(home).toContain("event.starts_at >= todayUtcDay");
+    expect(home).toContain("event.ends_at >= todayUtcDay");
   });
 
   it("imports formatEventDateRange from @/lib/date", () => {

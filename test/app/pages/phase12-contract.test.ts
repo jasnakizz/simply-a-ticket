@@ -190,8 +190,8 @@ describe("Gate 4 — ordering and pre-selection are keyed on the new start colum
     expect(startsIdx).toBeLessThan(createdIdx);
   });
 
-  it(`${EVENTS_LIST}: picks the scan-bar target with starts_at >= todayUtcDay`, () => {
-    expect(eventsList).toContain("starts_at >= todayUtcDay");
+  it(`${EVENTS_LIST}: picks the scan-bar target with ends_at >= todayUtcDay`, () => {
+    expect(eventsList).toContain("ends_at >= todayUtcDay");
   });
 });
 
