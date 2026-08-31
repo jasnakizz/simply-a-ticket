@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { createServiceClient } from "@/lib/supabase/server";
+import { formatEventDateRange } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanBar } from "@/components/ui/scan-bar";
@@ -15,8 +16,8 @@ export default async function EventsPage() {
   const supabase = createServiceClient();
   const { data: events, error } = await supabase
     .from("events")
-    .select("id, name, event_date")
-    .order("event_date", { ascending: true })
+    .select("id, name, starts_at, ends_at")
+    .order("starts_at", { ascending: true })
     .order("created_at", { ascending: true });
 
   // Thrown here, caught by src/app/events/error.tsx (the segment error
@@ -27,13 +28,21 @@ export default async function EventsPage() {
   }
 
   // D-15: the scan-bar target and the highlighted row are the first event
-  // whose event_date is on or after the server's current UTC calendar day
-  // (the same UTC pinning formatEventDate uses), falling back to the
-  // earliest event when every one is in the past. The list is already
-  // ordered ascending by event_date, so one forward scan finds the row.
+  // whose starts_at is on or after the server's current UTC calendar day,
+  // falling back to the earliest event when every one is in the past. The
+  // list is already ordered ascending by starts_at (with created_at as the
+  // stable secondary sort), so one forward scan finds the row.
+  //
+  // The comparison contract: todayUtcDay below is a 10-character
+  // "YYYY-MM-DD" slice, while starts_at arrives from PostgREST as a full
+  // UTC ISO timestamp (e.g. "2026-09-01T00:00:00+00:00"). ">=" between the
+  // two is a lexicographic PREFIX comparison — correct only because
+  // ISO-8601 is zero-padded and the calendar day is a prefix of the
+  // timestamp. An event starting exactly today is on the boundary and IS
+  // picked (the comparison is inclusive, not strictly after).
   const todayUtcDay = new Date().toISOString().slice(0, 10);
   const pickedEvent = events?.length
-    ? (events.find((event) => event.event_date >= todayUtcDay) ?? events[0])
+    ? (events.find((event) => event.starts_at >= todayUtcDay) ?? events[0])
     : undefined;
 
   return (
@@ -89,7 +98,10 @@ export default async function EventsPage() {
                         (isPicked ? " px-4 -mx-4 bg-[var(--color-surface)]" : "")
                       }
                     >
-                      {event.name}
+                      <span>{event.name}</span>
+                      <span className="block font-normal text-[12px] text-muted-foreground break-words">
+                        {formatEventDateRange(event.starts_at, event.ends_at)}
+                      </span>
                     </Link>
                   </li>
                 );
