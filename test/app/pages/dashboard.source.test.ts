@@ -147,3 +147,93 @@ describe("PAGE-11 — no role / auth language in the new copy (D-24)", () => {
     });
   }
 });
+
+/**
+ * DASH-V3-02 (plan 10-01) — the positive live-count source contract that
+ * supersedes the two "this screen ships no live data" assertions retired at
+ * the top of this file.
+ *
+ * `dash` is the comment-stripped source (see helpers.readCode), so the design
+ * notes in page.tsx can neither satisfy nor break a gate. Every `it` is named
+ * for the property it protects; each was proven to fail by name via a
+ * one-line break-check recorded in 10-01-SUMMARY.md.
+ *
+ * The event-scoping gate is deliberately STRUCTURAL, not a raw `.eq(` /
+ * `.select(` count: three later Phase 10 plans (10-03/10-04/10-05) add queries
+ * to this file and a raw total would break on each of them, while the
+ * per-chain "is this read scoped to the event?" property is the one that
+ * actually keeps another event's numbers off the page.
+ */
+describe("DASH-V3-02 — live event-scoped count reads back the dashboard figures", () => {
+  // Each `.from("tickets")` chain, sliced from the literal marker to the
+  // first `;` that ends its statement.
+  const ticketChains = dash
+    .split('.from("tickets")')
+    .slice(1)
+    .map((seg) => {
+      const end = seg.indexOf(";");
+      return end === -1 ? seg : seg.slice(0, end);
+    });
+
+  it("issues exactly two tickets reads", () => {
+    expect(ticketChains.length).toBe(2);
+  });
+
+  it('scopes every tickets read to this event via .eq("event_id", eventId)', () => {
+    expect(ticketChains.length).toBeGreaterThan(0);
+    for (const chain of ticketChains) {
+      expect(chain).toContain('.eq("event_id", eventId)');
+    }
+  });
+
+  it("makes both reads exact-count head reads — no rows cross the wire", () => {
+    expect((dash.match(/count: "exact"/g) ?? []).length).toBe(2);
+    expect((dash.match(/head: true/g) ?? []).length).toBe(2);
+  });
+
+  it("narrows exactly one read to status = checked_in", () => {
+    const withStatus = ticketChains.filter((c) =>
+      c.includes('.eq("status", "checked_in")'),
+    );
+    expect(withStatus.length).toBe(1);
+  });
+
+  it("leaves the sold figure carrying no status filter — checked-in stays a subset of sold", () => {
+    const withoutStatus = ticketChains.filter(
+      (c) => !c.includes('.eq("status"'),
+    );
+    expect(withoutStatus.length).toBe(1);
+  });
+
+  it("guards the zero denominator before any division", () => {
+    const guardIdx = dash.search(/ticketsSoldCount === 0/);
+    const divIdx = dash.search(/checkedInCount \/ ticketsSoldCount/);
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(divIdx).toBeGreaterThan(-1);
+    expect(guardIdx).toBeLessThan(divIdx);
+  });
+
+  it("rounds and clamps the percentage into the closed range 0..100", () => {
+    expect(dash).toMatch(/Math\.round\(/);
+    expect(dash).toMatch(/Math\.min\(\s*100/);
+    expect(dash).toMatch(/Math\.max\(\s*0[\s,)]/);
+  });
+
+  it("renders both figures through String() — no locale formatter", () => {
+    expect(dash).toContain("String(checkedInCount)");
+    expect(dash).toContain("String(ticketsSoldCount)");
+    expect(dash).not.toContain("toLocaleString");
+  });
+
+  it("keeps CHECKED IN as the first counts-strip cell", () => {
+    const checkedIdx = dash.indexOf("CHECKED IN");
+    const soldIdx = dash.indexOf("TICKETS SOLD");
+    expect(checkedIdx).toBeGreaterThan(-1);
+    expect(soldIdx).toBeGreaterThan(-1);
+    expect(checkedIdx).toBeLessThan(soldIdx);
+  });
+
+  it("throws on every count read — a read failure never smooths into a zero", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+});
