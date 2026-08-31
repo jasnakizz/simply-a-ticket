@@ -209,7 +209,6 @@ export default async function EventDetailPage({
         />
 
         <div className="flex flex-col gap-3">
-          <Badge variant="neutral">SAMPLE</Badge>
           <CountsStrip
             size="dashboard"
             items={[

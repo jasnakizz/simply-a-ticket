@@ -149,13 +149,20 @@ describe("Gate 6 — PAGE-11 across the phase (D-24)", () => {
   }
 });
 
-describe("Gate 7 — exactly one sample marker in the whole tree (PAGE-03 / ROADMAP criterion 2)", () => {
-  it('sums variant="neutral" across all nine files to exactly 1', () => {
+// Plan 10-05 removes the dashboard's SAMPLE marker now that 10-01/10-03/10-04
+// have made every figure it governed a live event-scoped Supabase read. Gate 7
+// encoded "the v2 screen set ships exactly one honestly-marked fake figure",
+// which is now the wrong rule — retargeted to require ZERO in the same commit
+// as the source change that removed the badge (the v2 lockstep discipline).
+// The gate keeps its teeth: it still catches a neutral-variant marker
+// reappearing anywhere in the nine v2 screen files.
+describe("Gate 7 — no sample marker survives anywhere in the v2 screen set (CHECKIN-V2-02 / ROADMAP criterion 2)", () => {
+  it('sums variant="neutral" across all nine files to exactly 0', () => {
     const total = FILES.reduce(
       (n, [, code]) => n + (code.match(/variant="neutral"/g) ?? []).length,
       0,
     );
-    expect(total).toBe(1);
+    expect(total).toBe(0);
   });
 });
 

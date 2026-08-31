@@ -20,14 +20,14 @@ import { readCode } from "./helpers";
 
 const dash = readCode("src/app/events/[eventId]/page.tsx");
 
-describe("PAGE-03 — one SAMPLE marker governs every unbacked figure", () => {
-  it("renders exactly one Badge variant=\"neutral\" marker (not zero, not per-figure)", () => {
+describe("CHECKIN-V2-02 — no placeholder marker survives on the dashboard", () => {
+  it("renders zero Badge variant=\"neutral\" markers — every governed figure is now query-backed", () => {
     const markers = dash.match(/variant="neutral"/g) ?? [];
-    expect(markers.length).toBe(1);
+    expect(markers.length).toBe(0);
   });
 
-  it("labels that one marker SAMPLE", () => {
-    expect(dash).toContain("SAMPLE");
+  it("carries the placeholder marker word nowhere in the comment-stripped source", () => {
+    expect(dash).not.toContain("SAMPLE");
   });
 
   it("keeps all three governed elements in the same file", () => {
@@ -37,17 +37,19 @@ describe("PAGE-03 — one SAMPLE marker governs every unbacked figure", () => {
     // 10-04 in the SAME commit as the source change that replaced the fake
     // owed sentence with real per-currency subtotals (the v2 lockstep
     // discipline). The counts-strip label and the progress-rule track class
-    // above are still true and still governed by the one SAMPLE marker.
+    // above are still true; they are now real query-backed figures, no longer
+    // marked.
   });
 
-  // The two assertions that stood here — "adds no count() call and no count:
-  // select option" and "does not grow the Supabase query surface — two
-  // .select( and two .eq( only" — asserted that this screen ships no live
-  // data. Plan 10-01 makes that false: the CHECKED IN / TICKETS SOLD figures
-  // and the progress rule are now two event-scoped Supabase count reads. Both
-  // assertions are retired in the same commit as the source change (the v2
-  // lockstep discipline); the positive DASH-V3-02 contract that supersedes
-  // them is authored in the describe block at the foot of this file.
+  // The first two assertions here used to require exactly one neutral-variant
+  // Badge labelled SAMPLE governing the counts strip, the progress rule and
+  // the owed line. Plans 10-01/10-03/10-04 made every one of those figures a
+  // live event-scoped Supabase read, so 10-05 removes the marker and these
+  // assertions flip to require its ABSENCE — retargeted in the SAME commit as
+  // the source change that removed the badge (the v2 lockstep discipline). The
+  // earlier "no count() call / no query surface growth" assertions were
+  // retired by 10-01; the positive DASH-V3-02 contract that supersedes them is
+  // authored in the describe block at the foot of this file.
 });
 
 describe("PAGE-02 — Modernist dashboard layout", () => {
