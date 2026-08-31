@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDate, formatRelativeTime } from "@/lib/date";
+import { sumOwedByCurrency } from "@/lib/door-money";
+import { formatMoney } from "@/lib/amount";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanBar } from "@/components/ui/scan-bar";
@@ -139,6 +141,39 @@ export default async function EventDetailPage({
     throw lastThroughTheDoorError;
   }
 
+  // "Still owed at the door" — the real per-currency sum of pay_at_door_amount
+  // over this event's tickets that have NOT yet been checked in. status =
+  // 'issued' is the exact complement of 'checked_in' (the tickets.status CHECK
+  // in supabase/migrations/0002_tickets.sql is a closed two-value set), so the
+  // same filter that counts a ticket as checked-in above drops it out of this
+  // figure. The amount column is cast to text inside the select string
+  // (PostgREST column-cast form, D-10-05) so a decimal string — never a
+  // JavaScript double — crosses the wire; that is the whole reason
+  // src/lib/amount.ts exists. .not("pay_at_door_amount", "is", null) keeps
+  // tickets that owe nothing off the wire entirely.
+  //
+  // .eq("event_id", eventId) is what keeps another event's money off this
+  // dashboard. As with every read above, the error is thrown into
+  // src/app/events/error.tsx and never coalesced to [] — a failed read must not
+  // be able to render as "everyone has paid".
+  const { data: owedTickets, error: owedTicketsError } = await supabase
+    .from("tickets")
+    .select("pay_at_door_amount::text, currency")
+    .eq("event_id", eventId)
+    .eq("status", "issued")
+    .not("pay_at_door_amount", "is", null);
+
+  if (owedTicketsError) {
+    throw owedTicketsError;
+  }
+
+  // Every bit of the summation lives in the shared helper — this page does not
+  // sum, group by currency or format a money value itself. Phase 11's attendees
+  // page imports this SAME sumOwedByCurrency for its collected-side totals line;
+  // one helper, two call sites, is the milestone invariant that keeps the two
+  // screens from quietly disagreeing about how much money is outstanding.
+  const owedSubtotals = sumOwedByCurrency(owedTickets ?? []);
+
   return (
     <div className="flex flex-col flex-1 items-center">
       <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
@@ -192,10 +227,30 @@ export default async function EventDetailPage({
               style={{ width: `${checkedInPercent}%` }}
             />
           </div>
-          <p className="text-[12px] text-muted-foreground">
-            4 tickets still owe{" "}
-            <span className="font-extrabold">1 200 RSD</span> at the door.
-          </p>
+          {owedSubtotals.length === 0 ? (
+            <p className="text-[12px] text-muted-foreground">
+              Nothing owed at the door.
+            </p>
+          ) : (
+            owedSubtotals.map((subtotal) => {
+              // Singular/plural for a single outstanding ticket — a screen
+              // staff trust should not read as a grammar error.
+              const many = subtotal.ticketCount !== 1;
+              return (
+                <p
+                  key={subtotal.currency}
+                  className="text-[12px] text-muted-foreground"
+                >
+                  {subtotal.ticketCount} {many ? "tickets" : "ticket"} still{" "}
+                  {many ? "owe" : "owes"}{" "}
+                  <span className="font-extrabold">
+                    {formatMoney(subtotal.amount, subtotal.currency)}
+                  </span>{" "}
+                  at the door.
+                </p>
+              );
+            })
+          )}
         </div>
 
         <div className="flex flex-col gap-2">

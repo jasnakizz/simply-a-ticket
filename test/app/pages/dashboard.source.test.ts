@@ -33,7 +33,11 @@ describe("PAGE-03 — one SAMPLE marker governs every unbacked figure", () => {
   it("keeps all three governed elements in the same file", () => {
     expect(dash).toContain("CHECKED IN");
     expect(dash).toContain("bg-[var(--color-neutral-300)]");
-    expect(dash).toContain("1 200 RSD");
+    // The placeholder-amount expectation ("1 200 RSD") was retired by plan
+    // 10-04 in the SAME commit as the source change that replaced the fake
+    // owed sentence with real per-currency subtotals (the v2 lockstep
+    // discipline). The counts-strip label and the progress-rule track class
+    // above are still true and still governed by the one SAMPLE marker.
   });
 
   // The two assertions that stood here — "adds no count() call and no count:
@@ -175,13 +179,14 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
       return end === -1 ? seg : seg.slice(0, end);
     });
 
-  // Plan 10-03 adds the "last through the door" list — a third `.from("tickets")`
-  // read on this file. The count moves from 2 to 3 in lockstep with that source
-  // change (the same discipline that retired the two "no live data" assertions
-  // at the top of this file). The door-list read's own shape is pinned by the
-  // DASH-V3-01 describe at the foot of this file.
-  it("issues three tickets reads — the two count reads plus the door list", () => {
-    expect(ticketChains.length).toBe(3);
+  // Plan 10-03 added the "last through the door" list (a third `.from("tickets")`
+  // read); plan 10-04 added the per-currency "still owed" read (a fourth). The
+  // count moves in lockstep with each source change — the same discipline that
+  // retired the two "no live data" assertions at the top of this file. Each
+  // read's own shape is pinned by the DASH-V3-01 / DASH-V3-03 describes at the
+  // foot of this file.
+  it("issues four tickets reads — the two count reads, the door list and the owed subtotals", () => {
+    expect(ticketChains.length).toBe(4);
   });
 
   it('scopes every tickets read to this event via .eq("event_id", eventId)', () => {
