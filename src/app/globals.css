@@ -146,7 +146,7 @@
    * checked-in signal, used for the 4px row left bar and the "Checked in HH:MM"
    * text. Forest green, ~5.4:1 on the #f3f2f2 ground (AA clean at 12px). Plain
    * author-defined custom property with no @theme counterpart, like the ramp. */
-  --color-checked-in: #166534;
+  --color-checked-in: #1f7a3d;
   --color-accent-100: #fff2ef;
   --color-accent-400: #ff9783;
   --color-accent-600: #dd2b0f;
