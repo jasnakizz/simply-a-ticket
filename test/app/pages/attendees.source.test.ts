@@ -125,7 +125,14 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
   });
 
   it("renders the populated list only behind a positive length check — never an unconditional <ul>", () => {
-    expect(attendees).toMatch(/attendees(?:\?\.|\.)length\s*>\s*0/);
+    // SUPERSEDED by 11-03: the <ul> gate moved from the raw fetched array
+    // (`attendees.length > 0`) to the VISIBLE row count after the URL filter is
+    // applied (`visibleAttendees.length > 0`) — ATTENDEE-V3-04 requires the
+    // populated list to sit behind a positive check on the visible rows, never
+    // on the unfiltered fetch. Still "a positive length check, never an
+    // unconditional <ul>"; only the counted array changed. The ATTENDEE-V3-04
+    // describe below pins the three-way branch and the raw-array negative.
+    expect(attendees).toMatch(/visibleAttendees(?:\?\.|\.)length\s*>\s*0/);
   });
 
   it("carries the no-attendees empty-state heading and body verbatim, exactly once each", () => {
