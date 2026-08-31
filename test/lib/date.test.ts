@@ -4,6 +4,7 @@ import {
   formatEventDate,
   formatRelativeTime,
   formatCheckInTimestamp,
+  formatCheckInClock,
   toUtcMidnightIso,
 } from "@/lib/date";
 
@@ -109,6 +110,55 @@ describe("CHECKIN-01 / D-09: formatCheckInTimestamp (absolute line)", () => {
     expect(out).not.toContain("Invalid Date");
     expect(out).toMatch(/\d/); // a date/year digit
     expect(out).toMatch(/\d:\d/); // a clock time
+  });
+});
+
+describe("formatCheckInClock — Belgrade-pinned 24-hour wall clock (D-12)", () => {
+  /**
+   * The attendees page is a Server Component that renders check-in times at
+   * first paint. An unpinned toLocaleTimeString would print Vercel's UTC clock,
+   * not the operator's. This helper pins Europe/Belgrade explicitly. Every case
+   * asserts an exact string against a fixed ISO instant so the suite is stable
+   * in any CI timezone. A summer and a winter instant with DIFFERENT UTC
+   * offsets together prove the zone (not a baked-in fixed offset) is applied.
+   */
+
+  it("renders a summer UTC instant against Belgrade summer time (UTC+2)", () => {
+    expect(formatCheckInClock("2026-08-27T19:14:00.000Z")).toBe("21:14");
+  });
+
+  it("renders a winter UTC instant against Belgrade winter time (UTC+1)", () => {
+    expect(formatCheckInClock("2026-01-15T20:30:00.000Z")).toBe("21:30");
+  });
+
+  it("zero-pads an hour before 10:00 Belgrade time to two digits", () => {
+    expect(formatCheckInClock("2026-01-15T06:05:00.000Z")).toBe("07:05");
+  });
+
+  it("renders Belgrade midnight as 00:00, never 24:00 and never a meridiem form", () => {
+    const out = formatCheckInClock("2026-01-14T23:00:00.000Z");
+    expect(out).toBe("00:00");
+    expect(out).not.toContain("24");
+    expect(out).not.toMatch(/[AaPp][Mm]/);
+  });
+
+  it("emits exactly two digits, a colon, two digits — no date part, no seconds", () => {
+    const out = formatCheckInClock("2026-08-27T19:14:37.123Z");
+    expect(out).toMatch(/^\d{2}:\d{2}$/);
+    expect(out).not.toContain(",");
+    expect(out).not.toMatch(/\d{2}:\d{2}:\d{2}/);
+  });
+
+  it("crosses the calendar day when the Belgrade wall clock is a day ahead of UTC", () => {
+    // 23:40 UTC in summer is 01:40 the next day in Belgrade — the date rolls,
+    // but only the wall-clock time is shown.
+    expect(formatCheckInClock("2026-08-27T23:40:00.000Z")).toBe("01:40");
+  });
+
+  it("applies the zone, not a fixed offset — the same wall time maps to two different UTC instants across DST", () => {
+    // 21:00 Belgrade is 19:00 UTC in summer but 20:00 UTC in winter.
+    expect(formatCheckInClock("2026-07-01T19:00:00.000Z")).toBe("21:00");
+    expect(formatCheckInClock("2026-12-01T20:00:00.000Z")).toBe("21:00");
   });
 });
 
