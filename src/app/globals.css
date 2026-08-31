@@ -142,6 +142,11 @@
   --color-neutral-300: #d7d3d3;
   --color-neutral-800: #444141;
   --color-neutral-900: #2d2b2b;
+  /* Phase 11 D-12: the single new colour the attendees page introduces — the
+   * checked-in signal, used for the 4px row left bar and the "Checked in HH:MM"
+   * text. Forest green, ~5.4:1 on the #f3f2f2 ground (AA clean at 12px). Plain
+   * author-defined custom property with no @theme counterpart, like the ramp. */
+  --color-checked-in: #166534;
   --color-accent-100: #fff2ef;
   --color-accent-400: #ff9783;
   --color-accent-600: #dd2b0f;

@@ -26,6 +26,29 @@ export function formatEventDate(iso: string): string {
   });
 }
 
+// The attendees page (src/app/events/[eventId]/attendees/page.tsx) is a Server
+// Component that renders each row's check-in time in the first paint, so an
+// unpinned toLocaleTimeString would print the deploy runtime's clock — Vercel's
+// UTC — as if it were the operator's wall clock (the exact SSR hazard the
+// formatEventDate comment above describes). This helper pins BOTH the locale
+// and the time zone the same way, but to Europe/Belgrade rather than UTC: there
+// is no per-event timezone column and every event in this app is Serbia-local
+// (RSD default, Belgrade venues throughout). That Serbia-local assumption is
+// the one thing a future multi-timezone event would break — it would need a
+// per-event timezone column, at which point this pin becomes per-event.
+//
+// 24-hour, zero-padded, HH:MM only — no date part, no seconds. Callers guard
+// the input (non-empty string that parses to a real instant) before calling,
+// so there is no fallback branch here.
+export function formatCheckInClock(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-GB", {
+    timeZone: "Europe/Belgrade",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 // --- Check-in time helpers (CHECKIN-01 / D-09) -----------------------------
 // The already-checked-in scan result shows both how long ago a ticket was
 // checked in and the exact moment it happened, so a seconds-old double scan
