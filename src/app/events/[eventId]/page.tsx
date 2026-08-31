@@ -56,6 +56,52 @@ export default async function EventDetailPage({
     throw ticketTypesError;
   }
 
+  // Sold figure — every ticket for this event, with no status filter. The
+  // exact-count head read asks Postgres for a real COUNT(*) returned in a
+  // response header, with zero rows over the wire — we never fetch the rows
+  // and measure `.length`. The event_id filter is the only thing standing
+  // between a guessed event id in the URL and another event's numbers.
+  const { count: ticketsSoldCountRaw, error: ticketsSoldError } = await supabase
+    .from("tickets")
+    .select("*", { count: "exact", head: true })
+    .eq("event_id", eventId);
+
+  // Same failure idiom as ticket_types above: a read failure must reach
+  // src/app/events/error.tsx, never be coalesced into a plausible-looking zero.
+  if (ticketsSoldError) {
+    throw ticketsSoldError;
+  }
+
+  const ticketsSoldCount = ticketsSoldCountRaw ?? 0;
+
+  // Checked-in figure — the same read narrowed to status = 'checked_in'. A
+  // checked-in ticket is a SUBSET of sold (never a partition), so this figure
+  // can only ever be <= ticketsSoldCount, and a ticket that just came through
+  // the door is counted in both.
+  const { count: checkedInCountRaw, error: checkedInError } = await supabase
+    .from("tickets")
+    .select("*", { count: "exact", head: true })
+    .eq("event_id", eventId)
+    .eq("status", "checked_in");
+
+  if (checkedInError) {
+    throw checkedInError;
+  }
+
+  const checkedInCount = checkedInCountRaw ?? 0;
+
+  // Bar width only — never rendered as a number, never mixed into a money
+  // figure, so ordinary float division is correct here. The explicit zero
+  // branch keeps a brand-new event (0 sold) from producing a NaN width; the
+  // clamp keeps the result in the closed range 0..100 for every input.
+  const checkedInPercent =
+    ticketsSoldCount === 0
+      ? 0
+      : Math.min(
+          100,
+          Math.max(0, Math.round((checkedInCount / ticketsSoldCount) * 100)),
+        );
+
   return (
     <div className="flex flex-col flex-1 items-center">
       <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
@@ -95,12 +141,19 @@ export default async function EventDetailPage({
           <CountsStrip
             size="dashboard"
             items={[
-              { value: "128", label: "CHECKED IN", accent: true },
-              { value: "214", label: "TICKETS SOLD" },
+              {
+                value: String(checkedInCount),
+                label: "CHECKED IN",
+                accent: true,
+              },
+              { value: String(ticketsSoldCount), label: "TICKETS SOLD" },
             ]}
           />
           <div className="h-[10px] bg-[var(--color-neutral-300)]">
-            <div className="h-full bg-primary w-[60%]" />
+            <div
+              className="h-full bg-primary"
+              style={{ width: `${checkedInPercent}%` }}
+            />
           </div>
           <p className="text-[12px] text-muted-foreground">
             4 tickets still owe{" "}

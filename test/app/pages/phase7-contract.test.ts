@@ -159,8 +159,22 @@ describe("Gate 7 — exactly one sample marker in the whole tree (PAGE-03 / ROAD
   });
 });
 
+// Plan 10-01 lands the first real live-data query in the Phase 10 milestone:
+// the event dashboard's CHECKED IN / TICKETS SOLD figures are now two
+// event-scoped Supabase `count: "exact"` reads. Gate 8 encoded "v2 ships no
+// live data on any Phase 7 file" and goes false for that one file the moment
+// 10-01 lands, so the dashboard is exempted from Gate 8 here in the same
+// commit as the source change (the v2 lockstep discipline). Gate 8 keeps its
+// teeth over the other eight Phase 7 files, and the dashboard's own query
+// shape is pinned by test/app/pages/dashboard.source.test.ts (DASH-V3-02).
+const GATE_8_EXEMPT = new Set(["src/app/events/[eventId]/page.tsx"]);
+
 describe("Gate 8 — no fabricated-data query (ROADMAP criterion 2)", () => {
   for (const [label, code] of FILES) {
+    if (GATE_8_EXEMPT.has(label)) {
+      continue;
+    }
+
     it(`${label}: no .count( call`, () => {
       expect(code).not.toMatch(/\.count\(/);
     });

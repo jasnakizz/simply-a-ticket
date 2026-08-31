@@ -36,17 +36,14 @@ describe("PAGE-03 — one SAMPLE marker governs every unbacked figure", () => {
     expect(dash).toContain("1 200 RSD");
   });
 
-  it("adds no count() call and no count: select option (ROADMAP success criterion 2)", () => {
-    expect(dash).not.toContain(".count(");
-    expect(dash).not.toContain("count:");
-  });
-
-  it("does not grow the Supabase query surface — two .select( and two .eq( only", () => {
-    const selects = dash.match(/\.select\(/g) ?? [];
-    const eqs = dash.match(/\.eq\(/g) ?? [];
-    expect(selects.length).toBe(2);
-    expect(eqs.length).toBe(2);
-  });
+  // The two assertions that stood here — "adds no count() call and no count:
+  // select option" and "does not grow the Supabase query surface — two
+  // .select( and two .eq( only" — asserted that this screen ships no live
+  // data. Plan 10-01 makes that false: the CHECKED IN / TICKETS SOLD figures
+  // and the progress rule are now two event-scoped Supabase count reads. Both
+  // assertions are retired in the same commit as the source change (the v2
+  // lockstep discipline); the positive DASH-V3-02 contract that supersedes
+  // them is authored in the describe block at the foot of this file.
 });
 
 describe("PAGE-02 — Modernist dashboard layout", () => {
