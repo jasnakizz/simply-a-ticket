@@ -379,20 +379,23 @@ export default async function AttendeesPage({
                     {/* <span className="text-[12px] text-muted-foreground break-all">
                       {attendee.attendee_email}
                     </span> */}
-                    {typeName ? (
-                      <Badge variant="neutral" className="uppercase">
-                        {typeName}
-                      </Badge>
-                    ) : null}
-                    {isCheckedIn ? (
-                      <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
-                        Checked in {checkInClock}
-                      </span>
-                    ) : (
-                      <span className="text-[12px] text-muted-foreground">
-                        Not arrived
-                      </span>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                      {/* 260831-keq operator tweak: type badge and arrival status share one row to keep door-phone rows short (diverges from 11-UI-SPEC D-08 item 5 on purpose) */}
+                      {typeName ? (
+                        <Badge variant="neutral" className="uppercase">
+                          {typeName}
+                        </Badge>
+                      ) : null}
+                      {isCheckedIn ? (
+                        <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
+                          Checked in {checkInClock}
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-muted-foreground">
+                          Not arrived
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {isCollected ? (
                     <span className="shrink-0 text-right text-[12px] text-muted-foreground">
