@@ -34,11 +34,22 @@ import type { CreateEventState } from "@/app/actions/types";
 // string `>=` comparison is already a correct calendar-day comparison, no
 // Date parsing needed for the check itself (parsing only happens later, in
 // toUtcMidnightIso, for storage).
+// WR-02: this app has no auth (unlisted URL, no login per .claude/CLAUDE.md),
+// so a POST straight against this Server Action's endpoint is a real path,
+// not just a defensive-programming exercise. A well-formed
+// <input type="date"> always emits zero-padded "YYYY-MM-DD", but without
+// this regex a non-date string (e.g. "abc") would sail through `.min(1, ...)`
+// and reach `toUtcMidnightIso`, which calls `new Date(...).toISOString()` —
+// an Invalid Date's `.toISOString()` throws an uncaught RangeError instead of
+// degrading to this action's contracted formError copy. The regex rejects
+// both blank/whitespace-only values (same as `.min(1, ...)` did) and
+// malformed date strings, using the same field messages as before.
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const eventSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required."),
-    starts_at: z.string().trim().min(1, "Start date is required."),
-    ends_at: z.string().trim().min(1, "End date is required."),
+    starts_at: z.string().trim().regex(isoDatePattern, "Start date is required."),
+    ends_at: z.string().trim().regex(isoDatePattern, "End date is required."),
     location: z.string().trim().min(1, "Location is required."),
   })
   .refine((data) => data.ends_at >= data.starts_at, {
