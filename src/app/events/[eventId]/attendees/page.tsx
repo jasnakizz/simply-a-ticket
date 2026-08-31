@@ -376,9 +376,9 @@ export default async function AttendeesPage({
                     <span className="text-[13px] font-extrabold leading-[1.3] break-words">
                       {attendee.attendee_name}
                     </span>
-                    <span className="text-[12px] text-muted-foreground break-all">
+                    {/* <span className="text-[12px] text-muted-foreground break-all">
                       {attendee.attendee_email}
-                    </span>
+                    </span> */}
                     {typeName ? (
                       <Badge variant="neutral" className="uppercase">
                         {typeName}
