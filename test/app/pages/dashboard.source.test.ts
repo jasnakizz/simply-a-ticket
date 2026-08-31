@@ -246,3 +246,93 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
     expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * DASH-V3-01 (plan 10-03) — the "last through the door" list source contract.
+ *
+ * `dash` is the comment-stripped source (helpers.readCode), so page.tsx design
+ * notes can neither satisfy nor break a gate. Every `it` is named for the one
+ * property it protects; break-checks (a)/(b)/(c) recorded in 10-03-SUMMARY.md
+ * each proved the intended assertion fails BY NAME on a one-line regression:
+ *   (a) drop the secondary id order  -> "applies an explicit id-descending
+ *       tiebreak after the checked_in_at order"
+ *   (b) add attendee_email to the door-list select -> "fetches none of
+ *       attendee_email / qr_token / paid_amount / pay_at_door_collected_ ..."
+ *   (c) swap the length check for an unconditional list -> "renders the
+ *       populated door list only behind a length check ..."
+ *
+ * The door-list read is located STRUCTURALLY — the `.from("tickets")` chain
+ * that selects `checked_in_at` — for the same reason the DASH-V3-02 describe
+ * splits on `.from("tickets")`: 10-04/10-05 add more reads to this file and a
+ * file-wide `.eq(` / `.order(` count would break on each.
+ */
+describe("DASH-V3-01 — the live, event-scoped, most-recent-first door list", () => {
+  const doorChain = dash
+    .split('.from("tickets")')
+    .slice(1)
+    .map((seg) => {
+      const end = seg.indexOf(";");
+      return end === -1 ? seg : seg.slice(0, end);
+    })
+    .find((chain) => chain.includes("checked_in_at"));
+
+  it("has a dedicated tickets read for the door list (selects checked_in_at)", () => {
+    expect(doorChain).toBeDefined();
+  });
+
+  it("orders the door list most-recent-first by checked_in_at descending", () => {
+    expect(doorChain).toMatch(
+      /\.order\(\s*"checked_in_at"\s*,\s*\{[^}]*ascending:\s*false/,
+    );
+  });
+
+  it("floats timestamp-less rows to the bottom with nullsFirst: false", () => {
+    expect(doorChain).toContain("nullsFirst: false");
+  });
+
+  it("applies an explicit id-descending tiebreak after the checked_in_at order", () => {
+    expect(doorChain).toMatch(/\.order\(\s*"id"\s*,\s*\{[^}]*ascending:\s*false/);
+    const tsIdx = (doorChain ?? "").search(/\.order\(\s*"checked_in_at"/);
+    const idIdx = (doorChain ?? "").search(/\.order\(\s*"id"/);
+    expect(tsIdx).toBeGreaterThan(-1);
+    expect(idIdx).toBeGreaterThan(-1);
+    expect(tsIdx).toBeLessThan(idIdx);
+  });
+
+  it("scopes the door list to this event and to checked-in tickets only", () => {
+    expect(doorChain).toContain('.eq("event_id", eventId)');
+    expect(doorChain).toContain('.eq("status", "checked_in")');
+  });
+
+  it("bounds the door list to five rows", () => {
+    expect(dash).toContain(".limit(5)");
+  });
+
+  it("fetches none of attendee_email / qr_token / paid_amount / pay_at_door_collected_ anywhere in the file", () => {
+    expect(dash).not.toContain("attendee_email");
+    expect(dash).not.toContain("qr_token");
+    expect(dash).not.toContain("paid_amount");
+    expect(dash).not.toContain("pay_at_door_collected_");
+  });
+
+  it("keeps the shipped honest empty-door sentence byte-identical", () => {
+    expect(dash).toContain(
+      "No check-ins yet — attendees appear here as they come through the door.",
+    );
+  });
+
+  it("renders the populated door list only behind a length check — never an unconditional <ul>", () => {
+    expect(dash).toMatch(/lastThroughTheDoor(?:\?\.|\.)length/);
+  });
+
+  it("times each row with formatRelativeTime, never the absolute-clock helper", () => {
+    expect(dash).toContain("formatRelativeTime");
+    expect(dash).not.toContain("formatCheckInTimestamp");
+    expect(dash).not.toContain("toLocaleString");
+    expect(dash).not.toContain("toLocaleTimeString");
+  });
+
+  it("keeps every tickets read honest about failure — at least four throws in the file", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+});
