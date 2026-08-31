@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { amountSchema } from "@/lib/amount";
-import { formatEventDate } from "@/lib/date";
+import { formatEventDateRange } from "@/lib/date";
 import { generateQrDataUrl, qrDataUrlToBase64 } from "@/lib/qr";
 import { sendTicketEmail } from "@/lib/email";
 import type { OrderState } from "@/app/actions/types";
@@ -135,7 +135,7 @@ export async function createOrder(
 
     const { data: event, error: eventError } = await supabase
       .from("events")
-      .select("name, event_date, location")
+      .select("name, starts_at, ends_at, location")
       .eq("id", event_id)
       .maybeSingle();
 
@@ -159,13 +159,13 @@ export async function createOrder(
     const qrDataUrl = await generateQrDataUrl(qrToken);
     const qrBase64 = qrDataUrlToBase64(qrDataUrl);
 
-    // Email BEFORE the insert. formatEventDate here so there is exactly one
-    // date convention in the app — the email module never formats a date.
+    // Email BEFORE the insert. formatEventDateRange here so there is exactly
+    // one date convention in the app — the email module never formats a date.
     const { error: emailError } = await sendTicketEmail({
       to: attendee_email,
       attendeeName: attendee_name,
       eventName: event.name,
-      eventDate: formatEventDate(event.event_date),
+      eventDate: formatEventDateRange(event.starts_at, event.ends_at),
       eventLocation: event.location,
       ticketTypeName: ticketType.name,
       ticketTypeDescription: ticketType.description,

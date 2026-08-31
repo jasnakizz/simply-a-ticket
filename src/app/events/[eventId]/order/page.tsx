@@ -24,7 +24,7 @@ export default async function OrderPage({
   // way — an honest 404, not a stack trace.
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id, name, event_date, location")
+    .select("id, name, location")
     .eq("id", eventId)
     .maybeSingle();
 

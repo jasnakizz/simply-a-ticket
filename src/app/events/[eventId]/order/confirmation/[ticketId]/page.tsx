@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatEventDate } from "@/lib/date";
+import { formatEventDateRange } from "@/lib/date";
 import { generateQrDataUrl } from "@/lib/qr";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -41,7 +41,7 @@ export default async function OrderConfirmationPage({
   // style.
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("name, event_date, location")
+    .select("name, starts_at, ends_at, location")
     .eq("id", ticket.event_id)
     .maybeSingle();
 
@@ -103,7 +103,7 @@ export default async function OrderConfirmationPage({
           <div className="flex flex-col">
             <dt className="text-[12px] text-muted-foreground">Date</dt>
             <dd className="text-[12px] font-extrabold break-words">
-              {formatEventDate(event.event_date)}
+              {formatEventDateRange(event.starts_at, event.ends_at)}
             </dd>
           </div>
           <div className="flex flex-col">
