@@ -175,8 +175,13 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
       return end === -1 ? seg : seg.slice(0, end);
     });
 
-  it("issues exactly two tickets reads", () => {
-    expect(ticketChains.length).toBe(2);
+  // Plan 10-03 adds the "last through the door" list — a third `.from("tickets")`
+  // read on this file. The count moves from 2 to 3 in lockstep with that source
+  // change (the same discipline that retired the two "no live data" assertions
+  // at the top of this file). The door-list read's own shape is pinned by the
+  // DASH-V3-01 describe at the foot of this file.
+  it("issues three tickets reads — the two count reads plus the door list", () => {
+    expect(ticketChains.length).toBe(3);
   });
 
   it('scopes every tickets read to this event via .eq("event_id", eventId)', () => {
@@ -186,16 +191,20 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
     }
   });
 
-  it("makes both reads exact-count head reads — no rows cross the wire", () => {
+  it("keeps the two count reads as exact-count head reads — no rows cross the wire", () => {
     expect((dash.match(/count: "exact"/g) ?? []).length).toBe(2);
     expect((dash.match(/head: true/g) ?? []).length).toBe(2);
   });
 
-  it("narrows exactly one read to status = checked_in", () => {
+  // Both the checked-in COUNT read and the 10-03 door-list read filter on
+  // status = checked_in; the sold read must still not. The mirror assertion
+  // below ("leaves the sold figure carrying no status filter") is the durable
+  // half — this one moves from 1 to 2 in lockstep with the door-list read.
+  it("narrows two reads to status = checked_in — the checked-in count and the door list", () => {
     const withStatus = ticketChains.filter((c) =>
       c.includes('.eq("status", "checked_in")'),
     );
-    expect(withStatus.length).toBe(1);
+    expect(withStatus.length).toBe(2);
   });
 
   it("leaves the sold figure carrying no status filter — checked-in stays a subset of sold", () => {

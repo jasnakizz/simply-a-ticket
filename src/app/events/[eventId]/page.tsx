@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatEventDate } from "@/lib/date";
+import { formatEventDate, formatRelativeTime } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanBar } from "@/components/ui/scan-bar";
@@ -102,6 +102,43 @@ export default async function EventDetailPage({
           Math.max(0, Math.round((checkedInCount / ticketsSoldCount) * 100)),
         );
 
+  // "Last through the door" — the real, event-scoped list of who most recently
+  // came through. Select ONLY the three columns the block renders (id for the
+  // React key and the tiebreak, name and moment for the row itself): the
+  // attendee email, the paid figure and the token column are deliberately not
+  // fetched, because the cheapest guarantee a value cannot land on a screen
+  // propped open in a public room is to never pull it over the wire. Same
+  // column discipline as the scanner action's LOOKUP_COLUMNS.
+  //
+  // .eq("event_id", eventId) is what keeps another event's attendees off this
+  // page; .eq("status", "checked_in") is the block's whole subject.
+  //
+  // Ordering is fully specified, not left to Postgres row order: most recent
+  // first by the check-in moment, then id descending as an explicit tiebreak so
+  // two check-ins in the same clock tick keep a stable order across reloads.
+  // The null-handling flag is set so a descending sort does NOT put NULLs
+  // first (its Postgres default), which would float a timestamp-less row to the
+  // top of a recency list. The five-row bound (D-10-02) keeps a busy door from
+  // pushing the rest of the page off screen and from fetching every attendee
+  // row for no reader benefit.
+  const { data: lastThroughTheDoor, error: lastThroughTheDoorError } =
+    await supabase
+      .from("tickets")
+      .select("id, attendee_name, checked_in_at")
+      .eq("event_id", eventId)
+      .eq("status", "checked_in")
+      .order("checked_in_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: false })
+      .limit(5);
+
+  // Same failure idiom as every read above: a Supabase error throws into
+  // src/app/events/error.tsx. It must NOT be coalesced into an empty array —
+  // an empty list means "nobody has come through yet", and a failed read must
+  // never be able to say that.
+  if (lastThroughTheDoorError) {
+    throw lastThroughTheDoorError;
+  }
+
   return (
     <div className="flex flex-col flex-1 items-center">
       <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
@@ -165,9 +202,44 @@ export default async function EventDetailPage({
           <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
             LAST THROUGH THE DOOR
           </p>
-          <p className="text-[15px] leading-[1.55] text-muted-foreground">
-            No check-ins yet — attendees appear here as they come through the door.
-          </p>
+          {lastThroughTheDoor && lastThroughTheDoor.length > 0 ? (
+            <ul className="flex flex-col">
+              {lastThroughTheDoor.map((ticket, index) => {
+                // Only format a value that is actually a parseable instant —
+                // the same guard shape the scanner uses before formatting a
+                // check-in time. A NULL checked_in_at renders a blank time
+                // span, never an epoch date.
+                const checkedInAt = ticket.checked_in_at;
+                const timeText =
+                  typeof checkedInAt === "string" &&
+                  checkedInAt !== "" &&
+                  !Number.isNaN(new Date(checkedInAt).getTime())
+                    ? formatRelativeTime(checkedInAt)
+                    : "";
+                return (
+                  <li
+                    key={ticket.id}
+                    className={
+                      index === 0
+                        ? "flex items-baseline justify-between gap-4 py-3"
+                        : "border-t border-border flex items-baseline justify-between gap-4 py-3"
+                    }
+                  >
+                    <span className="text-[12px] font-extrabold break-words">
+                      {ticket.attendee_name}
+                    </span>
+                    <span className="text-[12px] text-muted-foreground shrink-0">
+                      {timeText}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-[15px] leading-[1.55] text-muted-foreground">
+              No check-ins yet — attendees appear here as they come through the door.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
