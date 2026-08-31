@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sumOwedByCurrency, sumCollectedByCurrency } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
+import { formatCheckInClock } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -52,15 +53,23 @@ export default async function AttendeesPage({
     throw ticketTypesError;
   }
 
-  // The attendee list. Column discipline: only the four columns the rows
-  // render. attendee_email is fetched here BY DESIGN (ATTENDEE-V3-01 names it a
-  // column) — but the QR secret, the pre-paid amount and the issued timestamp
-  // are never pulled over the wire. No status filter: a checked-in attendee is
-  // still an attendee. Ordering is Postgres's, name A-Z, with an explicit id
-  // tiebreak so two identical names keep a reload-stable order (D-09).
+  // The attendee list. Column discipline: only the columns the rows render.
+  // attendee_email is fetched here BY DESIGN (ATTENDEE-V3-01 names it a column);
+  // 11-02 adds the five the per-row states need — status, checked_in_at, the
+  // pay-at-door amount + its currency, and the collected amount — each amount
+  // cast to text so a decimal STRING crosses the wire (src/lib/amount.ts is the
+  // whole reason). The collected CURRENCY column is deliberately NOT fetched
+  // here: no per-row collected figure ships this phase, so only the
+  // collected-total chain needs it. The QR secret, the pre-paid amount and the
+  // issued timestamp are still never pulled over the wire. No status filter: a
+  // checked-in attendee is still an attendee. Ordering is Postgres's, name A-Z,
+  // with an explicit id tiebreak so two identical names keep a reload-stable
+  // order (D-09).
   const { data: attendees, error: attendeesError } = await supabase
     .from("tickets")
-    .select("id, attendee_name, attendee_email, ticket_type_id")
+    .select(
+      "id, attendee_name, attendee_email, ticket_type_id, status, checked_in_at, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text",
+    )
     .eq("event_id", eventId)
     .order("attendee_name", { ascending: true })
     .order("id", { ascending: true });
@@ -178,14 +187,58 @@ export default async function AttendeesPage({
           <ul className="flex flex-col">
             {attendees.map((attendee, index) => {
               const typeName = ticketTypeNames.get(attendee.ticket_type_id);
+
+              // D-12 check-in guard — the same shape the dashboard uses before
+              // formatting checked_in_at: only a non-empty string that parses
+              // to a real instant reaches the formatter. Anything else (null,
+              // empty, unparseable) is "not arrived" — never an epoch date.
+              // The green left bar is driven off THIS same fact, so a row can
+              // never show a bar without a time or a time without a bar.
+              const checkedInAt = attendee.checked_in_at;
+              const checkInClock =
+                typeof checkedInAt === "string" &&
+                checkedInAt !== "" &&
+                !Number.isNaN(new Date(checkedInAt).getTime())
+                  ? formatCheckInClock(checkedInAt)
+                  : null;
+              const isCheckedIn = checkInClock !== null;
+
+              // D-13 right side — three mutually exclusive states, decided by
+              // ONE if/else-if/else chain (see the JSX below) so exactly one
+              // renders. The collected branch is tested FIRST: a checked-in
+              // pay-at-door attendee carries BOTH pay_at_door_amount (the
+              // balance owed, never cleared — migration 0003) and a collected
+              // amount, and such a row must read "Paid at door", never as owing.
+              const collectedAmount = attendee.pay_at_door_collected_amount;
+              const isCollected =
+                typeof collectedAmount === "string" &&
+                /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
+
+              // Strictly positive, tested on the STRING with the same anchored
+              // shape src/lib/door-money.ts uses (whole part, optional 1-2
+              // decimals, anchored) — then any non-zero digit means > 0. Never
+              // a numeric coercion. null / "" / "0" / "0.00" / malformed all
+              // fall through to "render nothing".
+              const doorAmount = attendee.pay_at_door_amount;
+              const doorCurrency = attendee.currency;
+              const owedLabel =
+                typeof doorAmount === "string" &&
+                /^\d+(?:\.\d{1,2})?$/.test(doorAmount) &&
+                /[1-9]/.test(doorAmount) &&
+                typeof doorCurrency === "string"
+                  ? formatMoney(doorAmount, doorCurrency)
+                  : null;
+
               return (
                 <li
                   key={attendee.id}
-                  className={
-                    index === 0
-                      ? "relative flex items-start justify-between gap-3 py-3 pl-3"
-                      : "relative flex items-start justify-between gap-3 py-3 pl-3 border-t border-border"
-                  }
+                  className={[
+                    "relative flex items-start justify-between gap-3 py-3 pl-3 border-l-4",
+                    isCheckedIn
+                      ? "border-l-[var(--color-checked-in)]"
+                      : "border-l-transparent",
+                    index === 0 ? "" : "border-t border-border",
+                  ].join(" ")}
                 >
                   <div className="flex flex-col gap-1 min-w-0">
                     <span className="text-[13px] font-extrabold leading-[1.3] break-words">
@@ -199,7 +252,25 @@ export default async function AttendeesPage({
                         {typeName}
                       </Badge>
                     ) : null}
+                    {isCheckedIn ? (
+                      <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
+                        Checked in {checkInClock}
+                      </span>
+                    ) : (
+                      <span className="text-[12px] text-muted-foreground">
+                        Not arrived
+                      </span>
+                    )}
                   </div>
+                  {isCollected ? (
+                    <span className="shrink-0 text-right text-[12px] text-muted-foreground">
+                      Paid at door
+                    </span>
+                  ) : owedLabel !== null ? (
+                    <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
+                      {owedLabel}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}

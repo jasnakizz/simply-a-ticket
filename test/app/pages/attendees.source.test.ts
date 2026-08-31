@@ -36,9 +36,21 @@ const ticketChains = attendees
   });
 
 const listChain = ticketChains.find((c) => c.includes("attendee_email"));
-const owedChain = ticketChains.find((c) => c.includes("pay_at_door_amount::text"));
+// SUPERSEDED by 11-02: the list read was widened to also carry
+// pay_at_door_amount::text and pay_at_door_collected_amount::text for the
+// per-row money states, so the two event-wide TOTALS reads can no longer be
+// located by an amount column alone (that would now match the list chain
+// first). They are disambiguated by a filter/column the list read deliberately
+// never carries: the owed total is the only tickets read narrowed to
+// status = 'issued'; the collected total is the only one that also fetches
+// pay_at_door_collected_currency. The assertions below are unchanged.
+const owedChain = ticketChains.find(
+  (c) =>
+    c.includes("pay_at_door_amount::text") &&
+    c.includes('.eq("status", "issued")'),
+);
 const collectedChain = ticketChains.find((c) =>
-  c.includes("pay_at_door_collected_amount"),
+  c.includes("pay_at_door_collected_currency"),
 );
 
 describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list", () => {
