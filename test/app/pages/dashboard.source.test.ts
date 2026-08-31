@@ -341,3 +341,84 @@ describe("DASH-V3-01 — the live, event-scoped, most-recent-first door list", (
     expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+/**
+ * DASH-V3-03 (plan 10-04) — the per-currency "still owed at the door" subtotal
+ * source contract.
+ *
+ * `dash` is the comment-stripped source (helpers.readCode), so page.tsx design
+ * notes can neither satisfy nor break a gate. Every `it` is named for the one
+ * property it protects; break-checks (a)/(b)/(c) recorded in 10-04-SUMMARY.md
+ * each proved the intended assertion fails BY NAME on a one-line regression:
+ *   (a) an inline `reduce` over the rows in place of the helper call -> "sums
+ *       the owed figure only through sumOwedByCurrency — the page adds nothing
+ *       itself"
+ *   (b) a hardcoded currency-literal branch in the render -> "renders the
+ *       subtotals by mapping the helper result — no hardcoded EUR/RSD branch"
+ *   (c) the owed select swapped onto the collected column -> "sources the owed
+ *       figure from pay_at_door_amount, never the collected columns"
+ *
+ * The owed read is located STRUCTURALLY — the `.from("tickets")` chain that
+ * selects `pay_at_door_amount` — the same split-on-`.from("tickets")` approach
+ * the DASH-V3-01 / DASH-V3-02 describes use, because 10-05 may add more reads to
+ * this file and a file-wide `.eq(` / `.select(` count would break on each.
+ */
+describe("DASH-V3-03 — the per-currency still-owed subtotal, one shared helper", () => {
+  const owedChain = dash
+    .split('.from("tickets")')
+    .slice(1)
+    .map((seg) => {
+      const end = seg.indexOf(";");
+      return end === -1 ? seg : seg.slice(0, end);
+    })
+    .find((chain) => chain.includes("pay_at_door_amount"));
+
+  it("has a dedicated tickets read for the owed figure (selects pay_at_door_amount)", () => {
+    expect(owedChain).toBeDefined();
+  });
+
+  it("sums the owed figure only through sumOwedByCurrency — the page adds nothing itself", () => {
+    expect(dash).toMatch(
+      /import\s*\{[^}]*\bsumOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(dash).toMatch(/\bsumOwedByCurrency\(/);
+    expect(dash).not.toMatch(/\.reduce\(/);
+    expect(dash).not.toMatch(/\+=/);
+  });
+
+  it("keeps money a string end to end — formatMoney only, no numeric coercion", () => {
+    expect(dash).toContain("formatMoney");
+    expect(dash).not.toMatch(/\bNumber\(/);
+    expect(dash).not.toMatch(/parseFloat/);
+    expect(dash).not.toMatch(/parseInt/);
+    expect(dash).not.toMatch(/toFixed/);
+    expect(dash).not.toMatch(/toLocaleString/);
+  });
+
+  it("sources the owed figure from pay_at_door_amount, never the collected columns", () => {
+    expect(dash).toContain("pay_at_door_amount");
+    expect(dash).not.toMatch(/pay_at_door_collected/);
+  });
+
+  it("scopes the owed read to this event, to not-yet-checked-in tickets, and to a recorded amount", () => {
+    expect(owedChain).toContain('.eq("event_id", eventId)');
+    expect(owedChain).toContain('.eq("status", "issued")');
+    expect(owedChain).toMatch(
+      /\.not\(\s*"pay_at_door_amount"\s*,\s*"is"\s*,\s*null\s*\)/,
+    );
+  });
+
+  it("renders the subtotals by mapping the helper result — no hardcoded EUR/RSD branch", () => {
+    expect(dash).toMatch(/owedSubtotals\.map\(/);
+    expect(dash).not.toMatch(/"EUR"/);
+    expect(dash).not.toMatch(/"RSD"/);
+  });
+
+  it("carries the explicit zero state exactly once", () => {
+    expect((dash.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  });
+
+  it("throws on the owed read too — at least five throws in the file", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(5);
+  });
+});
