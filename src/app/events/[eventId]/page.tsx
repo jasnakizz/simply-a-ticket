@@ -253,9 +253,17 @@ export default async function EventDetailPage({
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-            LAST THROUGH THE DOOR
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              LAST THROUGH THE DOOR
+            </p>
+            <Link
+              href={`/events/${eventId}/attendees`}
+              className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent-700)]"
+            >
+              ALL ATTENDEES
+            </Link>
+          </div>
           {lastThroughTheDoor && lastThroughTheDoor.length > 0 ? (
             <ul className="flex flex-col">
               {lastThroughTheDoor.map((ticket, index) => {

@@ -148,3 +148,29 @@ export function sumOwedByCurrency(
     })),
   );
 }
+
+export type CollectedTicketRow = {
+  pay_at_door_collected_amount: string | number | null | undefined;
+  pay_at_door_collected_currency: string | null | undefined;
+};
+
+// The collected-side sibling of sumOwedByCurrency (Phase 11, ATTENDEE-V3-03):
+// map each ticket's pay_at_door_collected_amount and its OWN
+// pay_at_door_collected_currency column onto the generic row shape and delegate.
+// It adds no arithmetic and no branch of its own — that delegation is what "one
+// shared helper, N call sites" means. The collected currency is deliberately a
+// separate column from the ticket's `currency` (migration 0003): door staff may
+// take payment in the other currency, so this adapter must never read `currency`
+// here. Everything else — CURRENCY_ORDER, the null / zero / malformed /
+// unknown-currency skips, the BigInt exactness, the two-decimal string out — is
+// inherited from sumMoneyByCurrency for free.
+export function sumCollectedByCurrency(
+  tickets: readonly CollectedTicketRow[],
+): DoorMoneySubtotal[] {
+  return sumMoneyByCurrency(
+    tickets.map((ticket) => ({
+      amount: ticket.pay_at_door_collected_amount,
+      currency: ticket.pay_at_door_collected_currency,
+    })),
+  );
+}
