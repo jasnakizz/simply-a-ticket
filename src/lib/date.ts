@@ -1,7 +1,7 @@
-// One timezone convention for the whole app: every event_date is stored as
-// UTC midnight for the calendar day the staff member picked, and rendered
-// back out pinned to UTC so the displayed day never shifts based on the
-// server's or the reader's local timezone.
+// One timezone convention for the whole app: every event date column
+// (starts_at, ends_at) is stored as UTC midnight for the calendar day the
+// staff member picked, and rendered back out pinned to UTC so the displayed
+// day never shifts based on the server's or the reader's local timezone.
 
 // An <input type="date"> gives us a bare "YYYY-MM-DD" string with no
 // timezone info. Handing that straight to a `timestamptz` column lets the
@@ -24,6 +24,38 @@ export function formatEventDate(iso: string): string {
     month: "long",
     year: "numeric",
   });
+}
+
+// EVENT-V4-04: an event's date line shows a single date when its start and
+// end fall on the same UTC calendar day, and a "start – end" range when
+// they differ. Day equality is decided by normalising each ISO instant to
+// its UTC calendar day ("YYYY-MM-DD") rather than comparing the two raw
+// strings, because the same day arrives over the wire in more than one
+// textual shape — a "Z" suffix from toUtcMidnightIso, a "+00:00" offset
+// form from PostgREST — and those two shapes are not string-equal even
+// though they name the same instant.
+//
+// Like formatEventDate directly above, this takes no defensive guard
+// against an empty or unparseable input: both starts_at and ends_at are
+// NOT NULL by the end of this phase, so every real caller already has a
+// value. If a nullable date column is ever introduced, this helper needs
+// a guard added.
+//
+// A range whose end precedes its start (only reachable today by a hand
+// edit in the Supabase table editor, since the create-event form rejects
+// it server-side) is rendered exactly as stored — this helper never
+// reorders, swaps, or otherwise "corrects" the two dates. A bad row shows
+// as bad; silently repairing it on display would hide a data problem
+// behind a screen that looks fine.
+export function formatEventDateRange(startsAtIso: string, endsAtIso: string): string {
+  const startDay = new Date(startsAtIso).toISOString().slice(0, 10);
+  const endDay = new Date(endsAtIso).toISOString().slice(0, 10);
+
+  if (startDay === endDay) {
+    return formatEventDate(startsAtIso);
+  }
+
+  return `${formatEventDate(startsAtIso)} – ${formatEventDate(endsAtIso)}`;
 }
 
 // The attendees page (src/app/events/[eventId]/attendees/page.tsx) is a Server

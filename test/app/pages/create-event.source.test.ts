@@ -50,7 +50,7 @@ describe("PAGE-10 — create-event shell (Modernist)", () => {
 
 describe("PAGE-10 — create-event island (Modernist)", () => {
   it("keeps all four FormData field names", () => {
-    for (const n of ["name", "description", "event_date", "location"]) {
+    for (const n of ["name", "starts_at", "ends_at", "location"]) {
       expect(form).toContain(`name="${n}"`);
     }
   });

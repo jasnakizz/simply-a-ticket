@@ -7,7 +7,7 @@ export type FieldErrors = Record<string, string[] | undefined>;
 export type CreateEventState = {
   errors?: FieldErrors;
   formError?: string;
-  values?: { name: string; description: string; event_date: string; location: string };
+  values?: { name: string; starts_at: string; ends_at: string; location: string };
 };
 
 export type CreateTicketTypeState = {

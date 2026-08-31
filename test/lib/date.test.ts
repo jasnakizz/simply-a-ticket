@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   formatEventDate,
+  formatEventDateRange,
   formatRelativeTime,
   formatCheckInTimestamp,
   formatCheckInClock,
@@ -165,6 +166,62 @@ describe("formatCheckInClock — Belgrade-pinned 24-hour wall clock (D-12)", () 
 describe("formatEventDate regression — the existing helper is not disturbed", () => {
   it("still renders a known instant as the same UTC-pinned date string", () => {
     expect(formatEventDate("2026-08-27T00:00:00.000Z")).toBe("27 August 2026");
+  });
+});
+
+describe("EVENT-V4-04: formatEventDateRange", () => {
+  it("renders a single date when start and end fall on the same UTC calendar day", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-15T00:00:00.000Z",
+        "2026-09-15T00:00:00.000Z",
+      ),
+    ).toBe("15 September 2026");
+  });
+
+  it("renders an en-dash range, one space on each side, when the days differ", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-15T00:00:00.000Z",
+        "2026-09-17T00:00:00.000Z",
+      ),
+    ).toBe("15 September 2026 – 17 September 2026");
+  });
+
+  it("treats the same UTC calendar day as one date even with different instants inside that day", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-15T00:00:00.000Z",
+        "2026-09-15T23:59:00.000Z",
+      ),
+    ).toBe("15 September 2026");
+  });
+
+  it("accepts the PostgREST wire shape (+00:00 offset) and matches the Z form's output", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-15T00:00:00+00:00",
+        "2026-09-15T00:00:00+00:00",
+      ),
+    ).toBe(formatEventDateRange("2026-09-15T00:00:00.000Z", "2026-09-15T00:00:00.000Z"));
+  });
+
+  it("renders an end-before-start range exactly as stored, never reordered or swapped", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-17T00:00:00.000Z",
+        "2026-09-15T00:00:00.000Z",
+      ),
+    ).toBe("17 September 2026 – 15 September 2026");
+  });
+
+  it("renders both months in full across a month boundary", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-30T00:00:00.000Z",
+        "2026-10-01T00:00:00.000Z",
+      ),
+    ).toBe("30 September 2026 – 1 October 2026");
   });
 });
 

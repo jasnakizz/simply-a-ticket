@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { formatEventDate, formatRelativeTime } from "@/lib/date";
+import { formatEventDateRange, formatRelativeTime } from "@/lib/date";
 import { sumOwedByCurrency } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
 import { buttonVariants } from "@/components/ui/button";
@@ -34,7 +34,7 @@ export default async function EventDetailPage({
   // are an honest 404, not a stack trace.
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id, name, description, event_date, location")
+    .select("id, name, starts_at, ends_at, location")
     .eq("id", eventId)
     .maybeSingle();
 
@@ -195,10 +195,7 @@ export default async function EventDetailPage({
             {event.name}
           </h1>
           <p className="text-[12px] text-muted-foreground break-words">
-            {formatEventDate(event.event_date)} · {event.location}
-          </p>
-          <p className="text-[15px] leading-[1.55] break-words">
-            {event.description}
+            {formatEventDateRange(event.starts_at, event.ends_at)} · {event.location}
           </p>
         </div>
 

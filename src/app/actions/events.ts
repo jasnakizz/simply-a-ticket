@@ -20,12 +20,31 @@ import type { CreateEventState } from "@/app/actions/types";
 // sidesteps the ambiguity entirely. `.trim()` runs first so a
 // whitespace-only submission is rejected AND the value we eventually store
 // has no stray padding.
-const eventSchema = z.object({
-  name: z.string().trim().min(1, "Name is required."),
-  description: z.string().trim().min(1, "Description is required."),
-  event_date: z.string().trim().min(1, "Date is required."),
-  location: z.string().trim().min(1, "Location is required."),
-});
+//
+// EVENT-V4-03 / D-02: `.refine()` runs only after every per-field `.min()`
+// check above it passes — a submission with a blank start date reports the
+// "Start date is required." field error, never the ordering error, because
+// zod does not evaluate the object-level refinement while individual field
+// parses have already failed. `path: ["ends_at"]` is load-bearing: without
+// it the error attaches to the form root instead of a named field, and the
+// FieldError block under the End date input never renders.
+//
+// Both starts_at/ends_at values here are still the bare "YYYY-MM-DD" string
+// straight off an <input type="date">, which is zero-padded ISO — a plain
+// string `>=` comparison is already a correct calendar-day comparison, no
+// Date parsing needed for the check itself (parsing only happens later, in
+// toUtcMidnightIso, for storage).
+const eventSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required."),
+    starts_at: z.string().trim().min(1, "Start date is required."),
+    ends_at: z.string().trim().min(1, "End date is required."),
+    location: z.string().trim().min(1, "Location is required."),
+  })
+  .refine((data) => data.ends_at >= data.starts_at, {
+    message: "End date can't be earlier than the start date.",
+    path: ["ends_at"],
+  });
 
 // `prevState` is React's useActionState convention: the action receives its
 // own previous return value as the first argument every time it runs again,
@@ -41,8 +60,8 @@ export async function createEvent(
   // the parsed input.
   const input = {
     name: formData.get("name"),
-    description: formData.get("description"),
-    event_date: formData.get("event_date"),
+    starts_at: formData.get("starts_at"),
+    ends_at: formData.get("ends_at"),
     location: formData.get("location"),
   };
 
@@ -53,23 +72,23 @@ export async function createEvent(
       errors: z.flattenError(parsed.error).fieldErrors,
       values: {
         name: String(input.name ?? ""),
-        description: String(input.description ?? ""),
-        event_date: String(input.event_date ?? ""),
+        starts_at: String(input.starts_at ?? ""),
+        ends_at: String(input.ends_at ?? ""),
         location: String(input.location ?? ""),
       },
     };
   }
 
-  const { name, description, event_date, location } = parsed.data;
+  const { name, starts_at, ends_at, location } = parsed.data;
 
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("events")
     .insert({
       name,
-      description,
       location,
-      event_date: toUtcMidnightIso(event_date),
+      starts_at: toUtcMidnightIso(starts_at),
+      ends_at: toUtcMidnightIso(ends_at),
     })
     .select("id")
     .single();
@@ -81,7 +100,7 @@ export async function createEvent(
     return {
       formError:
         "Something went wrong saving this event. Check your connection and try again.",
-      values: { name, description, event_date, location },
+      values: { name, starts_at, ends_at, location },
     };
   }
 

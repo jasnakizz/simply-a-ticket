@@ -14,7 +14,6 @@ import type { CreateEventState } from "@/app/actions/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
 const initialState: CreateEventState = {};
 
@@ -51,33 +50,34 @@ export function CreateEventForm() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="description" className={labelClassName}>
-          Description
+        <Label htmlFor="starts_at" className={labelClassName}>
+          Start date
         </Label>
-        <Textarea
-          id="description"
-          name="description"
+        <Input
+          id="starts_at"
+          name="starts_at"
+          type="date"
           required
-          defaultValue={state.values?.description ?? ""}
+          defaultValue={state.values?.starts_at ?? ""}
         />
-        {state.errors?.description?.[0] && (
-          <FieldError message={state.errors.description[0]} />
+        {state.errors?.starts_at?.[0] && (
+          <FieldError message={state.errors.starts_at[0]} />
         )}
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="event_date" className={labelClassName}>
-          Date
+        <Label htmlFor="ends_at" className={labelClassName}>
+          End date
         </Label>
         <Input
-          id="event_date"
-          name="event_date"
+          id="ends_at"
+          name="ends_at"
           type="date"
           required
-          defaultValue={state.values?.event_date ?? ""}
+          defaultValue={state.values?.ends_at ?? ""}
         />
-        {state.errors?.event_date?.[0] && (
-          <FieldError message={state.errors.event_date[0]} />
+        {state.errors?.ends_at?.[0] && (
+          <FieldError message={state.errors.ends_at[0]} />
         )}
       </div>
 
