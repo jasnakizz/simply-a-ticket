@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 
+import { formatMoney } from "@/lib/amount";
 import { sumMoneyByCurrency, sumOwedByCurrency } from "@/lib/door-money";
 import type { DoorMoneyRow, OwedTicketRow } from "@/lib/door-money";
 
@@ -109,7 +110,7 @@ describe("sumMoneyByCurrency", () => {
     expect(sumMoneyByCurrency(rows)).toEqual([]);
   });
 
-  it('sums three "0.01" EUR rows to exactly "0.03" with no floating-point drift', () => {
+  it('sums repeated small decimals exactly ("0.01"x3 -> "0.03", "0.10"x3 -> "0.30") with no floating-point drift', () => {
     expect(
       sumMoneyByCurrency([
         { amount: "0.01", currency: "EUR" },
@@ -117,6 +118,16 @@ describe("sumMoneyByCurrency", () => {
         { amount: "0.01", currency: "EUR" },
       ]),
     ).toEqual([{ currency: "EUR", amount: "0.03", ticketCount: 3 }]);
+    // 0.1 + 0.1 + 0.1 is 0.30000000000000004 as an IEEE-754 double: a plain
+    // numeric accumulator over the parsed decimal fails this line, an integer
+    // minor-unit BigInt does not.
+    expect(
+      sumMoneyByCurrency([
+        { amount: "0.10", currency: "RSD" },
+        { amount: "0.10", currency: "RSD" },
+        { amount: "0.10", currency: "RSD" },
+      ]),
+    ).toEqual([{ currency: "RSD", amount: "0.30", ticketCount: 3 }]);
   });
 
   it('sums "19.99" + "0.01" to exactly "20.00"', () => {
@@ -209,5 +220,28 @@ describe("sumOwedByCurrency", () => {
       { currency: "EUR", amount: "25.50", ticketCount: 2 },
       { currency: "RSD", amount: "1200.00", ticketCount: 1 },
     ]);
+  });
+});
+
+describe("door-money output feeds formatMoney from @/lib/amount unchanged", () => {
+  // Binds this helper's two-decimal string output to the app's shipped D-09
+  // money display contract (formatMoney = amount + one U+0020 space + code).
+  // A later change to either module that would alter what a person counting
+  // cash reads breaks this line.
+  it("renders each subtotal as the exact string the dashboard shows in 10-04", () => {
+    const subtotals = sumOwedByCurrency([
+      { pay_at_door_amount: "20", currency: "EUR" },
+      { pay_at_door_amount: "5.5", currency: "EUR" },
+      { pay_at_door_amount: "1200", currency: "RSD" },
+    ]);
+
+    const rendered = subtotals.map((s) => formatMoney(s.amount, s.currency));
+
+    expect(rendered).toEqual(["25.50 EUR", "1200.00 RSD"]);
+    // formatMoney is idempotent over the helper's already-two-decimal output —
+    // it does not add or drop a digit.
+    for (const s of subtotals) {
+      expect(formatMoney(s.amount, s.currency)).toBe(`${s.amount} ${s.currency}`);
+    }
   });
 });
