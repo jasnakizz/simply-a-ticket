@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
 
 import { formatMoney } from "@/lib/amount";
-import { sumMoneyByCurrency, sumOwedByCurrency } from "@/lib/door-money";
-import type { DoorMoneyRow, OwedTicketRow } from "@/lib/door-money";
+import {
+  sumMoneyByCurrency,
+  sumOwedByCurrency,
+  sumCollectedByCurrency,
+} from "@/lib/door-money";
+import type {
+  DoorMoneyRow,
+  OwedTicketRow,
+  CollectedTicketRow,
+} from "@/lib/door-money";
 
 /**
  * The per-currency door-money subtotal helper (DASH-V3-03, and ATTENDEE-V3-03 in
@@ -219,6 +227,109 @@ describe("sumOwedByCurrency", () => {
     expect(viaAdapter).toEqual([
       { currency: "EUR", amount: "25.50", ticketCount: 2 },
       { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+  });
+});
+
+describe("sumCollectedByCurrency", () => {
+  // The collected-side sibling of sumOwedByCurrency (ATTENDEE-V3-03). It maps
+  // the pay_at_door_collected_* columns onto the generic core and delegates to
+  // sumMoneyByCurrency — so it cannot drift from sumOwedByCurrency or the core.
+  it("returns [] for no tickets", () => {
+    expect(sumCollectedByCurrency([])).toEqual([]);
+  });
+
+  it("maps the collected amount + collected currency columns and returns exactly what the core returns for the equivalent generic rows", () => {
+    const tickets: CollectedTicketRow[] = [
+      { pay_at_door_collected_amount: "20.00", pay_at_door_collected_currency: "EUR" },
+      { pay_at_door_collected_amount: "1200", pay_at_door_collected_currency: "RSD" },
+      { pay_at_door_collected_amount: "5.50", pay_at_door_collected_currency: "EUR" },
+      { pay_at_door_collected_amount: null, pay_at_door_collected_currency: "RSD" },
+      { pay_at_door_collected_amount: "0", pay_at_door_collected_currency: "EUR" },
+      { pay_at_door_collected_amount: "abc", pay_at_door_collected_currency: "EUR" },
+    ];
+    const viaAdapter = sumCollectedByCurrency(tickets);
+    const viaCore = sumMoneyByCurrency(
+      tickets.map((t) => ({
+        amount: t.pay_at_door_collected_amount,
+        currency: t.pay_at_door_collected_currency,
+      })),
+    );
+    expect(viaAdapter).toEqual(viaCore);
+    expect(viaAdapter).toEqual([
+      { currency: "EUR", amount: "25.50", ticketCount: 2 },
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+  });
+
+  it("reads the collected currency column, NOT the ticket's own currency, when the two differ on the same row", () => {
+    // A row priced in EUR but paid at the door in RSD: the collected total must
+    // land in RSD (migration 0003 made the collected currency its own column
+    // precisely so door staff can take payment in the other currency).
+    const row = {
+      pay_at_door_collected_amount: "1200.00",
+      pay_at_door_collected_currency: "RSD",
+      // a `currency` field the adapter must ignore
+      currency: "EUR",
+    } as unknown as CollectedTicketRow;
+    expect(sumCollectedByCurrency([row])).toEqual([
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+  });
+
+  it("contributes nothing for a row whose collected amount is null — no line, no count", () => {
+    expect(
+      sumCollectedByCurrency([
+        { pay_at_door_collected_amount: null, pay_at_door_collected_currency: "EUR" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("treats a zero-decimal collected amount as not collected — no subtotal line", () => {
+    expect(
+      sumCollectedByCurrency([
+        { pay_at_door_collected_amount: "0.00", pay_at_door_collected_currency: "EUR" },
+        { pay_at_door_collected_amount: "0", pay_at_door_collected_currency: "RSD" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("skips a row whose collected currency is outside the known set without throwing", () => {
+    const rows: CollectedTicketRow[] = [
+      { pay_at_door_collected_amount: "20.00", pay_at_door_collected_currency: "USD" },
+      { pay_at_door_collected_amount: "20.00", pay_at_door_collected_currency: null },
+      { pay_at_door_collected_amount: "20.00", pay_at_door_collected_currency: "" },
+    ];
+    expect(() => sumCollectedByCurrency(rows)).not.toThrow();
+    expect(sumCollectedByCurrency(rows)).toEqual([]);
+  });
+
+  it("emits two currencies as two subtotals in the fixed EUR-then-RSD order regardless of row arrival order, never a combined figure", () => {
+    const result = sumCollectedByCurrency([
+      { pay_at_door_collected_amount: "1200", pay_at_door_collected_currency: "RSD" },
+      { pay_at_door_collected_amount: "20.00", pay_at_door_collected_currency: "EUR" },
+    ]);
+    expect(result).toEqual([
+      { currency: "EUR", amount: "20.00", ticketCount: 1 },
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result.map((line) => line.currency)).toEqual(["EUR", "RSD"]);
+  });
+
+  it("returns a two-decimal string that feeds formatMoney unchanged", () => {
+    const subtotals = sumCollectedByCurrency([
+      { pay_at_door_collected_amount: "20", pay_at_door_collected_currency: "EUR" },
+      { pay_at_door_collected_amount: "5.5", pay_at_door_collected_currency: "EUR" },
+      { pay_at_door_collected_amount: "1200", pay_at_door_collected_currency: "RSD" },
+    ]);
+    for (const s of subtotals) {
+      expect(s.amount).toMatch(/^\d+\.\d{2}$/);
+      expect(formatMoney(s.amount, s.currency)).toBe(`${s.amount} ${s.currency}`);
+    }
+    expect(subtotals.map((s) => formatMoney(s.amount, s.currency))).toEqual([
+      "25.50 EUR",
+      "1200.00 RSD",
     ]);
   });
 });
