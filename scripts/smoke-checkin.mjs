@@ -60,12 +60,14 @@ async function main() {
 
   try {
     // ---- Fixtures: two events, one ticket type on the first ---------------
+    // The date does not matter to what this script proves — both columns get
+    // the same single-day value on each fixture event.
     const { data: event, error: eventError } = await supabase
       .from("events")
       .insert({
         name: eventName,
-        description: "smoke test event for check-in",
-        event_date: new Date().toISOString(),
+        starts_at: new Date().toISOString(),
+        ends_at: new Date().toISOString(),
         location: "smoke test location",
       })
       .select()
@@ -77,8 +79,8 @@ async function main() {
       .from("events")
       .insert({
         name: eventBName,
-        description: "smoke test second event for the cross-event proof",
-        event_date: new Date().toISOString(),
+        starts_at: new Date().toISOString(),
+        ends_at: new Date().toISOString(),
         location: "smoke test location",
       })
       .select()

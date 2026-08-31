@@ -39,7 +39,7 @@ async function main() {
   const suffix = crypto.randomUUID();
   const eventAName = `${smokePrefix}${suffix}-a`; // later-dated, inserted first
   const eventBName = `${smokePrefix}${suffix}-b`; // earlier-dated, inserted second
-  const eventCName = `${smokePrefix}${suffix}-c`; // same event_date as A
+  const eventCName = `${smokePrefix}${suffix}-c`; // same starts_at/ends_at as A
 
   const now = Date.now();
   const laterDate = new Date(now + 2 * 24 * 60 * 60 * 1000).toISOString(); // +2 days
@@ -55,8 +55,8 @@ async function main() {
       .from("events")
       .insert({
         name: eventAName,
-        description: "smoke test event A",
-        event_date: laterDate,
+        starts_at: laterDate,
+        ends_at: laterDate,
         location: "smoke test location",
       })
       .select()
@@ -68,8 +68,8 @@ async function main() {
       .from("events")
       .insert({
         name: eventBName,
-        description: "smoke test event B",
-        event_date: earlierDate,
+        starts_at: earlierDate,
+        ends_at: earlierDate,
         location: "smoke test location",
       })
       .select()
@@ -77,14 +77,15 @@ async function main() {
     assert(!eventBError && eventB, "expected event B insert to return a row");
     eventBId = eventB.id;
 
-    // Step 4: select ordered by event_date asc, then created_at asc; the
-    // earlier-dated smoke event (B) must appear at a lower index than the
+    // Step 4: select ordered by starts_at asc, then created_at asc — the same
+    // two-key ordering the app's event list now uses (src/app/events/page.tsx).
+    // The earlier-dated smoke event (B) must appear at a lower index than the
     // later-dated one (A), regardless of insert order.
     const { data: orderedEvents, error: orderedError } = await supabase
       .from("events")
-      .select("id, name, event_date, created_at")
+      .select("id, name, starts_at, created_at")
       .in("name", [eventAName, eventBName])
-      .order("event_date", { ascending: true })
+      .order("starts_at", { ascending: true })
       .order("created_at", { ascending: true });
     assert(!orderedError && orderedEvents, "expected ordered select to succeed");
     const indexA = orderedEvents.findIndex((e) => e.id === eventAId);
@@ -94,14 +95,14 @@ async function main() {
       "expected earlier-dated event B to sort before later-dated event A"
     );
 
-    // Step 5: insert a third event with the SAME event_date as event A;
+    // Step 5: insert a third event with the SAME starts_at/ends_at as event A;
     // both must still be returned as separate rows.
     const { data: eventC, error: eventCError } = await supabase
       .from("events")
       .insert({
         name: eventCName,
-        description: "smoke test event C",
-        event_date: laterDate,
+        starts_at: laterDate,
+        ends_at: laterDate,
         location: "smoke test location",
       })
       .select()
@@ -111,7 +112,7 @@ async function main() {
 
     const { data: sameDateEvents, error: sameDateError } = await supabase
       .from("events")
-      .select("id, event_date")
+      .select("id, starts_at")
       .in("id", [eventAId, eventCId]);
     assert(
       !sameDateError && sameDateEvents && sameDateEvents.length === 2,

@@ -49,12 +49,15 @@ async function main() {
 
   try {
     // ---- Fixtures: one event, one ticket type ----------------------------
+    // The date does not matter to what this script proves — both columns get
+    // the same single-day value.
+    const fixtureEventDate = new Date().toISOString();
     const { data: event, error: eventError } = await supabase
       .from("events")
       .insert({
         name: eventName,
-        description: "smoke test event for tickets",
-        event_date: new Date().toISOString(),
+        starts_at: fixtureEventDate,
+        ends_at: fixtureEventDate,
         location: "smoke test location",
       })
       .select()
