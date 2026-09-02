@@ -433,3 +433,59 @@ describe("DASH-V3-03 — the per-currency still-owed subtotal, one shared helper
     expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(5);
   });
 });
+
+/**
+ * DOORS-V4-01 (plan 13-01) — the dashboard status badge is computed from the
+ * event's stored dates, not hardcoded.
+ *
+ * `dash` is the comment-stripped source (helpers.readCode), so the design notes
+ * in page.tsx can neither satisfy nor break a gate. Every `it` is named for the
+ * one property it protects; break-checks (a)/(b)/(c) recorded in 13-01-SUMMARY.md
+ * each proved the intended assertion fails BY NAME on a one-line regression:
+ *   (a) put a literal variant back on the <Badge> -> "drives the Badge variant
+ *       from the computed status, never a literal"
+ *   (b) drop the event.ends_at argument from the eventStatus( call -> "computes
+ *       the status from both of the event's stored dates, injecting no clock"
+ *   (c) inline one of the three status labels as page text -> "carries none of
+ *       the status labels — every label lives in the helper"
+ *
+ * Two properties a reader will expect here and NOT find are deliberately left to
+ * test/app/pages/phase10-contract.test.ts rather than duplicated, so there is
+ * one home per rule: Gate 1 pins "no variant=\"neutral\" marker on the page",
+ * and Gate 6 pins "no timer, no realtime channel". This describe references
+ * them only in this comment.
+ */
+describe("DOORS-V4-01 — the dashboard status badge is computed, not hardcoded", () => {
+  it("imports eventStatus from @/lib/event-status", () => {
+    expect(dash).toMatch(
+      /import\s*\{[^}]*\beventStatus\b[^}]*\}\s*from\s*"@\/lib\/event-status"/,
+    );
+  });
+
+  it("computes the status from both of the event's stored dates, injecting no clock", () => {
+    expect(dash).toMatch(
+      /eventStatus\(\s*event\.starts_at\s*,\s*event\.ends_at\s*\)/,
+    );
+  });
+
+  it("drives the Badge variant from the computed status, never a literal", () => {
+    expect(dash).toMatch(/<Badge\s+variant=\{/);
+    expect(dash).not.toMatch(/variant="/);
+  });
+
+  it("carries none of the status labels — every label lives in the helper", () => {
+    expect(dash).not.toContain("Upcoming");
+    expect(dash).not.toContain("Doors open");
+    expect(dash).not.toContain("Ended");
+  });
+
+  it("still mounts exactly one Badge", () => {
+    expect((dash.match(/<Badge/g) ?? []).length).toBe(1);
+  });
+
+  it("still imports Badge from @/components/ui/badge (the primitive was not swapped or inlined)", () => {
+    expect(dash).toMatch(
+      /import\s*\{[^}]*\bBadge\b[^}]*\}\s*from\s*"@\/components\/ui\/badge"/,
+    );
+  });
+});
