@@ -121,8 +121,17 @@ export function formatEventDateRange(startsAtIso: string, endsAtIso: string): st
     return `${start.day}–${end.day} ${start.month} ${start.year}`;
   }
 
-  // 3. Cross-year range (and, until Task 2 adds its own branch, the
-  //    same-year cross-month case): full day-month-year on both sides.
+  // 3. Same year, different month — collapse the shared year onto the end
+  //    side. Shape: "28 September – 3 October 2026". Printing the year once
+  //    on the end side is what keeps the reversed case positionally
+  //    consistent ("3 October – 28 September 2026").
+  if (startDay.slice(0, 4) === endDay.slice(0, 4)) {
+    const end = utcDateFields(endsAtIso);
+    return `${start.day} ${start.month} – ${end.day} ${end.month} ${end.year}`;
+  }
+
+  // 4. Different year — the only case left: full day-month-year on both
+  //    sides. Shape: "30 December 2026 – 2 January 2027".
   return `${formatEventDate(startsAtIso)} – ${formatEventDate(endsAtIso)}`;
 }
 

@@ -233,13 +233,58 @@ describe("DATE-V5: formatEventDateRange collapses a shared month/year (supersede
     ).toBe("17–15 September 2026");
   });
 
-  it("renders both months in full across a month boundary", () => {
+  it("collapses a same-year cross-month range, printing the year once on the end side", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-28T00:00:00.000Z",
+        "2026-10-03T00:00:00.000Z",
+      ),
+    ).toBe("28 September – 3 October 2026");
+  });
+
+  it("collapses the tightest month boundary — adjacent days across a month edge", () => {
     expect(
       formatEventDateRange(
         "2026-09-30T00:00:00.000Z",
         "2026-10-01T00:00:00.000Z",
       ),
-    ).toBe("30 September 2026 – 1 October 2026");
+    ).toBe("30 September – 1 October 2026");
+  });
+
+  it("renders a reversed cross-month range in stored order, year still from the end side", () => {
+    expect(
+      formatEventDateRange(
+        "2026-10-03T00:00:00.000Z",
+        "2026-09-28T00:00:00.000Z",
+      ),
+    ).toBe("3 October – 28 September 2026");
+  });
+
+  it("keeps full day-month-year on both sides across a year boundary (DATE-V5-03)", () => {
+    expect(
+      formatEventDateRange(
+        "2026-12-30T00:00:00.000Z",
+        "2027-01-02T00:00:00.000Z",
+      ),
+    ).toBe("30 December 2026 – 2 January 2027");
+  });
+
+  it("does not collapse a year boundary that merely touches (31 Dec 2026 → 1 Jan 2027)", () => {
+    expect(
+      formatEventDateRange(
+        "2026-12-31T00:00:00.000Z",
+        "2027-01-01T00:00:00.000Z",
+      ),
+    ).toBe("31 December 2026 – 1 January 2027");
+  });
+
+  it("renders a reversed cross-year range in stored order", () => {
+    expect(
+      formatEventDateRange(
+        "2027-01-02T00:00:00.000Z",
+        "2026-12-30T00:00:00.000Z",
+      ),
+    ).toBe("2 January 2027 – 30 December 2026");
   });
 });
 
