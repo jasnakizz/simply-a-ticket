@@ -26,14 +26,39 @@ export function formatEventDate(iso: string): string {
   });
 }
 
-// EVENT-V4-04: an event's date line shows a single date when its start and
-// end fall on the same UTC calendar day, and a "start – end" range when
-// they differ. Day equality is decided by normalising each ISO instant to
-// its UTC calendar day ("YYYY-MM-DD") rather than comparing the two raw
-// strings, because the same day arrives over the wire in more than one
-// textual shape — a "Z" suffix from toUtcMidnightIso, a "+00:00" offset
-// form from PostgREST — and those two shapes are not string-equal even
-// though they name the same instant.
+// DATE-V5 (supersedes EVENT-V4-04): an event's date line collapses a
+// multi-day range onto its shared parts, day-first. The shapes, in the
+// order the branches below test for them:
+//
+//   1. single UTC day          -> "5 September 2026"   (explicit early return)
+//   2. same month + same year  -> "1–5 September 2026" (tight U+2013, no
+//                                 space on either side; month + year once,
+//                                 taken from the start side)
+//   3. same year, diff month   -> "28 September – 3 October 2026" (spaced
+//                                 U+2013; year once, taken from the end side)
+//   4. different year          -> "30 December 2026 – 2 January 2027"
+//                                 (full day-month-year on both sides)
+//
+// Shapes 2 and 3 are hand-rolled from Intl.DateTimeFormat.prototype
+// .formatToParts field values (see utcDateFields / eventDateParts) rather
+// than the ICU range formatter (Intl.DateTimeFormat.prototype.formatRange):
+// that formatter emits a spaced separator on every supported Node/ICU and
+// so cannot produce the tight "1–5" separator shape 2 needs. Reading named
+// fields off formatToParts is ICU-stable in a way that string-splitting a
+// formatted date is not — the literal separators between fields are locale
+// data and can change, the field `type` names cannot.
+//
+// Which shape applies is decided from each ISO instant's UTC calendar day
+// ("YYYY-MM-DD", via toISOString().slice(0, 10)) rather than local date
+// getters: on a Belgrade dev machine a UTC-midnight instant reads as the
+// previous calendar day locally, which would silently break the
+// Dec-31/Jan-1 boundary while still passing on Vercel's UTC runtime. That
+// day string also makes the month and year comparisons free — slice(0, 7)
+// is the year-month prefix, slice(0, 4) is the year. The same day arrives
+// over the wire in more than one textual shape — a "Z" suffix from
+// toUtcMidnightIso, a "+00:00" offset form from PostgREST — and those two
+// shapes are not string-equal even though they name the same instant, so
+// the normalisation is load-bearing, not cosmetic.
 //
 // Like formatEventDate directly above, this takes no defensive guard
 // against an empty or unparseable input: both starts_at and ends_at are
@@ -46,15 +71,58 @@ export function formatEventDate(iso: string): string {
 // it server-side) is rendered exactly as stored — this helper never
 // reorders, swaps, or otherwise "corrects" the two dates. A bad row shows
 // as bad; silently repairing it on display would hide a data problem
-// behind a screen that looks fine.
+// behind a screen that looks fine. Every branch condition below is an
+// equality test, never a `<` / `>` comparison, so no path can reorder the
+// two dates.
+
+// Built once at module level, mirroring the relativeTimeFormat constant
+// further down the file: constructing an ICU formatter is the expensive
+// part, and this one runs once per event row on the list page. The same
+// "en-GB" + timeZone: "UTC" options as formatEventDate above — those two
+// pins are what keep the server-rendered and client-hydrated strings
+// identical, so they must not be dropped or varied.
+const eventDateParts = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "UTC",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+// The flat { day, month, year } string fields for one ISO instant, read
+// off formatToParts by `type`. Module-private on purpose (not exported).
+// All three fields are guaranteed present for eventDateParts' fixed
+// options — day/month/year are each requested and the only other part
+// type these options emit is "literal" — so indexing the lookup is safe
+// without a runtime throw, which would contradict the no-defensive-guard
+// contract documented above.
+function utcDateFields(iso: string): { day: string; month: string; year: string } {
+  const lookup: Record<string, string> = {};
+  for (const part of eventDateParts.formatToParts(new Date(iso))) {
+    lookup[part.type] = part.value;
+  }
+  return { day: lookup.day, month: lookup.month, year: lookup.year };
+}
+
 export function formatEventDateRange(startsAtIso: string, endsAtIso: string): string {
   const startDay = new Date(startsAtIso).toISOString().slice(0, 10);
   const endDay = new Date(endsAtIso).toISOString().slice(0, 10);
 
+  // 1. Single UTC calendar day — explicit early return (DATE-V5-04).
   if (startDay === endDay) {
     return formatEventDate(startsAtIso);
   }
 
+  const start = utcDateFields(startsAtIso);
+
+  // 2. Same year and same month — tight collapsed form; month + year once,
+  //    from the start side. Shape: "1–5 September 2026".
+  if (startDay.slice(0, 7) === endDay.slice(0, 7)) {
+    const end = utcDateFields(endsAtIso);
+    return `${start.day}–${end.day} ${start.month} ${start.year}`;
+  }
+
+  // 3. Cross-year range (and, until Task 2 adds its own branch, the
+  //    same-year cross-month case): full day-month-year on both sides.
   return `${formatEventDate(startsAtIso)} – ${formatEventDate(endsAtIso)}`;
 }
 

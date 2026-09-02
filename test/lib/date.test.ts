@@ -169,7 +169,7 @@ describe("formatEventDate regression — the existing helper is not disturbed", 
   });
 });
 
-describe("EVENT-V4-04: formatEventDateRange", () => {
+describe("DATE-V5: formatEventDateRange collapses a shared month/year (supersedes EVENT-V4-04)", () => {
   it("renders a single date when start and end fall on the same UTC calendar day", () => {
     expect(
       formatEventDateRange(
@@ -179,13 +179,22 @@ describe("EVENT-V4-04: formatEventDateRange", () => {
     ).toBe("15 September 2026");
   });
 
-  it("renders an en-dash range, one space on each side, when the days differ", () => {
+  it("collapses a same-month multi-day range to a tight en-dash form, month and year once", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-01T00:00:00.000Z",
+        "2026-09-05T00:00:00.000Z",
+      ),
+    ).toBe("1–5 September 2026");
+  });
+
+  it("collapses a two-day same-month range the same way (tight en-dash, no surrounding spaces)", () => {
     expect(
       formatEventDateRange(
         "2026-09-15T00:00:00.000Z",
         "2026-09-17T00:00:00.000Z",
       ),
-    ).toBe("15 September 2026 – 17 September 2026");
+    ).toBe("15–17 September 2026");
   });
 
   it("treats the same UTC calendar day as one date even with different instants inside that day", () => {
@@ -197,6 +206,15 @@ describe("EVENT-V4-04: formatEventDateRange", () => {
     ).toBe("15 September 2026");
   });
 
+  it("renders the literal DATE-V5-04 same-day example as one date", () => {
+    expect(
+      formatEventDateRange(
+        "2026-09-05T00:00:00.000Z",
+        "2026-09-05T00:00:00.000Z",
+      ),
+    ).toBe("5 September 2026");
+  });
+
   it("accepts the PostgREST wire shape (+00:00 offset) and matches the Z form's output", () => {
     expect(
       formatEventDateRange(
@@ -206,13 +224,13 @@ describe("EVENT-V4-04: formatEventDateRange", () => {
     ).toBe(formatEventDateRange("2026-09-15T00:00:00.000Z", "2026-09-15T00:00:00.000Z"));
   });
 
-  it("renders an end-before-start range exactly as stored, never reordered or swapped", () => {
+  it("renders an end-before-start same-month range in stored order, never reordered or swapped", () => {
     expect(
       formatEventDateRange(
         "2026-09-17T00:00:00.000Z",
         "2026-09-15T00:00:00.000Z",
       ),
-    ).toBe("17 September 2026 – 15 September 2026");
+    ).toBe("17–15 September 2026");
   });
 
   it("renders both months in full across a month boundary", () => {
