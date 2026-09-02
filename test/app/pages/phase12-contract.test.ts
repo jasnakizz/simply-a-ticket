@@ -74,6 +74,14 @@ const smokeTickets = readCode(SMOKE_TICKETS);
 const smokeCheckin = readCode(SMOKE_CHECKIN);
 const scanner = readCode(SCANNER);
 
+// Plan 14-01 (D-04) moved the dashboard's ticket-type description render to the
+// dedicated per-event route. This path is deliberately NOT added to SCANNED_SET
+// / SCANNED_CODE: doing so would drag it into Gate 1's retired-column scan and
+// force a change to the const-asserted tuple's type for no benefit. Gate 2's
+// `it` below reads it directly instead.
+const TICKET_TYPES_ROUTE = "src/app/events/[eventId]/ticket-types/page.tsx";
+const ticketTypesRoute = readCode(TICKET_TYPES_ROUTE);
+
 const SCANNED_CODE: Record<(typeof SCANNED_SET)[number], string> = {
   [DATE_LIB]: dateLib,
   [TYPES]: types,
@@ -153,9 +161,18 @@ describe("Gate 2 — the events description is gone from the write path and scre
     expect(decl).not.toContain("description");
   });
 
-  it(`${DASHBOARD}: renders no event.description, and STILL renders ticketType.description (targeted removal, not a blanket delete)`, () => {
+  // Retargeted by plan 14-01 (D-04) in the SAME commit as the source change:
+  // the dashboard's `ticketType.description` render was MOVED to
+  // ${TICKET_TYPES_ROUTE}, not deleted. Gate 2's purpose — proving Phase 12's
+  // events-description removal was targeted, not a blanket delete — survives by
+  // asserting the ticket-type description still renders where it now lives.
+  // Proven to fail by name: before the source render was moved, this `it`
+  // reports `${TICKET_TYPES_ROUTE}: renders ticketType.description (Phase 14
+  // MOVED it off the dashboard, did not delete it)`.
+  it(`${DASHBOARD}: renders no event.description and no ticketType.description; ${TICKET_TYPES_ROUTE}: renders ticketType.description (Phase 14 MOVED it off the dashboard, did not delete it)`, () => {
     expect(dashboard).not.toContain("event.description");
-    expect(dashboard).toContain("ticketType.description");
+    expect(dashboard).not.toContain("ticketType.description");
+    expect(ticketTypesRoute).toContain("ticketType.description");
   });
 });
 

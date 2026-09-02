@@ -11,7 +11,6 @@ import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScanBar } from "@/components/ui/scan-bar";
 import { CountsStrip } from "@/components/ui/counts-strip";
-import { AddTicketTypeForm } from "./add-ticket-type-form";
 
 // Same reasoning as /events: staff need the current data, not a build-time
 // snapshot frozen at whatever existed when Vercel built the app.
@@ -52,27 +51,27 @@ export default async function EventDetailPage({
   // and no polling or realtime subscription is needed to keep it fresh.
   const status = eventStatus(event.starts_at, event.ends_at);
 
-  // The `eq` filter here is what keeps another event's ticket types off
-  // this page — this is the one query in the app that scopes ticket_types
-  // by event_id, and every other read/write funnels through it.
-  const { data: ticketTypes, error: ticketTypesError } = await supabase
+  // Count-only read for the "Ticket types · N" dashboard row (D-05). The page
+  // no longer renders the rows — the dedicated /ticket-types screen does — so
+  // this is an exact-count head read: Postgres returns a real COUNT(*) in a
+  // response header and zero rows cross the wire, the same idiom as the two
+  // tickets figures below. The `.eq("event_id", eventId)` filter is still the
+  // one thing keeping another event's ticket types off this page.
+  const { count: ticketTypeCountRaw, error: ticketTypesError } = await supabase
     .from("ticket_types")
-    .select("id, name, description")
-    .eq("event_id", eventId)
-    .order("created_at", { ascending: true });
+    .select("*", { count: "exact", head: true })
+    .eq("event_id", eventId);
 
-  // Thrown here, caught by src/app/events/error.tsx — a read failure on
-  // this segment renders the contracted error copy instead of an unhandled
-  // exception or a blank page.
+  // Thrown here, caught by src/app/events/error.tsx — a failed read must never
+  // be coalesced into a plausible-looking zero.
   if (ticketTypesError) {
     throw ticketTypesError;
   }
 
-  // Tracer-ordering step (plan 14-01 Task 1): the compact row needs only the
-  // count, and Task 2 replaces this length-derived constant with a count-only
-  // exact-count head read on ticket_types once the inline block below (which
-  // still needs the rows) is removed.
-  const ticketTypeCount = ticketTypes?.length ?? 0;
+  // The zero coalesce is what makes an event with no ticket types render a
+  // "Ticket types · 0" row that STILL links, rather than hiding the row —
+  // TYPES-V4-06's dashboard half.
+  const ticketTypeCount = ticketTypeCountRaw ?? 0;
 
   // Sold figure — every ticket for this event, with no status filter. The
   // exact-count head read asks Postgres for a real COUNT(*) returned in a
@@ -317,12 +316,15 @@ export default async function EventDetailPage({
           )}
         </div>
 
-        {/* Compact ticket-types row — an outline navigation affordance, never a
-            ScanBar and never the red default (accent is reserved app-wide for
-            the scan action and primary submits). Styled through buttonVariants
-            with the outline style passed as an object property (colon form),
-            never a JSX attribute — the DOORS-V4-01 gate on this file forbids a
-            JSX style attribute here. Task 2 removes the inline block below. */}
+        {/* The dashboard is a door-staff screen — counts, door list, owed line.
+            Ticket-type setup lives on its own screen now (D-04): this single
+            outline row is the only thing left of the former inline block. It is
+            a navigation affordance, never a ScanBar and never the red default
+            (accent is reserved app-wide for the scan action and primary
+            submits). Styled through buttonVariants with the outline style as an
+            object property, never a JSX attribute — the DOORS-V4-01 gate on
+            this file forbids a JSX style attribute here. Shows "· 0" and still
+            links when the event has no types (TYPES-V4-06). */}
         <Link
           href={`/events/${eventId}/ticket-types`}
           className={buttonVariants({
@@ -333,51 +335,6 @@ export default async function EventDetailPage({
           Ticket types · {ticketTypeCount}
           <ArrowRight aria-hidden="true" className="size-4" />
         </Link>
-
-        <div className="flex flex-col gap-4">
-          {ticketTypes && ticketTypes.length === 0 ? (
-            <div className="flex flex-col gap-2">
-              <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-                No ticket types yet
-              </h2>
-              <p className="text-[15px] leading-[1.55] text-muted-foreground">
-                Add a ticket type below to start selling this event.
-              </p>
-            </div>
-          ) : (
-            <>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-                EXISTING TYPES
-              </p>
-              <ul className="flex flex-col">
-                {ticketTypes?.map((ticketType, index) => (
-                  <li
-                    key={ticketType.id}
-                    className={
-                      index === 0
-                        ? "flex flex-col gap-1 py-3"
-                        : "flex flex-col gap-1 border-t border-border py-3"
-                    }
-                  >
-                    <p className="text-[12px] font-extrabold break-words">
-                      {ticketType.name}
-                    </p>
-                    <p className="text-[12px] text-muted-foreground break-words">
-                      {ticketType.description}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-            Add ticket type
-          </h2>
-          <AddTicketTypeForm eventId={eventId} />
-        </div>
 
         <div className="border-t-2 border-border pt-3 pb-5 grid gap-2">
           <Link

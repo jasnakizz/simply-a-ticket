@@ -96,9 +96,18 @@ describe("PAGE-02 — Modernist dashboard layout", () => {
     );
   });
 
-  it("keeps both v1 ticket-type empty-state strings verbatim", () => {
-    expect(dash).toContain("No ticket types yet");
-    expect(dash).toContain(
+  // Plan 14-01 (D-04) moved the entire inline ticket-types block — including
+  // this empty-state pair — to src/app/events/[eventId]/ticket-types/page.tsx.
+  // The positive assertion on their NEW home lives in
+  // test/app/pages/ticket-types.source.test.ts. This gate was flipped to
+  // require their ABSENCE from the dashboard in the SAME commit as the source
+  // removal (the repo's lockstep discipline, same as plan 10-05's empty-state
+  // retarget above and plan 13-01's badge retarget below). Proven to fail by
+  // name: with the strings still present the source removal, this `it` reports
+  // `has moved both v1 ticket-type empty-state strings off the dashboard`.
+  it("has moved both v1 ticket-type empty-state strings off the dashboard", () => {
+    expect(dash).not.toContain("No ticket types yet");
+    expect(dash).not.toContain(
       "Add a ticket type below to start selling this event.",
     );
   });
@@ -207,9 +216,21 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
     }
   });
 
-  it("keeps the two count reads as exact-count head reads — no rows cross the wire", () => {
-    expect((dash.match(/count: "exact"/g) ?? []).length).toBe(2);
-    expect((dash.match(/head: true/g) ?? []).length).toBe(2);
+  // Plan 14-01 (D-05) added a third exact-count head read to this file — the
+  // ticket_types count backing the compact dashboard row — so a file-wide
+  // `count: "exact"` / `head: true` tally is no longer 2 and would break again
+  // on the next non-tickets count read. Retargeted in the SAME commit as that
+  // source change from a file-wide count to the per-chain property it always
+  // meant to protect: the two TICKETS reads are head reads, whatever else the
+  // page counts. Proven to fail by name: before the rescope, with the third
+  // count read present, this `it` reports `keeps both TICKETS count reads as
+  // exact-count head reads — no rows cross the wire`.
+  it("keeps both TICKETS count reads as exact-count head reads — no rows cross the wire", () => {
+    const countChains = ticketChains.filter((c) => c.includes('count: "exact"'));
+    expect(countChains.length).toBe(2);
+    for (const chain of countChains) {
+      expect(chain).toContain("head: true");
+    }
   });
 
   // Both the checked-in COUNT read and the 10-03 door-list read filter on
