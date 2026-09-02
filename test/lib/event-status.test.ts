@@ -182,6 +182,57 @@ describe("DOORS-V4-05: the same DST edge routed through eventStatus proves the b
   });
 });
 
+describe("DOORS-V4-05: the END-DAY guard also survives the DST / local-midnight boundary", () => {
+  // The start-day cases above already prove the `today < startDay` guard reads
+  // the Belgrade civil date. This block proves the SAME for the `today > endDay`
+  // guard — the branch that decides "Ended". Both a summer (+2) and a winter
+  // (+1) instant sit right on the local-midnight seam of the end day, so a
+  // regression that computed "today" in UTC, or with a hardcoded offset, would
+  // pick the wrong branch here and fail one of these four.
+
+  // Summer event: 13 Jul → 14 Jul 2025 (UTC calendar days).
+  it("summer, 21:30Z on the end day → still doors-open (Belgrade 2025-07-14, == endDay)", () => {
+    expect(
+      eventStatus(
+        "2025-07-13T00:00:00.000Z",
+        "2025-07-14T00:00:00.000Z",
+        new Date("2025-07-14T21:30:00Z"),
+      ).key,
+    ).toBe("doors-open");
+  });
+
+  it("summer, 22:30Z on the end day → ended (Belgrade already 2025-07-15; a UTC-\"today\" impl would still say doors-open)", () => {
+    expect(
+      eventStatus(
+        "2025-07-13T00:00:00.000Z",
+        "2025-07-14T00:00:00.000Z",
+        new Date("2025-07-14T22:30:00Z"),
+      ).key,
+    ).toBe("ended");
+  });
+
+  // Winter event: 13 Jan → 14 Jan 2025 (UTC calendar days).
+  it("winter, 22:30Z on the end day → still doors-open (Belgrade 2025-01-14; a hardcoded +02:00 would wrongly say ended)", () => {
+    expect(
+      eventStatus(
+        "2025-01-13T00:00:00.000Z",
+        "2025-01-14T00:00:00.000Z",
+        new Date("2025-01-14T22:30:00Z"),
+      ).key,
+    ).toBe("doors-open");
+  });
+
+  it("winter, 23:30Z on the end day → ended (Belgrade rolled to 2025-01-15)", () => {
+    expect(
+      eventStatus(
+        "2025-01-13T00:00:00.000Z",
+        "2025-01-14T00:00:00.000Z",
+        new Date("2025-01-14T23:30:00Z"),
+      ).key,
+    ).toBe("ended");
+  });
+});
+
 describe("DOORS-V4-05: wire-shape tolerance — the Z suffix and the +00:00 offset form agree", () => {
   it("yields an identical result object for the two textual shapes of one instant", () => {
     const now = new Date("2025-07-16T12:00:00Z");
@@ -218,6 +269,27 @@ describe("DOORS-V4-05: eventStatus is pure", () => {
     const status = eventStatus(TWO_DAY_START, TWO_DAY_END);
     expect(["upcoming", "doors-open", "ended"]).toContain(status.key);
   });
+
+  it("returns a frozen object — a caller cannot corrupt the shared module-level mapping", () => {
+    const status = eventStatus(
+      TWO_DAY_START,
+      TWO_DAY_END,
+      new Date("2025-07-16T12:00:00Z"),
+    );
+    expect(Object.isFrozen(status)).toBe(true);
+    // Strict mode (every ESM module is strict) throws on write to a frozen prop
+    // rather than failing silently — so this both documents intent and proves
+    // the freeze is real.
+    expect(() => {
+      (status as { label: string }).label = "Hacked";
+    }).toThrow(TypeError);
+    expect(status.label).toBe("Doors open");
+    // A second call still sees the pristine mapping.
+    expect(
+      eventStatus(TWO_DAY_START, TWO_DAY_END, new Date("2025-07-16T12:00:00Z"))
+        .label,
+    ).toBe("Doors open");
+  });
 });
 
 describe("D-3: the label / variant mapping stays coupled to the shipped Badge primitive", () => {
@@ -244,6 +316,58 @@ describe("D-3: the label / variant mapping stays coupled to the shipped Badge pr
       const cls = badgeVariants({ variant });
       expect(typeof cls).toBe("string");
       expect(cls.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("EVENT-V4-04 residue: a reversed range (end day before start day) is rendered as stored, never repaired", () => {
+  // The create-event form rejects end-before-start server-side, so this is only
+  // reachable by a hand edit in the Supabase table editor. `eventStatus` does
+  // not reorder, swap, or "correct" the two days — same stance as
+  // `formatEventDateRange` in src/lib/date.ts. These tests PIN the current
+  // behaviour so a future refactor that adds a silent repair fails here.
+  const START_AFTER_END = "2025-06-10T00:00:00.000Z"; // "start" is the later day
+  const END_BEFORE_START = "2025-06-01T00:00:00.000Z"; // "end" is the earlier day
+
+  it("today before the (later) start day → upcoming", () => {
+    expect(
+      eventStatus(
+        START_AFTER_END,
+        END_BEFORE_START,
+        new Date("2025-06-05T12:00:00Z"),
+      ).key,
+    ).toBe("upcoming");
+  });
+
+  it("today on the (later) start day → ended (it is already past the earlier end day)", () => {
+    expect(
+      eventStatus(
+        START_AFTER_END,
+        END_BEFORE_START,
+        new Date("2025-06-10T12:00:00Z"),
+      ).key,
+    ).toBe("ended");
+  });
+
+  it("today after the (later) start day → ended", () => {
+    expect(
+      eventStatus(
+        START_AFTER_END,
+        END_BEFORE_START,
+        new Date("2025-06-15T12:00:00Z"),
+      ).key,
+    ).toBe("ended");
+  });
+
+  it("never reports doors-open for a reversed range — no day satisfies startDay <= today <= endDay", () => {
+    for (const day of ["06-01", "06-05", "06-10", "06-15", "06-20"]) {
+      expect(
+        eventStatus(
+          START_AFTER_END,
+          END_BEFORE_START,
+          new Date(`2025-${day}T12:00:00Z`),
+        ).key,
+      ).not.toBe("doors-open");
     }
   });
 });
