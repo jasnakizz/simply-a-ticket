@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDateRange, formatRelativeTime } from "@/lib/date";
+import { eventStatus } from "@/lib/event-status";
 import { sumOwedByCurrency } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
 import { buttonVariants } from "@/components/ui/button";
@@ -41,6 +42,14 @@ export default async function EventDetailPage({
   if (eventError || !event) {
     notFound();
   }
+
+  // The time-aware door-open status (DOORS-V4-01..05). `eventStatus` reads
+  // today's Europe/Belgrade civil date from its default `new Date()` — the
+  // server's clock at the moment this Server Component renders. `export const
+  // dynamic = "force-dynamic"` above is what makes that render happen on every
+  // page load rather than once at build time, so the badge is always "as of now"
+  // and no polling or realtime subscription is needed to keep it fresh.
+  const status = eventStatus(event.starts_at, event.ends_at);
 
   // The `eq` filter here is what keeps another event's ticket types off
   // this page — this is the one query in the app that scopes ticket_types
@@ -187,7 +196,7 @@ export default async function EventDetailPage({
           >
             ← Events
           </Link>
-          <Badge variant="accent">Doors open</Badge>
+          <Badge variant={status.variant}>{status.label}</Badge>
         </div>
 
         <div className="flex flex-col gap-2">

@@ -63,10 +63,19 @@ describe("PAGE-02 — Modernist dashboard layout", () => {
     expect(dash).not.toContain("eyebrow");
   });
 
-  it("renders the static D-20 accent Doors open badge exactly once", () => {
-    const accents = dash.match(/variant="accent"/g) ?? [];
-    expect(accents.length).toBe(1);
-    expect(dash).toContain("Doors open");
+  // This assertion used to require exactly one static `<Badge variant="accent">
+  // Doors open</Badge>` (the v2 D-20 hardcoded badge). Plan 13-01 (DOORS-V4-01)
+  // makes the badge time-aware: its variant and label are now computed by
+  // `eventStatus` in src/lib/event-status.ts and passed as expressions, so the
+  // three label strings and every Badge variant literal have LEFT this file.
+  // Retargeted in the SAME commit as the source change (the repo's lockstep
+  // discipline) to require that absence — a re-hardcoded badge fails here by
+  // name. The DOORS-V4-01 positive source contract is authored in the describe
+  // block appended to the foot of this file by plan 13-01 Task 3.
+  it("drives the single dashboard Badge from the computed status, never a literal", () => {
+    expect((dash.match(/variant="accent"/g) ?? []).length).toBe(0);
+    expect((dash.match(/<Badge/g) ?? []).length).toBe(1);
+    expect(dash).toMatch(/<Badge\s+variant=\{/);
   });
 
   it("uses the 26px display step and the 11px caps step", () => {
