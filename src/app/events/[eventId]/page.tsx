@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowRight } from "lucide-react";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDateRange, formatRelativeTime } from "@/lib/date";
@@ -66,6 +67,12 @@ export default async function EventDetailPage({
   if (ticketTypesError) {
     throw ticketTypesError;
   }
+
+  // Tracer-ordering step (plan 14-01 Task 1): the compact row needs only the
+  // count, and Task 2 replaces this length-derived constant with a count-only
+  // exact-count head read on ticket_types once the inline block below (which
+  // still needs the rows) is removed.
+  const ticketTypeCount = ticketTypes?.length ?? 0;
 
   // Sold figure — every ticket for this event, with no status filter. The
   // exact-count head read asks Postgres for a real COUNT(*) returned in a
@@ -309,6 +316,23 @@ export default async function EventDetailPage({
             </p>
           )}
         </div>
+
+        {/* Compact ticket-types row — an outline navigation affordance, never a
+            ScanBar and never the red default (accent is reserved app-wide for
+            the scan action and primary submits). Styled through buttonVariants
+            with the outline style passed as an object property (colon form),
+            never a JSX attribute — the DOORS-V4-01 gate on this file forbids a
+            JSX style attribute here. Task 2 removes the inline block below. */}
+        <Link
+          href={`/events/${eventId}/ticket-types`}
+          className={buttonVariants({
+            variant: "outline",
+            className: "w-full justify-between min-h-[52px] px-4",
+          })}
+        >
+          Ticket types · {ticketTypeCount}
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </Link>
 
         <div className="flex flex-col gap-4">
           {ticketTypes && ticketTypes.length === 0 ? (

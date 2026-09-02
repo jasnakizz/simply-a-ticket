@@ -74,8 +74,12 @@ export async function createTicketType(
   }
 
   // No redirect — decision D-01 keeps the add form and the list on the same
-  // page. Revalidating the current event route is what makes the new row
-  // appear in the list underneath the form, without a page navigation.
+  // page. Two revalidations, the orders.ts sequential-call precedent: the first
+  // keeps the dashboard row's "Ticket types · N" count fresh, and the second is
+  // what makes a newly saved type appear in the list on the dedicated
+  // ticket-types screen the operator is already looking at — with no navigation
+  // (TYPES-V4-05, decision D-08).
   revalidatePath(`/events/${event_id}`);
+  revalidatePath(`/events/${event_id}/ticket-types`);
   return {};
 }

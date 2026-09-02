@@ -67,40 +67,53 @@ export function AddTicketTypeForm({ eventId }: { eventId: string }) {
       onSubmit={handleSubmit}
       className="flex flex-col gap-4"
     >
-      {state.formError && <FieldError message={state.formError} />}
+      {/* D-07: the field group is wrapped in the order-form panel box so the
+          add-type form reads as a discrete panel on its dedicated screen. The
+          order form's box carries a top-border-suppressing utility only because
+          it butts against a disclosure trigger; this panel is standalone and
+          drops it. Deliberately NO collapse chrome and NO open/closed state —
+          the panel is always open (TYPES-V4-04). */}
+      <div className="border border-border p-4 flex flex-col gap-4">
+        {state.formError && <FieldError message={state.formError} />}
 
-      {/* defaultValue, not value: a value with no onChange would make React
-          treat this input as controlled and warn. This field is never
-          edited by the person filling out the form — it just carries the
-          event id from the page. */}
-      <input type="hidden" name="event_id" defaultValue={eventId} />
+        {/* defaultValue, not value: a value with no onChange would make React
+            treat this input as controlled and warn. This field is never
+            edited by the person filling out the form — it just carries the
+            event id from the page. */}
+        <input type="hidden" name="event_id" defaultValue={eventId} />
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="name" className={labelClassName}>
-          Name
-        </Label>
-        <Input
-          id="name"
-          name="name"
-          required
-          defaultValue={state.values?.name ?? ""}
-        />
-        {state.errors?.name?.[0] && <FieldError message={state.errors.name[0]} />}
-      </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="name" className={labelClassName}>
+            Name
+          </Label>
+          <Input
+            id="name"
+            name="name"
+            required
+            defaultValue={state.values?.name ?? ""}
+          />
+          {state.errors?.name?.[0] && (
+            <FieldError message={state.errors.name[0]} />
+          )}
+        </div>
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="description" className={labelClassName}>
-          Description
-        </Label>
-        <Textarea
-          id="description"
-          name="description"
-          required
-          defaultValue={state.values?.description ?? ""}
-        />
-        {state.errors?.description?.[0] && (
-          <FieldError message={state.errors.description[0]} />
-        )}
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="description" className={labelClassName}>
+            Description
+          </Label>
+          {/* D-03: still plainly labeled "Description" and still server-required
+              this phase. The `(optional)` marker, the helper line and the
+              nullable relaxation are Phase 15 (TYPEDESC-V4-01/-02). */}
+          <Textarea
+            id="description"
+            name="description"
+            required
+            defaultValue={state.values?.description ?? ""}
+          />
+          {state.errors?.description?.[0] && (
+            <FieldError message={state.errors.description[0]} />
+          )}
+        </div>
       </div>
 
       <div className="border-t-2 border-border pt-3 pb-5 grid gap-2">
