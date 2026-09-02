@@ -8,16 +8,19 @@ import { cn } from "@/lib/utils"
 // explicit variants, no more; `neutral` is the default so the home "3 events"
 // tag, the dashboard "Doors open" tag and Phase 7's PAGE-03 "sample" markers are
 // all covered without a new variant. Radius is zero — no corner class here.
+// Every variant carries a 1px border whose colour is its own text colour, so
+// the three event-status badges (Upcoming / Doors open / Ended) all read as
+// outlined chips rather than only the outline one.
 const badgeVariants = cva(
-  "inline-flex items-center text-[11px] tracking-[0.02em] px-2.5 py-[3px]",
+  "inline-flex items-center border text-[11px] tracking-[0.02em] px-2.5 py-[3px]",
   {
     variants: {
       variant: {
         accent:
-          "bg-[var(--color-accent-100)] text-[var(--color-accent-800)]",
+          "border-[var(--color-accent-800)] bg-[var(--color-accent-100)] text-[var(--color-accent-800)]",
         neutral:
-          "bg-[var(--color-neutral-100)] text-[var(--color-neutral-800)]",
-        outline: "border border-primary text-primary",
+          "border-[var(--color-neutral-800)] bg-[var(--color-neutral-100)] text-[var(--color-neutral-800)]",
+        outline: "border-primary text-primary",
       },
     },
     defaultVariants: {
