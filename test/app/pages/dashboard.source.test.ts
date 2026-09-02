@@ -510,3 +510,53 @@ describe("DOORS-V4-01 — the dashboard status badge is computed, not hardcoded"
     );
   });
 });
+
+describe("TYPES-V4-01 / D-04 — the inline ticket-types block is replaced by one compact row", () => {
+  // The destination screen's full contract lives in
+  // test/app/pages/ticket-types.source.test.ts. This describe is the dashboard
+  // half: the whole inline block (list, empty state, add-type heading, the
+  // <AddTicketTypeForm> element AND its import) is gone, and exactly one
+  // outline link row to the dedicated screen stands in its place. Added with
+  // plan 14-01 Task 3; the ABSENCE half of the retarget shipped in Task 2's
+  // lockstep commit alongside the source removal.
+  it("no longer imports or mounts AddTicketTypeForm", () => {
+    expect(dash).not.toContain("AddTicketTypeForm");
+  });
+
+  it("no longer carries the inline EXISTING TYPES list eyebrow", () => {
+    expect(dash).not.toContain("EXISTING TYPES");
+  });
+
+  it("renders exactly one compact row linking to the dedicated per-event ticket-types screen", () => {
+    expect(dash).toContain("/events/${eventId}/ticket-types");
+    expect((dash.match(/\/events\/\$\{eventId\}\/ticket-types/g) ?? []).length).toBe(1);
+    expect(dash).toMatch(/Ticket types · \{ticketTypeCount\}/);
+  });
+
+  it("styles the row as an outline button link via buttonVariants — not a red ScanBar, not a JSX variant attribute", () => {
+    expect(dash).toMatch(/buttonVariants\(\{\s*variant:\s*"outline"/);
+    // The DOORS-V4-01 gate below already forbids any `variant="` JSX attribute
+    // on this file; the row must therefore use the object-property form.
+  });
+
+  it("carries exactly one trailing ArrowRight glyph, imported from lucide-react", () => {
+    expect(dash).toMatch(
+      /import\s*\{[^}]*\bArrowRight\b[^}]*\}\s*from\s*"lucide-react"/,
+    );
+    expect((dash.match(/<ArrowRight/g) ?? []).length).toBe(1);
+  });
+
+  it("backs the row's N with a count-only head read on ticket_types, scoped to this event", () => {
+    const ttChain = dash
+      .split('.from("ticket_types")')
+      .slice(1)
+      .map((seg) => {
+        const end = seg.indexOf(";");
+        return end === -1 ? seg : seg.slice(0, end);
+      });
+    expect(ttChain.length).toBe(1);
+    expect(ttChain[0]).toContain('count: "exact"');
+    expect(ttChain[0]).toContain("head: true");
+    expect(ttChain[0]).toContain('.eq("event_id"');
+  });
+});

@@ -101,9 +101,10 @@ export function AddTicketTypeForm({ eventId }: { eventId: string }) {
           <Label htmlFor="description" className={labelClassName}>
             Description
           </Label>
-          {/* D-03: still plainly labeled "Description" and still server-required
-              this phase. The `(optional)` marker, the helper line and the
-              nullable relaxation are Phase 15 (TYPEDESC-V4-01/-02). */}
+          {/* D-03: the description control stays plainly labeled and stays a
+              server-enforced field this phase. The not-required marker, the
+              helper line and the nullable relaxation are all Phase 15
+              (TYPEDESC-V4-01/-02). */}
           <Textarea
             id="description"
             name="description"
