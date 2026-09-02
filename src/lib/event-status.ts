@@ -22,10 +22,16 @@ export type EventStatusKey = "upcoming" | "doors-open" | "ended";
 // with src/components/ui/badge.tsx by the label/variant coupling assertion in
 // test/lib/event-status.test.ts and by phase11-contract.test.ts's "still
 // declares exactly three variants" gate.
+//
+// The fields are `readonly`: `eventStatus` hands back one of the three shared
+// module-level objects below by reference, so a caller mutating `.label` /
+// `.variant` would corrupt the mapping for every later request. The type stops
+// that at compile time; `Object.freeze` on the objects themselves stops it at
+// runtime (a plain-JS caller, or one going through `any`).
 export type EventStatus = {
-  key: EventStatusKey;
-  label: string;
-  variant: "accent" | "neutral" | "outline";
+  readonly key: EventStatusKey;
+  readonly label: string;
+  readonly variant: "accent" | "neutral" | "outline";
 };
 
 // Built once at module scope, not per call — same idiom as `relativeTimeFormat`
@@ -55,11 +61,28 @@ export function belgradeToday(now: Date = new Date()): string {
 // The frozen D-3 mapping. The label and variant strings live here and nowhere
 // else in the app — src/app/events/[eventId]/page.tsx carries neither, which is
 // what keeps its zero-`variant="neutral"` contract gate true.
-const STATUS: Record<EventStatusKey, EventStatus> = {
-  upcoming: { key: "upcoming", label: "Upcoming", variant: "outline" },
-  "doors-open": { key: "doors-open", label: "Doors open", variant: "accent" },
-  ended: { key: "ended", label: "Ended", variant: "neutral" },
-};
+//
+// `Object.freeze` is load-bearing, not decoration: `eventStatus` returns one of
+// these objects by reference, so without the freeze a single `status.label = …`
+// anywhere in a request would poison the mapping for the life of the process.
+// Each object is frozen, and so is the record that holds them.
+const STATUS: Record<EventStatusKey, EventStatus> = Object.freeze({
+  upcoming: Object.freeze({
+    key: "upcoming",
+    label: "Upcoming",
+    variant: "outline",
+  } as const),
+  "doors-open": Object.freeze({
+    key: "doors-open",
+    label: "Doors open",
+    variant: "accent",
+  } as const),
+  ended: Object.freeze({
+    key: "ended",
+    label: "Ended",
+    variant: "neutral",
+  } as const),
+});
 
 // The decision. `now` defaults to `new Date()`; the only caller passes no
 // explicit clock, so on the dashboard this is the server's clock read during
