@@ -157,7 +157,13 @@ export function CheckInPanel({
   }, [checkInState.ok, router]);
 
   const statusIsCheckedIn = ticketStatus === "checked_in";
-  const owesAtDoorPositive = isPositiveAmount(owesAtDoor);
+  // G-17-4 / WR-01: the collect-vs-plain branch keys on the NET LEFT figure
+  // (the leftAmount prop = strip.left), not gross owes. The same pure string
+  // predicate, now applied to leftAmount — equivalent to strip.leftIsPositive
+  // for every input. A not-checked-in pay_at_door ticket already fully
+  // collected at the door (net LEFT "0.00") takes the plain "Check in manually"
+  // path, never a "Collect 0.00" button. owesAtDoor stays used in balanceDisplay.
+  const leftPositive = isPositiveAmount(leftAmount);
 
   // Collect sub-form UI state (D-02 / handoff). collectOpen: the collapsed
   // `Collect <Left> +` button vs the expanded panel — expands in place, nothing
@@ -171,7 +177,16 @@ export function CheckInPanel({
 
   // Terminal state from the ACTION RETURN (D-04) — never the stale page-load
   // row. A successful manual check-in.
-  if (checkInState.ok) {
+  //
+  // G-17-5: gated on `ticketStatus !== "checked_in"` so this transient
+  // confirmation renders only in the brief window between a successful submit
+  // and router.refresh() propagating the checked-in status prop. Once the prop
+  // flips, this early-return (and the alreadyCheckedIn one below) is skipped and
+  // the panel falls through to the server-state-driven checked-in view (C-2:
+  // collapsed "Collect <Left>" → expand → inert "Mark as paid") with no manual
+  // page reload. The transient confirmation before the refresh lands is the
+  // intended feedback and is kept.
+  if (checkInState.ok && ticketStatus !== "checked_in") {
     const time = formatCheckInTime(checkInState.checkedInAt);
     return (
       <div className="flex w-full flex-col gap-1">
@@ -189,8 +204,10 @@ export function CheckInPanel({
 
   // A second manual attempt, or a race with a scan, resolves through the atomic
   // UPDATE and returns alreadyCheckedIn — render it from the return (with the
-  // ORIGINAL timestamp if present), no refresh, never a second success.
-  if (checkInState.alreadyCheckedIn) {
+  // ORIGINAL timestamp if present), no refresh, never a second success. Same
+  // G-17-5 gate as the ok branch above: clears once router.refresh() propagates
+  // the checked-in status prop, so the panel settles into the server-driven view.
+  if (checkInState.alreadyCheckedIn && ticketStatus !== "checked_in") {
     const time = formatCheckInTime(checkInState.checkedInAt);
     return (
       <div className="flex w-full flex-col gap-1">
@@ -371,7 +388,7 @@ export function CheckInPanel({
         <FieldError message={checkInState.errors.event_id[0]} />
       ) : null}
 
-      {statusIsCheckedIn || owesAtDoorPositive ? (
+      {statusIsCheckedIn || leftPositive ? (
         collectOpen ? (
           collectPanel
         ) : (

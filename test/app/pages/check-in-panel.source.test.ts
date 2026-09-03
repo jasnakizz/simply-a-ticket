@@ -227,7 +227,7 @@ describe("ADETAIL-V5-04 — the balance-due collect sub-form", () => {
     );
   });
 
-  it(`${PANEL}: the owes predicate is a pure string test — anchored decimal + a non-zero digit, no numeric parse`, () => {
+  it(`${PANEL}: the net-left predicate is a pure string test — anchored decimal + a non-zero digit, no numeric parse`, () => {
     expect(panel).toContain("/^\\d+(?:\\.\\d{1,2})?$/");
     expect(panel).toContain("/[1-9]/");
     expect(panel).not.toMatch(/\bNumber\(/);
@@ -235,9 +235,26 @@ describe("ADETAIL-V5-04 — the balance-due collect sub-form", () => {
     expect(panel).not.toMatch(/parseInt/);
   });
 
+  it(`${PANEL}: the collect-vs-plain branch keys on net LEFT — isPositiveAmount(leftAmount), never isPositiveAmount(owesAtDoor) (G-17-4 / WR-01)`, () => {
+    expect(panel).toContain("isPositiveAmount(leftAmount)");
+    expect(panel).not.toContain("isPositiveAmount(owesAtDoor)");
+  });
+
   it(`${PANEL}: opens no second write path into tickets (ADETAIL-V5-06)`, () => {
     expect(panel).not.toContain(".update(");
     expect(panel).not.toContain('.from("tickets")');
+  });
+});
+
+describe("G-17-5 — the panel settles to the checked-in view after router.refresh", () => {
+  it(`${PANEL}: the checkInState.ok confirmation early-return is guarded by ticketStatus !== "checked_in"`, () => {
+    expect(panel).toContain('checkInState.ok && ticketStatus !== "checked_in"');
+  });
+
+  it(`${PANEL}: the checkInState.alreadyCheckedIn confirmation early-return is guarded by ticketStatus !== "checked_in"`, () => {
+    expect(panel).toContain(
+      'checkInState.alreadyCheckedIn && ticketStatus !== "checked_in"',
+    );
   });
 });
 
