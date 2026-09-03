@@ -14,14 +14,25 @@
 // here by hand — scanner-client.tsx is source-pinned and frozen, so nothing is
 // imported from it. `withTimeout` itself IS imported (src/lib/with-timeout.ts
 // is a plain node module, not part of the frozen machine).
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert } from "lucide-react";
+import { ChevronUp, CircleAlert } from "lucide-react";
 
 import { checkInTicket } from "@/app/actions/check-in";
 import type { CheckInState } from "@/app/actions/types";
+import { amountSchema, toTwoDecimals } from "@/lib/amount";
 import { withTimeout } from "@/lib/with-timeout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // The empty reducer seed — same shape as the scanner's initialCheckIn.
 const initialCheckIn: CheckInState = {};
@@ -148,6 +159,16 @@ export function CheckInPanel({
   const statusIsCheckedIn = ticketStatus === "checked_in";
   const owesAtDoorPositive = isPositiveAmount(owesAtDoor);
 
+  // Collect sub-form UI state (D-02 / handoff). collectOpen: the collapsed
+  // `Collect <Left> +` button vs the expanded panel — expands in place, nothing
+  // navigates. paymentCollected: the gate; defaults ON for the detail page
+  // (staff are standing with the person and the cash) — unticking parks the
+  // form, it is not a free check-in. amountHint: a non-blocking client-side
+  // shape warning from the shared amountSchema.
+  const [collectOpen, setCollectOpen] = useState(false);
+  const [paymentCollected, setPaymentCollected] = useState(true);
+  const [amountHint, setAmountHint] = useState<string | null>(null);
+
   // Terminal state from the ACTION RETURN (D-04) — never the stale page-load
   // row. A successful manual check-in.
   if (checkInState.ok) {
@@ -188,6 +209,150 @@ export function CheckInPanel({
     );
   }
 
+  // Balance prefill — string-only, never a numeric round-trip. Left (the
+  // outstanding figure) drives the label and the amount default; a rejected
+  // submit re-applies whatever the staff member typed via checkInState.values.
+  const balanceDisplay = toTwoDecimals(leftAmount ?? owesAtDoor ?? "");
+  const amountDefault = checkInState.values?.collected_amount || balanceDisplay;
+  const currencyDefault =
+    checkInState.values?.collected_currency || currency || "RSD";
+
+  // The revealed amount + currency fields — identical markup whether the CTA is
+  // the live "Mark as paid & check in" or the inert "Mark as paid" (C-2 / D-11).
+  const collectFields = (
+    <>
+      {/* Whole row is a ≥44px tap target. Default ON (D-02 / handoff). */}
+      <label className="flex min-h-11 w-full items-center gap-2">
+        <Checkbox
+          name="payment_collected"
+          checked={paymentCollected}
+          onCheckedChange={(value) => setPaymentCollected(value === true)}
+        />
+        <span className="text-[13px] font-semibold leading-[1.4]">
+          Payment collected
+        </span>
+      </label>
+      {checkInState.errors?.payment_collected?.[0] ? (
+        <FieldError message={checkInState.errors.payment_collected[0]} />
+      ) : null}
+
+      {/* Unchecking parks the form: fields + CTA disabled, not a free check-in. */}
+      <div
+        className={
+          paymentCollected
+            ? "flex w-full flex-col gap-4"
+            : "flex w-full flex-col gap-4 opacity-45"
+        }
+      >
+        <div className="flex w-full flex-col gap-2">
+          <Label htmlFor="collected_amount" className="text-[13px] font-semibold">
+            Amount collected
+          </Label>
+          <Input
+            id="collected_amount"
+            name="collected_amount"
+            inputMode="decimal"
+            defaultValue={amountDefault}
+            disabled={!paymentCollected}
+            onBlur={(event) => {
+              // Client-side pre-validation ONLY — reuses the shared amountSchema
+              // so the shape rule + message live in one place. Non-blocking: the
+              // submit is gated by the checkbox, and checkInSchema.superRefine in
+              // the frozen action is the real gate.
+              const result = amountSchema.safeParse(event.currentTarget.value);
+              setAmountHint(
+                result.success
+                  ? null
+                  : "Enter a non-negative amount with up to 2 decimal places.",
+              );
+            }}
+          />
+          {checkInState.errors?.collected_amount?.[0] ? (
+            <FieldError message={checkInState.errors.collected_amount[0]} />
+          ) : amountHint ? (
+            <p className="text-[13px] text-muted-foreground">{amountHint}</p>
+          ) : null}
+        </div>
+        <div className="flex w-full flex-col gap-2">
+          <Label
+            htmlFor="collected_currency"
+            className="text-[13px] font-semibold"
+          >
+            Currency
+          </Label>
+          {/* key tied to the echoed value so a rejected submit re-applies the
+              staff member's choice — same remount trick as the scanner. */}
+          <Select
+            key={currencyDefault}
+            name="collected_currency"
+            defaultValue={currencyDefault}
+            disabled={!paymentCollected}
+          >
+            <SelectTrigger id="collected_currency" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="EUR">EUR</SelectItem>
+              <SelectItem value="RSD">RSD</SelectItem>
+            </SelectContent>
+          </Select>
+          {checkInState.errors?.collected_currency?.[0] ? (
+            <FieldError message={checkInState.errors.collected_currency[0]} />
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+
+  // The expanded collect panel. C-3: NO "Balance due: X" bar — a subtle gray
+  // divider carrying only a fold-up chevron that collapses back to the button.
+  const collectPanel = (
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex items-center justify-end border-t border-[var(--color-divider)] pt-2">
+        <button
+          type="button"
+          onClick={() => setCollectOpen(false)}
+          aria-label="Collapse payment panel"
+          className="inline-flex min-h-[28px] items-center px-1.5 text-muted-foreground"
+        >
+          <ChevronUp aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+      {statusIsCheckedIn ? (
+        // C-2 / D-11 / ADETAIL-V5-06: an already-checked-in attendee who still
+        // owes gets a "Mark as paid" CTA only (no "& check in") and it is inert
+        // this phase — wiring it needs a new tickets UPDATE, which ADETAIL-V5-06
+        // bars; deferred to Phase 18. No <form action>, no balance_due submit.
+        <div className="flex w-full flex-col gap-4">
+          {collectFields}
+          <Button
+            type="button"
+            disabled
+            className="min-h-[44px] w-full justify-start text-left"
+          >
+            Mark as paid
+          </Button>
+        </div>
+      ) : (
+        <form action={checkInAction} className="flex w-full flex-col gap-4">
+          <input type="hidden" name="token" defaultValue={qrToken} />
+          <input type="hidden" name="event_id" defaultValue={eventId} />
+          {/* The path marker checkInSchema.superRefine switches on — present
+              ONLY on this balance-due branch, never on the plain path (D-02). */}
+          <input type="hidden" name="balance_due" defaultValue="true" />
+          {collectFields}
+          <Button
+            type="submit"
+            disabled={!paymentCollected || checkInPending}
+            className="min-h-[44px] w-full justify-start text-left"
+          >
+            {checkInPending ? "Checking in…" : "Mark as paid & check in"}
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex w-full flex-col gap-3">
       {checkInState.formError ? (
@@ -206,14 +371,23 @@ export function CheckInPanel({
         <FieldError message={checkInState.errors.event_id[0]} />
       ) : null}
 
-      {owesAtDoorPositive || statusIsCheckedIn ? (
-        <div className="flex w-full flex-col gap-2 text-[13px] leading-[1.5] text-muted-foreground">
-          {/* 17-03: the balance-due collect sub-form replaces this placeholder */}
-          <p>
-            Collect {leftAmount ?? owesAtDoor} {currency} at the door — balance-due
-            check-in ships in the next step.
-          </p>
-        </div>
+      {statusIsCheckedIn || owesAtDoorPositive ? (
+        collectOpen ? (
+          collectPanel
+        ) : (
+          <Button
+            type="button"
+            onClick={() => setCollectOpen(true)}
+            className="min-h-[44px] w-full justify-between text-left"
+          >
+            <span>
+              Collect {balanceDisplay} {currency}
+            </span>
+            <span aria-hidden="true" className="opacity-80">
+              +
+            </span>
+          </Button>
+        )
       ) : (
         <form action={checkInAction} className="flex w-full flex-col">
           <input type="hidden" name="token" defaultValue={qrToken} />
