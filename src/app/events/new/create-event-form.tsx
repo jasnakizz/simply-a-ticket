@@ -44,6 +44,7 @@ export function CreateEventForm() {
           id="name"
           name="name"
           required
+          maxLength={50}
           defaultValue={state.values?.name ?? ""}
         />
         {state.errors?.name?.[0] && <FieldError message={state.errors.name[0]} />}
