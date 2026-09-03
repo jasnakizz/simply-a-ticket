@@ -548,3 +548,51 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+/**
+ * ADETAIL-V5-01 (plan 17-01) — each attendee row is a link to that attendee's
+ * detail page, carrying the active filter query string forward so Back returns
+ * to the same filtered list (D-13). The link is href-only — no handler prop, no
+ * form — so it stays inside phase11-contract.test.ts Gate 1 / Gate 8.
+ *
+ * `attendees` is the comment-stripped source. Every `it` is named for the one
+ * property it protects; each was proven to fail BY NAME via a one-line
+ * break-check recorded in 17-01-SUMMARY.md.
+ */
+describe("ADETAIL-V5-01 — every row links to the per-ticket detail page carrying the filter state", () => {
+  const liBlock = attendees.slice(
+    attendees.indexOf("<li"),
+    attendees.indexOf("</li>"),
+  );
+
+  it("wraps the row body in a <Link> whose href is built by the detailHref helper", () => {
+    expect(liBlock).toMatch(/<Link\s+href=\{detailHref\(attendee\.id\)\}/);
+  });
+
+  it("targets the per-ticket detail route under this event", () => {
+    expect(attendees).toContain(
+      "const path = `/events/${eventId}/attendees/${ticketId}`;",
+    );
+  });
+
+  it("builds the detail href from the same seeded filter params the chips carry forward (D-13)", () => {
+    const helper = attendees.slice(
+      attendees.indexOf("const detailHref ="),
+      attendees.indexOf("const RESERVATION_LABEL ="),
+    );
+    expect(helper).toContain("seededParams().toString()");
+  });
+
+  it("adds no event-handler prop to the row link — href only (phase11 Gate 1 / Gate 8 compatibility)", () => {
+    expect(liBlock).toMatch(/<Link\s+href=\{/);
+    expect(liBlock).not.toMatch(/\son[A-Z][a-zA-Z]*=\{/);
+    expect(liBlock).not.toMatch(/\saction=\{/);
+  });
+
+  it("keeps the row's green left-bar and three money states inside the link, unchanged", () => {
+    expect(liBlock).toContain("border-l-4");
+    expect(liBlock).toContain("border-l-[var(--color-checked-in)]");
+    expect(liBlock).toMatch(/\{isCollected \? \(/);
+    expect(liBlock).toMatch(/\) : owedLabel !== null \? \(/);
+  });
+});

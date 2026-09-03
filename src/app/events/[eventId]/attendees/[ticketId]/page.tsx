@@ -39,8 +39,8 @@ export default async function AttendeeDetailPage({
   // this is the one screen in the app allowed to fetch it, safe because the
   // whole /events tree is unlisted and staff-only.
   //
-  // qr_token is selected only for the later hidden check-in field (17-02); it
-  // is never shown, never put in a URL, and not referenced anywhere in this
+  // The QR token is selected only for the later hidden check-in field (17-02);
+  // it is never shown, never put in a URL, and not referenced anywhere in this
   // plan's JSX (ADETAIL-V5-07).
   const { data: ticket, error: ticketError } = await supabase
     .from("tickets")

@@ -182,6 +182,18 @@ export default async function AttendeesPage({
     return withQuery(params);
   };
 
+  // ADETAIL-V5-01 / D-13: each row links to that attendee's detail page,
+  // carrying the SAME active-filter query string the chips carry forward
+  // (seededParams() already encodes the normalised type ids + owes=1). So
+  // tapping a row and then tapping Back on the detail page returns to the exact
+  // filtered list the operator was on. href only — no handler prop, no form
+  // (phase11-contract Gate 1 / Gate 8).
+  const detailHref = (ticketId: string) => {
+    const query = seededParams().toString();
+    const path = `/events/${eventId}/attendees/${ticketId}`;
+    return query ? `${path}?${query}` : path;
+  };
+
   const RESERVATION_LABEL = "RESERVATION";
 
   // The single definition of "owes money at the door" (D-04): the collected
@@ -372,40 +384,45 @@ export default async function AttendeesPage({
                     index === 0 ? "" : "border-t border-border",
                   ].join(" ")}
                 >
-                  <div className="flex flex-col gap-1 min-w-0">
-                    <span className="text-[13px] font-extrabold leading-[1.3] break-words">
-                      {attendee.attendee_name}
-                    </span>
-                    {/* <span className="text-[12px] text-muted-foreground break-all">
-                      {attendee.attendee_email}
-                    </span> */}
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
-                      {/* 260831-keq operator tweak: type badge and arrival status share one row to keep door-phone rows short (diverges from 11-UI-SPEC D-08 item 5 on purpose) */}
-                      {typeName ? (
-                        <Badge variant="neutral" className="uppercase">
-                          {typeName}
-                        </Badge>
-                      ) : null}
-                      {isCheckedIn ? (
-                        <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
-                          Checked in {checkInClock}
-                        </span>
-                      ) : (
-                        <span className="text-[12px] text-muted-foreground">
-                          Not arrived
-                        </span>
-                      )}
+                  <Link
+                    href={detailHref(attendee.id)}
+                    className="flex flex-1 items-start justify-between gap-3 min-w-0"
+                  >
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className="text-[13px] font-extrabold leading-[1.3] break-words">
+                        {attendee.attendee_name}
+                      </span>
+                      {/* <span className="text-[12px] text-muted-foreground break-all">
+                        {attendee.attendee_email}
+                      </span> */}
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        {/* 260831-keq operator tweak: type badge and arrival status share one row to keep door-phone rows short (diverges from 11-UI-SPEC D-08 item 5 on purpose) */}
+                        {typeName ? (
+                          <Badge variant="neutral" className="uppercase">
+                            {typeName}
+                          </Badge>
+                        ) : null}
+                        {isCheckedIn ? (
+                          <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
+                            Checked in {checkInClock}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-muted-foreground">
+                            Not arrived
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  {isCollected ? (
-                    <span className="shrink-0 text-right text-[12px] text-muted-foreground">
-                      Paid at door
-                    </span>
-                  ) : owedLabel !== null ? (
-                    <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
-                      {owedLabel}
-                    </span>
-                  ) : null}
+                    {isCollected ? (
+                      <span className="shrink-0 text-right text-[12px] text-muted-foreground">
+                        Paid at door
+                      </span>
+                    ) : owedLabel !== null ? (
+                      <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
+                        {owedLabel}
+                      </span>
+                    ) : null}
+                  </Link>
                 </li>
               );
             })}
