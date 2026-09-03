@@ -103,13 +103,26 @@ describe("D-05 — every money column crosses the wire as a ::text decimal strin
     expect(detail).not.toMatch(/\.reduce\(/);
   });
 
-  it(`${DETAIL}: renders money only through the shared helper + formatMoney, with no currency-code literal`, () => {
+  it(`${DETAIL}: renders money through the shared helper + formatMoney — one RSD fallback for the money strip, no hard-coded EUR`, () => {
     expect(detail).toMatch(/from\s+"@\/lib\/attendee-money"/);
     expect(detail).toMatch(/attendeeMoneyStrip\(/);
     expect(detail).toMatch(/attendeePayments\(/);
     expect(detail).toMatch(/formatMoney\(/);
     expect(detail).not.toMatch(/"EUR"/);
-    expect(detail).not.toMatch(/"RSD"/);
+    // G-17-1: the single money-strip currency fallback is the only currency
+    // literal the page is allowed — a null Owes/Paid/Left cell renders
+    // "0.00 <ticket.currency ?? RSD>", never a blank cell.
+    expect((detail.match(/"RSD"/g) ?? []).length).toBe(1);
+    expect(detail).toMatch(/\?\?\s*"RSD"/);
+  });
+
+  it(`${DETAIL}: renders each PAYMENTS row keyed on the row's own currency, not the ticket currency (G-17-1 / WR-02)`, () => {
+    expect(detail).toMatch(/formatMoney\(payment\.amount,\s*payment\.currency\)/);
+    expect(detail).not.toMatch(/formatMoney\(payment\.amount,\s*currency\)/);
+  });
+
+  it(`${DETAIL}: the money-strip helper defaults a null value to the zero amount through formatMoney (G-17-1)`, () => {
+    expect(detail).toMatch(/formatMoney\(value \?\? "0\.00",/);
   });
 
   it(`${DETAIL}: the Left cell switches between the accent and the settled-green token`, () => {

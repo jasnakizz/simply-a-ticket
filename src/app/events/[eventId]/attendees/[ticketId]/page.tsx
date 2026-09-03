@@ -110,12 +110,17 @@ export default async function AttendeeDetailPage({
   const payments = attendeePayments(ticket);
 
   const currency = ticket.currency;
-  // Render a money string through the shared formatter only when both the value
-  // and the ticket currency are present; a null value is a blank cell (D-05).
+  // G-17-1 (operator-directed UAT reversal of D-05, scoped to the 3 money-strip
+  // cells ONLY): the strip always renders a figure — a null Owes / Paid / Left
+  // shows 0.00, and a ticket carrying no currency falls back to "RSD". Every
+  // other null-money surface on this page (the PAYMENTS empty-list sentence,
+  // the mismatch note) keeps the null-is-not-zero rule.
+  const stripCurrency =
+    (typeof currency === "string" && currency !== "" ? currency : null) ?? "RSD";
+  // Always returns a formatted string: a null value renders as the zero amount
+  // with the strip currency, never a blank cell.
   const money = (value: string | null) =>
-    value !== null && typeof currency === "string"
-      ? formatMoney(value, currency)
-      : null;
+    formatMoney(value ?? "0.00", stripCurrency);
 
   // D-12 guard shape, identical to the attendees list: only a non-empty string
   // that parses to a real instant reaches the wall-clock formatter. The
@@ -249,9 +254,12 @@ export default async function AttendeeDetailPage({
                     {payment.label}
                   </span>
                   <span className="text-[14px] font-extrabold">
-                    {typeof currency === "string"
-                      ? formatMoney(payment.amount, currency)
-                      : payment.amount}
+                    {/* G-17-1 / WR-02: each row prints the currency it was
+                        actually recorded in (payment.currency), never the
+                        ticket-level currency — a door payment taken in RSD on
+                        an EUR ticket reads "… RSD", matching the mismatch note
+                        below. */}
+                    {formatMoney(payment.amount, payment.currency)}
                   </span>
                 </li>
               ))}
