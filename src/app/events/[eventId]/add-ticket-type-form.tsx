@@ -90,6 +90,7 @@ export function AddTicketTypeForm({ eventId }: { eventId: string }) {
             id="name"
             name="name"
             required
+            maxLength={30}
             defaultValue={state.values?.name ?? ""}
           />
           {state.errors?.name?.[0] && (

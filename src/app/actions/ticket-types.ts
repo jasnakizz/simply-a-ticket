@@ -22,7 +22,11 @@ import type { CreateTicketTypeState } from "@/app/actions/types";
 // cap on how many an event may have.
 const ticketTypeSchema = z.object({
   event_id: z.uuid("Event is required."),
-  name: z.string().trim().min(1, "Name is required."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required.")
+    .max(30, "Name must be 30 characters or fewer."),
   description: z.string().trim().min(1, "Description is required."),
 });
 
