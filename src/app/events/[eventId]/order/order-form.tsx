@@ -128,6 +128,7 @@ export function OrderForm({
           id="attendee_name"
           name="attendee_name"
           required
+          maxLength={30}
           defaultValue={state.values?.attendee_name ?? ""}
         />
         {state.errors?.attendee_name?.[0] && (
@@ -147,6 +148,7 @@ export function OrderForm({
           name="attendee_email"
           type="email"
           required
+          maxLength={100}
           defaultValue={state.values?.attendee_email ?? ""}
         />
         {state.errors?.attendee_email?.[0] && (

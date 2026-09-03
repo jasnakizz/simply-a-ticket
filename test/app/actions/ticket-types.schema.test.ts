@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
+import { readCode } from "../pages/helpers";
+
 /**
  * TIX-01: Zod schema validation tests
  *
@@ -16,7 +18,11 @@ import { z } from "zod";
 // Mirror the schema from ticket-types.ts to test it independently
 const ticketTypeSchema = z.object({
   event_id: z.uuid("Event is required."),
-  name: z.string().trim().min(1, "Name is required."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Name is required.")
+    .max(30, "Name must be 30 characters or fewer."),
   description: z.string().trim().min(1, "Description is required."),
 });
 
@@ -187,13 +193,49 @@ describe("TIX-01: ticketTypeSchema validation", () => {
     expect(event2Type.success).toBe(true);
   });
 
-  it("accepts a very long ticket type name (no length cap)", () => {
-    const longName = "A".repeat(500);
+  it("accepts a ticket type name of exactly 30 characters (LIMIT-V5-02, accept at N)", () => {
     const result = ticketTypeSchema.safeParse({
       ...baseData,
-      name: longName,
+      name: "A".repeat(30),
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects a ticket type name of 31 characters with the max-length message (LIMIT-V5-02, reject at N+1)", () => {
+    const result = ticketTypeSchema.safeParse({
+      ...baseData,
+      name: "A".repeat(31),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.name).toBeDefined();
+      expect(errors.name).toContain("Name must be 30 characters or fewer.");
+    }
+  });
+
+  it("reports the required-field message, not the max-length message, for a blank ticket type name", () => {
+    const result = ticketTypeSchema.safeParse({
+      ...baseData,
+      name: "",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.name).toContain("Name is required.");
+      expect(errors.name).not.toContain("Name must be 30 characters or fewer.");
+    }
+  });
+
+  it("accepts a 30-character ticket type name padded with whitespace, because .trim() runs before .max()", () => {
+    const result = ticketTypeSchema.safeParse({
+      ...baseData,
+      name: "  " + "A".repeat(30) + "  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.name).toBe("A".repeat(30));
+    }
   });
 
   it("accepts a very long description (no length cap)", () => {
@@ -221,5 +263,17 @@ describe("TIX-01: ticketTypeSchema validation", () => {
       event_id: "6f261a6c3bcc4dc48b00ab00e325e5e7",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("LIMIT-V5-02 source parity — the shipped schema and input carry the 30-char cap", () => {
+  it("src/app/actions/ticket-types.ts carries the exact .max(30, ...) call for name", () => {
+    const code = readCode("src/app/actions/ticket-types.ts");
+    expect(code).toContain('.max(30, "Name must be 30 characters or fewer.")');
+  });
+
+  it("src/app/events/[eventId]/add-ticket-type-form.tsx carries maxLength={30} on the name Input", () => {
+    const code = readCode("src/app/events/[eventId]/add-ticket-type-form.tsx");
+    expect(code).toContain("maxLength={30}");
   });
 });

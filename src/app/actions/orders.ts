@@ -37,8 +37,15 @@ import type { OrderState } from "@/app/actions/types";
 const orderSchema = z.object({
   event_id: z.uuid(),
   ticket_type_id: z.uuid("Select a ticket type."),
-  attendee_name: z.string().trim().min(1, "Attendee name is required."),
-  attendee_email: z.email("Enter a valid email address."),
+  attendee_name: z
+    .string()
+    .trim()
+    .min(1, "Attendee name is required.")
+    .max(30, "Attendee name must be 30 characters or fewer."),
+  // z.email(...) stays chained AHEAD of .max(100, ...) so a malformed address is
+  // reported as invalid, not merely over-length. Kept on one line so the
+  // source-parity gate can pin the exact format-check literal.
+  attendee_email: z.email("Enter a valid email address.").max(100, "Email address must be 100 characters or fewer."),
   // Both optional; a blank field becomes `undefined` and is written as NULL.
   paid_amount: amountSchema,
   pay_at_door_amount: amountSchema,
