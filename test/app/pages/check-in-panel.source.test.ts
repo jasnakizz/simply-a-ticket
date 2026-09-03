@@ -119,11 +119,19 @@ describe("ADETAIL-V5-07 / T-17-01 — qr_token rides one hidden field only", () 
     .split("\n")
     .filter((l) => l.includes('name="token"'));
 
-  it(`${PANEL}: renders exactly one hidden token input, bound with defaultValue and never value=`, () => {
-    expect(tokenInputLines.length).toBe(1);
-    expect(tokenInputLines[0]).toContain('type="hidden"');
-    expect(tokenInputLines[0]).toContain("defaultValue={qrToken}");
-    expect(tokenInputLines[0]).not.toMatch(/\svalue=/);
+  // Retargeted in 17-03: the balance-due branch adds a second token input (its
+  // own <form action>). Both are still hidden + defaultValue + never value=, so
+  // the property this gate protects is unchanged — it now ranges over every
+  // token line instead of asserting exactly one. Break-check: bind one with
+  // `value={qrToken}` -> this fails by name.
+  it(`${PANEL}: renders every token input as a hidden defaultValue field, never value=`, () => {
+    expect(tokenInputLines.length).toBeGreaterThanOrEqual(1);
+    expect(tokenInputLines.length).toBeLessThanOrEqual(2);
+    for (const line of tokenInputLines) {
+      expect(line).toContain('type="hidden"');
+      expect(line).toContain("defaultValue={qrToken}");
+      expect(line).not.toMatch(/\svalue=/);
+    }
   });
 
   it(`${PANEL}: never interpolates qrToken into visible text`, () => {
@@ -153,6 +161,83 @@ describe("D-04 — router.refresh() fires only on success, once, from an effect"
   it(`${PANEL}: never revalidates a path or a tag`, () => {
     expect(panel).not.toContain("revalidatePath");
     expect(panel).not.toContain("revalidateTag");
+  });
+});
+
+describe("ADETAIL-V5-04 — the balance-due collect sub-form", () => {
+  const collectFieldsMarker = panel.indexOf("const collectFields");
+
+  it(`${PANEL}: the collect fields live in the balance-due branch (after const collectFields)`, () => {
+    expect(collectFieldsMarker).toBeGreaterThan(-1);
+  });
+
+  it(`${PANEL}: sends balance_due + payment_collected + collected_amount + collected_currency, each once, only in the collect branch`, () => {
+    for (const name of [
+      'name="balance_due"',
+      'name="payment_collected"',
+      'name="collected_amount"',
+      'name="collected_currency"',
+    ]) {
+      expect(panel.split(name).length - 1).toBe(1);
+      expect(panel.indexOf(name)).toBeGreaterThan(collectFieldsMarker);
+    }
+    expect(panel).toMatch(/name="balance_due"\s+defaultValue="true"/);
+  });
+
+  it(`${PANEL}: reuses amountSchema and toTwoDecimals from @/lib/amount and nothing from the scanner`, () => {
+    expect(panel).toMatch(
+      /import\s*\{[^}]*\bamountSchema\b[^}]*\}\s*from\s*"@\/lib\/amount"/,
+    );
+    expect(panel).toMatch(
+      /import\s*\{[^}]*\btoTwoDecimals\b[^}]*\}\s*from\s*"@\/lib\/amount"/,
+    );
+    expect(panel).not.toMatch(/from\s*"@\/app\/events\/\[eventId\]\/scan\//);
+  });
+
+  it(`${PANEL}: the currency Select remounts on the echoed value and offers EUR / RSD, defaulting to the ticket currency`, () => {
+    expect(panel).toMatch(/<Select\b[\s\S]*?key=\{currencyDefault\}/);
+    expect(panel).toContain('<SelectItem value="EUR">');
+    expect(panel).toContain('<SelectItem value="RSD">');
+    expect(panel).toMatch(/currencyDefault\s*=[\s\S]*?\bcurrency\b/);
+  });
+
+  it(`${PANEL}: the live CTA is "Mark as paid & check in", gated by the checkbox + pending`, () => {
+    expect(panel).toContain('"Mark as paid & check in"');
+    expect(panel).toContain("disabled={!paymentCollected || checkInPending}");
+  });
+
+  it(`${PANEL}: the checked-in CTA is an inert, disabled "Mark as paid" — no & check in, no form action (C-2 / D-11)`, () => {
+    expect(panel).toMatch(
+      /<Button\s+type="button"\s+disabled\s+className="[^"]*"\s*>\s*Mark as paid\s*<\/Button>/,
+    );
+    // The inert branch is a <div>, not a <form action> — its slice carries no
+    // balance_due submit path.
+    const inertIdx = panel.search(
+      /<Button\s+type="button"\s+disabled\s+className="[^"]*"\s*>\s*Mark as paid\s*<\/Button>/,
+    );
+    const inertBlock = panel.slice(Math.max(0, inertIdx - 400), inertIdx);
+    expect(inertBlock).not.toContain("action={checkInAction}");
+  });
+
+  it(`${PANEL}: C-3 — no "Balance due:" bar; a fold-up chevron button toggles collectOpen`, () => {
+    expect(panel).not.toContain("Balance due:");
+    expect(panel).toContain("setCollectOpen(true)");
+    expect(panel).toMatch(
+      /<button\s+type="button"[\s\S]*?onClick=\{\(\) => setCollectOpen\(false\)\}/,
+    );
+  });
+
+  it(`${PANEL}: the owes predicate is a pure string test — anchored decimal + a non-zero digit, no numeric parse`, () => {
+    expect(panel).toContain("/^\\d+(?:\\.\\d{1,2})?$/");
+    expect(panel).toContain("/[1-9]/");
+    expect(panel).not.toMatch(/\bNumber\(/);
+    expect(panel).not.toMatch(/parseFloat/);
+    expect(panel).not.toMatch(/parseInt/);
+  });
+
+  it(`${PANEL}: opens no second write path into tickets (ADETAIL-V5-06)`, () => {
+    expect(panel).not.toContain(".update(");
+    expect(panel).not.toContain('.from("tickets")');
   });
 });
 
