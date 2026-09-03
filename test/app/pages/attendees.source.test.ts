@@ -37,21 +37,24 @@ const ticketChains = attendees
   });
 
 const listChain = ticketChains.find((c) => c.includes("attendee_email"));
-// SUPERSEDED by 11-02: the list read was widened to also carry
-// pay_at_door_amount::text and pay_at_door_collected_amount::text for the
-// per-row money states, so the two event-wide TOTALS reads can no longer be
-// located by an amount column alone (that would now match the list chain
-// first). They are disambiguated by a filter/column the list read deliberately
-// never carries: the owed total is the only tickets read narrowed to
-// status = 'issued'; the collected total is the only one that also fetches
-// pay_at_door_collected_currency. The assertions below are unchanged.
-const owedChain = ticketChains.find(
-  (c) =>
-    c.includes("pay_at_door_amount::text") &&
-    c.includes('.eq("status", "issued")'),
+// SUPERSEDED AGAIN by 17-05 (G-17-4 / G-17-8): the owed read dropped its
+// status filter — a checked-in ticket can still carry a residual after a
+// partial or cross-currency collection — so it can no longer be located by
+// `.eq("status", "issued")`. And now that the list read also carries
+// `pay_at_door_collected_currency` for the residual row badge, the collected
+// total can no longer be located by that column alone. New unique locators:
+// the owed/residual read is the only tickets chain carrying
+// `.not("pay_at_door_amount", "is", null)`; the collected read is the only
+// one that fetches `pay_at_door_collected_currency` WITHOUT also selecting
+// `pay_at_door_amount` (the substring `pay_at_door_amount` does not occur
+// inside `pay_at_door_collected_amount`).
+const owedChain = ticketChains.find((c) =>
+  c.includes('.not("pay_at_door_amount", "is", null)'),
 );
-const collectedChain = ticketChains.find((c) =>
-  c.includes("pay_at_door_collected_currency"),
+const collectedChain = ticketChains.find(
+  (c) =>
+    c.includes("pay_at_door_collected_currency") &&
+    !c.includes("pay_at_door_amount"),
 );
 
 describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list", () => {
@@ -149,20 +152,26 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
 });
 
 describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one shared helper", () => {
-  it("imports both door-money adapters from the shared helper module", () => {
+  it("imports the residual pair and the collected adapter — never the gross sumOwedByCurrency (that adapter is the dashboard's)", () => {
     expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bresidualOwedForTicket\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
     expect(attendees).toMatch(
       /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
+    expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
   });
 
-  it("has a dedicated owed read scoped to this event, to issued tickets, with the text cast on the amount column", () => {
+  it("has a dedicated residual read scoped to this event, NOT narrowed by status, selecting both the owed and the collected money columns (G-17-4)", () => {
     expect(owedChain).toBeDefined();
     expect(owedChain).toContain('.eq("event_id", eventId)');
-    expect(owedChain).toContain('.eq("status", "issued")');
+    expect(owedChain).not.toContain('.eq("status"');
     expect(owedChain).toContain("pay_at_door_amount::text");
+    expect(owedChain).toContain("pay_at_door_collected_amount::text");
+    expect(owedChain).toContain("pay_at_door_collected_currency");
   });
 
   it("has a dedicated collected read scoped to this event, with the text cast on the collected amount column and the collected currency column", () => {
@@ -301,26 +310,26 @@ describe("D-12 — the row check-in mark is pinned to the Belgrade wall clock an
  * break-check recorded in 11-02-SUMMARY.md.
  */
 describe("D-13 — the row shows exactly one of three mutually exclusive door-money states", () => {
-  it("fetches the pay-at-door amount, the row currency and the collected amount (text cast) on the list read — and not the collected currency", () => {
+  it("fetches the pay-at-door amount, the row currency, the collected amount (text cast) AND the collected currency on the list read — the row badge needs the collected currency to tell a same-currency collection from a cross-currency one (G-17-8)", () => {
     expect(listChain).toContain("pay_at_door_amount::text");
     expect(listChain).toContain("pay_at_door_collected_amount::text");
     expect(listChain).toMatch(/,\s*currency\s*,/);
-    expect(listChain).not.toContain("pay_at_door_collected_currency");
+    expect(listChain).toContain("pay_at_door_collected_currency");
   });
 
   it("expresses the three states as one if / else-if / else chain, not three independent conditionals over the collected column", () => {
     expect((attendees.match(/\bisCollected\b/g) ?? []).length).toBe(2);
-    expect(attendees).toMatch(/\{isCollected \? \(/);
-    expect(attendees).toMatch(/\) : owedLabel !== null \? \(/);
+    expect(attendees).toMatch(/\{owedLabel !== null \? \(/);
+    expect(attendees).toMatch(/\) : isCollected \? \(/);
     expect(attendees).toMatch(/\) : null\}/);
   });
 
-  it("evaluates the collected-present branch before the owes branch — a paid row can never also read as owing", () => {
-    const collectedIdx = attendees.search(/\{isCollected \? \(/);
-    const owesIdx = attendees.search(/owedLabel !== null \? \(/);
-    expect(collectedIdx).toBeGreaterThan(-1);
+  it("evaluates the still-owed branch BEFORE the collected branch — a partially or cross-currency paid row reads as still owing, never as settled (G-17-8)", () => {
+    const owesIdx = attendees.search(/\{owedLabel !== null \? \(/);
+    const collectedIdx = attendees.search(/\) : isCollected \? \(/);
     expect(owesIdx).toBeGreaterThan(-1);
-    expect(collectedIdx).toBeLessThan(owesIdx);
+    expect(collectedIdx).toBeGreaterThan(-1);
+    expect(owesIdx).toBeLessThan(collectedIdx);
   });
 
   it("recognises a collected amount by the shared anchored decimal shape, including a zero decimal string", () => {
@@ -330,17 +339,17 @@ describe("D-13 — the row shows exactly one of three mutually exclusive door-mo
     );
   });
 
-  it("expresses the owes predicate over the amount STRING — anchored shape plus a strictly-positive digit test, no numeric coercion", () => {
-    expect(attendees).toContain('typeof doorAmount === "string"');
-    expect(attendees).toContain("/^\\d+(?:\\.\\d{1,2})?$/.test(doorAmount)");
-    expect(attendees).toContain("/[1-9]/.test(doorAmount)");
+  it("delegates the owes shape test to the shared residualOwedForTicket helper — the page no longer inlines an anchored-decimal or positive-digit regex, and still coerces no number", () => {
+    expect(attendees).toContain("residualOwedForTicket");
+    expect(attendees).not.toContain("doorAmount");
+    expect(attendees).not.toContain("/[1-9]/.test(");
     expect(attendees).not.toMatch(/\bNumber\(/);
     expect(attendees).not.toMatch(/parseFloat|parseInt|toFixed/);
   });
 
-  it("renders the outstanding amount only through the shared formatter, with the row's own currency", () => {
+  it("renders the outstanding amount only through the shared formatter, on the residual's own amount and currency", () => {
     expect(attendees).toMatch(
-      /owedLabel =[\s\S]*?formatMoney\(doorAmount, doorCurrency\)/,
+      /owedLabel =[\s\S]*?formatMoney\(residual\.amount, residual\.currency\)/,
     );
     expect(attendees).not.toMatch(/"EUR"|"RSD"/);
   });
@@ -437,15 +446,18 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(filterBlock).toContain("return typeFacetPass && owesFacetPass;");
   });
 
-  it("defines exactly one module-local owes predicate and calls it from both the row state and the reservation filter", () => {
+  it("keeps one module-local owes predicate whose whole body delegates to residualOwedForTicket, and the row badge reads the SAME helper — chip filter and badge can never drift onto two predicates", () => {
     expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
-    expect((attendees.match(/\browOwesAtDoor\b/g) ?? []).length).toBeGreaterThanOrEqual(3);
-    // call site 1: the reservation filter
-    expect(filterBlock).toContain("rowOwesAtDoor(attendee)");
-    // call site 2: the row's own owed-amount state
-    expect(norm).toContain(
-      'const owedLabel = rowOwesAtDoor(attendee) && typeof doorAmount === "string" && typeof doorCurrency === "string"',
+    const predicateBody = attendees.slice(
+      attendees.indexOf("function rowOwesAtDoor"),
+      attendees.indexOf("const visibleAttendees ="),
     );
+    expect(predicateBody).toContain("return residualOwedForTicket(row) !== null;");
+    expect(predicateBody).not.toContain(".test(");
+    // call site 1: the reservation filter still calls the predicate
+    expect(filterBlock).toContain("rowOwesAtDoor(attendee)");
+    // call site 2: the row badge reads the same shared helper directly
+    expect(norm).toContain("const residual = residualOwedForTicket(attendee);");
   });
 
   it("keeps both totals chains free of any query-derived token", () => {
@@ -589,10 +601,42 @@ describe("ADETAIL-V5-01 — every row links to the per-ticket detail page carryi
     expect(liBlock).not.toMatch(/\saction=\{/);
   });
 
-  it("keeps the row's green left-bar and three money states inside the link, unchanged", () => {
+  it("keeps the row's green left-bar and three money states inside the link, with the still-owed branch first (G-17-8)", () => {
     expect(liBlock).toContain("border-l-4");
     expect(liBlock).toContain("border-l-[var(--color-checked-in)]");
-    expect(liBlock).toMatch(/\{isCollected \? \(/);
-    expect(liBlock).toMatch(/\) : owedLabel !== null \? \(/);
+    expect(liBlock).toMatch(/\{owedLabel !== null \? \(/);
+    expect(liBlock).toMatch(/\) : isCollected \? \(/);
+  });
+});
+
+/**
+ * G-17-4 / G-17-8 (plan 17-05) — the list page reads the RESIDUAL door balance,
+ * not the pre-Phase-17 gross "status = 'issued' AND collected IS NULL" model.
+ * Phase 17 introduced partial and cross-currency door collections; a checked-in
+ * ticket can still owe. The event-wide "STILL TO COLLECT" box, the per-row
+ * badge and the RESERVATION chip filter all resolve through the one residual
+ * helper in src/lib/door-money.ts.
+ *
+ * `attendees` is the comment-stripped source. Every `it` is named for the one
+ * property it protects; the key retargets carry recorded break-checks in
+ * 17-05-SUMMARY.md.
+ */
+describe("G-17-4 / G-17-8 — the list page reflects the residual door balance, not the gross owes", () => {
+  it("computes the still-to-collect subtotal from sumResidualOwedByCurrency over the residual read", () => {
+    expect(attendees).toContain(
+      "const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);",
+    );
+  });
+
+  it("does not narrow the residual read by status — a checked-in ticket with an outstanding balance still reaches the total (G-17-4)", () => {
+    expect(owedChain).toBeDefined();
+    expect(owedChain).not.toContain('.eq("status"');
+    expect(owedChain).toContain('.not("pay_at_door_amount", "is", null)');
+  });
+
+  it("resolves the chip filter, the row badge and the event-wide total through one residual helper — one rowOwesAtDoor, two residualOwedForTicket( call sites, one sumResidualOwedByCurrency( call site", () => {
+    expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
+    expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(2);
+    expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(1);
   });
 });

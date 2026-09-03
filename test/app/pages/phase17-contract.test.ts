@@ -33,6 +33,8 @@ const DETAIL = "src/app/events/[eventId]/attendees/[ticketId]/page.tsx";
 const PANEL = "src/app/events/[eventId]/attendees/[ticketId]/check-in-panel.tsx";
 const MONEY = "src/lib/attendee-money.ts";
 const ATTENDEES = "src/app/events/[eventId]/attendees/page.tsx";
+// 17-05 added the residual pair here (G-17-3 / G-17-4 / G-17-8).
+const DOOR_MONEY = "src/lib/door-money.ts";
 
 // The frozen exactly-once check-in machine. Phase 17 must not touch any of the
 // three files; Gate 7 canaries their markers and Gate 8 is the primary proof —
@@ -52,6 +54,7 @@ const PHASE_17_MODIFIED_FILES = [
   PANEL,
   MONEY,
   ATTENDEES,
+  DOOR_MONEY,
 ] as const;
 
 const detail = readCode(DETAIL);

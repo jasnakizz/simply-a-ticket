@@ -2,7 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import { sumOwedByCurrency, sumCollectedByCurrency } from "@/lib/door-money";
+import {
+  sumResidualOwedByCurrency,
+  sumCollectedByCurrency,
+  residualOwedForTicket,
+} from "@/lib/door-money";
+import type { ResidualOwedRow } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
 import { formatCheckInClock } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
@@ -67,7 +72,7 @@ export default async function AttendeesPage({
   const { data: attendees, error: attendeesError } = await supabase
     .from("tickets")
     .select(
-      "id, attendee_name, attendee_email, ticket_type_id, status, checked_in_at, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text",
+      "id, attendee_name, attendee_email, ticket_type_id, status, checked_in_at, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
     )
     .eq("event_id", eventId)
     .order("attendee_name", { ascending: true })
@@ -77,15 +82,22 @@ export default async function AttendeesPage({
     throw attendeesError;
   }
 
-  // "Still to collect" — the dashboard's owed chain, verbatim. status =
-  // 'issued' is the exact complement of 'checked_in'. The amount is cast to
-  // text inside the select string so a decimal string — never a JS double —
-  // crosses the wire. Event-wide: it carries nothing derived from the URL.
+  // "Still to collect" — the RESIDUAL door balance across every ticket, not
+  // just the issued ones. Phase 17 introduced partial and cross-currency door
+  // collections, so status = 'checked_in' no longer implies "door balance
+  // resolved": a checked-in ticket can still carry a residual after a partial
+  // (6000 of 7000) or a cross-currency collection (G-17-4 / G-17-8). The read
+  // therefore carries NO status filter; it keeps .not("pay_at_door_amount",
+  // "is", null) because a ticket with no pay-at-door amount has no residual by
+  // definition. Every money column is cast to text so a decimal string —
+  // never a JS double — crosses the wire. Event-wide: nothing derived from
+  // the URL.
   const { data: owedTickets, error: owedTicketsError } = await supabase
     .from("tickets")
-    .select("pay_at_door_amount::text, currency")
+    .select(
+      "pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
+    )
     .eq("event_id", eventId)
-    .eq("status", "issued")
     .not("pay_at_door_amount", "is", null);
 
   if (owedTicketsError) {
@@ -108,7 +120,7 @@ export default async function AttendeesPage({
   // Every money figure comes from the shared helper — this page sums nothing,
   // groups nothing by currency and formats nothing itself. The `?? []` runs
   // only after the throws above, on a successful null.
-  const owedSubtotals = sumOwedByCurrency(owedTickets ?? []);
+  const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);
   const collectedSubtotals = sumCollectedByCurrency(collectedTickets ?? []);
 
   // Real ticket-type name per row (D-05). A row whose type id matches nothing
@@ -196,27 +208,18 @@ export default async function AttendeesPage({
 
   const RESERVATION_LABEL = "RESERVATION";
 
-  // The single definition of "owes money at the door" (D-04): the collected
-  // amount absent AND the pay-at-door amount a strictly positive decimal
-  // string — tested against src/lib/door-money.ts's anchored shape plus a
-  // strictly-positive digit, never a numeric coercion. Called from BOTH the
-  // reservation-chip filter and the row's own owed-amount state, so a chip can
-  // never select a row the row does not itself mark as owing.
-  function rowOwesAtDoor(row: {
-    pay_at_door_amount: unknown;
-    pay_at_door_collected_amount: unknown;
-  }): boolean {
-    const doorAmount = row.pay_at_door_amount;
-    const collectedAmount = row.pay_at_door_collected_amount;
-    const collectedPresent =
-      typeof collectedAmount === "string" &&
-      /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
-    return (
-      !collectedPresent &&
-      typeof doorAmount === "string" &&
-      /^\d+(?:\.\d{1,2})?$/.test(doorAmount) &&
-      /[1-9]/.test(doorAmount)
-    );
+  // The single definition of "still owes money at the door" (D-04, revised by
+  // G-17-4 / G-17-8): a pure delegation to residualOwedForTicket in
+  // src/lib/door-money.ts. The residual rule — max(0, pay_at_door_amount −
+  // same-currency collected), null when nothing is still owed — now lives in
+  // exactly one place. Called from BOTH the reservation-chip filter and the
+  // row's own badge (which calls residualOwedForTicket directly), so a chip
+  // can never select a row the row does not itself mark as owing. The
+  // reservation chip's population therefore now also includes a checked-in
+  // attendee who still carries a residual — the intended operator meaning of
+  // "who do I still need to collect from".
+  function rowOwesAtDoor(row: ResidualOwedRow): boolean {
+    return residualOwedForTicket(row) !== null;
   }
 
   // The visible rows: the fetched list narrowed IN MEMORY only. The type facet
@@ -349,28 +352,26 @@ export default async function AttendeesPage({
 
               // D-13 right side — three mutually exclusive states, decided by
               // ONE if/else-if/else chain (see the JSX below) so exactly one
-              // renders. The collected branch is tested FIRST: a checked-in
-              // pay-at-door attendee carries BOTH pay_at_door_amount (the
-              // balance owed, never cleared — migration 0003) and a collected
-              // amount, and such a row must read "Paid at door", never as owing.
+              // renders. The still-owed branch is tested FIRST (G-17-8): a
+              // checked-in pay-at-door attendee who paid only partially, or
+              // paid in the other currency, carries BOTH a collected amount
+              // and a positive residual — and such a row must read as still
+              // owing, never as "Paid at door". "Paid at door" renders only
+              // when the ticket-currency balance is fully settled.
               const collectedAmount = attendee.pay_at_door_collected_amount;
               const isCollected =
                 typeof collectedAmount === "string" &&
                 /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
 
-              // The outstanding amount uses the shared rowOwesAtDoor predicate
-              // (collected absent AND a strictly-positive decimal string) — one
-              // definition, so the chip and this badge can never disagree — then
-              // narrows the currency for the shared formatter. Never a
-              // numeric coercion. null / "" / "0" / "0.00" / malformed all
-              // fall through to "render nothing".
-              const doorAmount = attendee.pay_at_door_amount;
-              const doorCurrency = attendee.currency;
+              // The outstanding amount is the ticket-currency residual from
+              // the shared helper — the same residualOwedForTicket the chip
+              // filter delegates to, so the chip and this badge can never
+              // disagree. A null residual (nothing still owed) falls through
+              // to the collected / render-nothing branches.
+              const residual = residualOwedForTicket(attendee);
               const owedLabel =
-                rowOwesAtDoor(attendee) &&
-                typeof doorAmount === "string" &&
-                typeof doorCurrency === "string"
-                  ? formatMoney(doorAmount, doorCurrency)
+                residual !== null
+                  ? formatMoney(residual.amount, residual.currency)
                   : null;
 
               return (
@@ -413,13 +414,13 @@ export default async function AttendeesPage({
                         )}
                       </div>
                     </div>
-                    {isCollected ? (
-                      <span className="shrink-0 text-right text-[12px] text-muted-foreground">
-                        Paid at door
-                      </span>
-                    ) : owedLabel !== null ? (
+                    {owedLabel !== null ? (
                       <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
                         {owedLabel}
+                      </span>
+                    ) : isCollected ? (
+                      <span className="shrink-0 text-right text-[12px] text-muted-foreground">
+                        Paid at door
                       </span>
                     ) : null}
                   </Link>

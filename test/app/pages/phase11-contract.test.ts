@@ -83,14 +83,14 @@ const attendeeTicketChains = chainsFrom(attendees, "tickets");
 const attendeeTypeChains = chainsFrom(attendees, "ticket_types");
 const attendeeEventChains = chainsFrom(attendees, "events");
 
-// The owed totals chain on each page: the only tickets read narrowed to
-// status = 'issued' (the list read carries no status filter, so it cannot be
-// confused for this one even though 11-02 widened it to also carry the amount
-// cast).
-const attendeesOwedChain = attendeeTicketChains.find(
-  (c) =>
-    c.includes("pay_at_door_amount::text") &&
-    c.includes('.eq("status", "issued")'),
+// The owed/residual totals chain on each page. On the ATTENDEES page 17-05
+// dropped the status filter (a checked-in ticket can still carry a residual
+// after a partial or cross-currency collection — G-17-4 / G-17-8), so it is
+// now located by the null filter it is the only tickets read to carry. The
+// DASHBOARD keeps the pre-Phase-17 gross chain and is still located by
+// status = 'issued'.
+const attendeesOwedChain = attendeeTicketChains.find((c) =>
+  c.includes('.not("pay_at_door_amount", "is", null)'),
 );
 const dashboardOwedChain = chainsFrom(dashboard, "tickets").find(
   (c) =>
@@ -210,10 +210,17 @@ describe("Gate 5 — one shared money module: the generic core and its per-colum
     expect(dashboard).not.toMatch(/\+=/);
   });
 
-  it(`${ATTENDEES}: imports BOTH the owed and the collected adapter from @/lib/door-money`, () => {
+  it(`${ATTENDEES}: imports the residual pair (sumResidualOwedByCurrency + residualOwedForTicket) and the collected adapter — never the gross sumOwedByCurrency, which stays the dashboard's`, () => {
     expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumOwedByCurrency\b[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bresidualOwedForTicket\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
   });
 });
 
@@ -281,39 +288,53 @@ describe("Gate 9 — the dashboard entry point exists exactly once (D-14)", () =
   });
 });
 
-describe("Gate 10 — the reservation predicate and the still-owed predicate agree (D-04)", () => {
+describe("Gate 10 — the reservation chip, the row badge and the still-to-collect total share one residual predicate (D-04, revised by G-17-4 / G-17-8)", () => {
   /**
-   * Provable direction: the only writer of the collected columns is the
-   * check-in action (src/app/actions/check-in.ts), which transitions
-   * issued -> checked-in atomically in a single conditional UPDATE, and
-   * supabase/migrations/0003 forbids a backfill. So an `issued` ticket can
-   * never carry a collected amount, i.e. `status = 'issued' =>
-   * pay_at_door_collected_amount IS NULL`. Restricted to issued rows the
-   * reservation predicate (`pay_at_door_amount > 0 AND collected IS NULL`) and
-   * box B's predicate (`status = 'issued' AND pay_at_door_amount > 0`) select
-   * the same population.
+   * Phase 17 introduced partial and cross-currency door collections, which
+   * falsified the pre-Phase-17 assumption this gate used to rely on
+   * (`status = 'issued' => pay_at_door_collected_amount IS NULL`, so a
+   * status-scoped owed chain and the reservation predicate picked the same
+   * rows). 17-05's residual rule replaces it: for one ticket,
+   * residual = max(0, pay_at_door_amount − same-currency collected), null when
+   * nothing is still owed. The ATTENDEES page derives all three surfaces — the
+   * RESERVATION chip filter, the per-row badge and the event-wide "STILL TO
+   * COLLECT" total — from residualOwedForTicket / sumResidualOwedByCurrency in
+   * src/lib/door-money.ts, so a second definition of "still owes" fails a gate
+   * by name. The chip's population now DELIBERATELY includes a checked-in
+   * attendee who still carries a residual — the same population the total
+   * counts.
    *
-   * Inherited assumption (NOT asserted here): a `checked_in` pay-at-door
-   * ticket with no recorded collection is schema-reachable only by a crafted
-   * POST that bypasses the Phase 3 superRefine gate. Such a row would appear
-   * under the reservation chip while being absent from the still-to-collect
-   * total. Kept empty by the frozen-machine invariant, not a DB constraint.
+   * DELIBERATE DIVERGENCE (recorded, not a bug): the DASHBOARD keeps the
+   * pre-Phase-17 gross `status = 'issued'` chain and sumOwedByCurrency, and is
+   * NOT migrated in 17-05 — it is outside all three gap definitions. Its
+   * "still owed" line can therefore disagree with the attendees page's for an
+   * event with a partially- or cross-currency-paid checked-in attendee. See
+   * 17-05-SUMMARY.md's open follow-up.
    */
-  it(`${ATTENDEES}: defines exactly one owes predicate and calls it from at least two sites`, () => {
+  it(`${ATTENDEES}: keeps exactly one rowOwesAtDoor whose body delegates to residualOwedForTicket, and the row badge reads the same helper`, () => {
     expect(count(attendees, /function rowOwesAtDoor/g)).toBe(1);
-    expect(count(attendees, /\browOwesAtDoor\b/g)).toBeGreaterThanOrEqual(3);
+    const predicateBody = attendees.slice(
+      attendees.indexOf("function rowOwesAtDoor"),
+      attendees.indexOf("const visibleAttendees ="),
+    );
+    expect(predicateBody).toContain(
+      "return residualOwedForTicket(row) !== null;",
+    );
+    expect(attendees).toContain(
+      "const residual = residualOwedForTicket(attendee);",
+    );
   });
 
-  it(`${ATTENDEES}: box B's owed chain carries the issued-status scoping and the null filter`, () => {
+  it(`${ATTENDEES}: the residual owed chain carries NO status filter and keeps the null filter (G-17-4)`, () => {
     expect(attendeesOwedChain).toBeDefined();
     expect(attendeesOwedChain).toContain('.eq("event_id", eventId)');
-    expect(attendeesOwedChain).toContain('.eq("status", "issued")');
+    expect(attendeesOwedChain).not.toContain('.eq("status"');
     expect(attendeesOwedChain).toContain(
       '.not("pay_at_door_amount", "is", null)',
     );
   });
 
-  it(`${DASHBOARD}: the dashboard's owed chain uses the identical predicate`, () => {
+  it(`${DASHBOARD}: keeps the pre-Phase-17 gross owed chain (status = 'issued') — deliberately NOT migrated by 17-05`, () => {
     expect(dashboardOwedChain).toBeDefined();
     expect(dashboardOwedChain).toContain('.eq("event_id", eventId)');
     expect(dashboardOwedChain).toContain('.eq("status", "issued")');
