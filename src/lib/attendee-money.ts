@@ -1,24 +1,55 @@
-// Money-strip helper for the attendee detail page (D-05 / D-06 / D-07). A
-// node-importable sibling of src/lib/door-money.ts: same string-money
-// discipline, the same anchored decimal shape, the same "null is not zero"
-// rule, and the same "never convert between EUR and RSD". It imports nothing,
-// carries no framework-only import marker and no server-action directive, so
-// it is importable unchanged from a plain Node unit test and from a Server
-// Component.
+// Money-strip helper for the attendee detail page. A node-importable sibling of
+// src/lib/door-money.ts: same string-money discipline, the same anchored decimal
+// shape, the same "null is not zero" rule, and the same "never convert between
+// EUR and RSD". It imports nothing, carries no framework-only import marker and
+// no server-action directive, so it is importable unchanged from a plain Node
+// unit test and from a Server Component.
 //
-// door-money.ts only ever SUMS a set of rows per currency; this module works
-// on ONE ticket row and additionally SUBTRACTS, clamped at zero. door-money's
-// export surface is frozen at three by phase11-contract Gate 5, so the two
-// tiny minor-unit primitives below are re-derived here rather than exported
-// from there.
+// Reworked by quick task 260903-q6i (operator decision 2026-09-03). This
+// DELIBERATELY supersedes part of the shipped Phase 17 money contract:
+// 17-CONTEXT.md D-05's "Paid = paid_amount + same-currency collected" and its
+// clamped "Left = max(0, ...)", plus the G-17-4 independent-debts correction,
+// are all replaced. The prepaid ticket price (paid_amount) leaves the strip
+// entirely — it now survives only as the "Prepaid" row in the PAYMENTS list
+// below (attendeePayments, unchanged). D-06 (never convert between currencies,
+// mismatch note renders) and D-07 (PAYMENTS synthesized from flat columns) are
+// UNCHANGED.
+//
+// The three cells a person standing at the door reads:
+//   Cell 1 "To pay"          = pay_at_door_amount, in the ticket currency
+//                              (RSD fallback). Null column -> null; the page
+//                              renders that null as "0.00 <currency>".
+//   Cell 2 "Paid at the door" = pay_at_door_collected_amount RAW, in the currency
+//                              it was actually taken in
+//                              (collected -> ticket -> RSD). The prepaid amount
+//                              is NOT folded in here.
+//   Cell 3 (dynamic label)    = cell1 minus cell2, UNCLAMPED (may be negative),
+//                              when the two resolved cell currencies match OR
+//                              nothing was collected; otherwise a straight copy
+//                              of cell 1 (never a cross-currency subtraction).
+//                              Label follows the sign of its own value: above
+//                              zero "Owes", exactly zero "Settled", below zero
+//                              "Change". balanceIsPositive is true only above
+//                              zero, so the page shows the accent token above
+//                              zero and the settled-green token at or below.
+//
+// DEC-4 degenerate case, accepted rather than papered over: a row with the
+// ticket currency absent but a collected currency present takes the copy branch
+// (its resolved cell-2 currency differs from the RSD-fallback cell-1 currency)
+// and does NOT raise the mismatch note (hasCurrencyMismatch still requires BOTH
+// currency columns present and differing). If that present collected currency
+// happens to equal the RSD fallback, the branch subtracts — a coincidental
+// match that is harmless.
 //
 // Why exact integer minor units in a BigInt rather than an IEEE-754 double:
-// adding or subtracting money through a binary floating value lets drift into
-// a figure a person reads while counting real cash (the classic "0.1 plus
-// 0.2"). Every amount is parsed to an exact count of minor units (para /
-// cents), combined in a BigInt, and the two-decimal string is rebuilt at the
-// end by integer division. The repo targets ES2017, so the BigInt()
-// constructor is used throughout — never a trailing-n literal.
+// adding or subtracting money through a binary floating value lets drift into a
+// figure a person reads while counting real cash (the classic "0.1 plus 0.2").
+// Every amount is parsed to an exact count of minor units (para / cents),
+// combined in a BigInt, and the two-decimal string is rebuilt at the end by
+// integer division. The rebuild is sign-aware (DEC-2): cell 3 can now go
+// negative, so the magnitude is formatted and the sign prepended. The repo
+// targets ES2017, so the BigInt() constructor is used throughout — never a
+// trailing-n literal.
 
 const HUNDRED = BigInt(100);
 const ZERO = BigInt(0);
@@ -36,21 +67,28 @@ export type AttendeeMoneyRow = {
 };
 
 export type AttendeeMoneyStrip = {
-  // Two-decimal decimal strings, or null when the governing column(s) are
-  // absent. The helper still returns null so other callers keep the D-05
-  // "null is not zero" distinction; the attendee detail page is the one caller
-  // that deliberately renders a null strip cell as `0.00 <currency>` instead of
-  // a blank cell (G-17-1, operator-directed UAT reversal scoped to the 3 strip
-  // cells only).
-  owes: string | null;
-  paid: string | null;
-  left: string | null;
-  // Left is strictly greater than zero — drives the accent vs settled-green
-  // token switch on the Left cell.
-  leftIsPositive: boolean;
-  // A valid collected amount is present, both currency columns are present,
-  // and they differ (D-06). The mismatched figure is surfaced for the
-  // handoff's explanatory note; it is NOT converted and does NOT reduce Left.
+  // Cell 1 / Cell 2 values: two-decimal decimal strings, or null when the
+  // governing column is absent or malformed. The helper still returns null so
+  // other callers keep the "null is not zero" distinction; the attendee detail
+  // page is the one caller that deliberately renders a null strip cell as
+  // "0.00 <currency>" instead of a blank cell.
+  toPay: string | null;
+  paidAtDoor: string | null;
+  // Always a string: the currency cell 2 is printed in — the collected currency,
+  // falling back to the cell-1 (ticket, RSD-fallback) currency (DEC-3).
+  paidAtDoorCurrency: string;
+  // Cell 3 value, UNCLAMPED (may carry a leading minus), or null when
+  // pay_at_door_amount is absent/malformed (DEC-5).
+  balance: string | null;
+  // Sign-driven label for cell 3: above zero "Owes", exactly zero "Settled",
+  // below zero "Change". A null balance takes "Settled".
+  balanceLabel: "Owes" | "Settled" | "Change";
+  // True only when balance is strictly greater than zero — drives the accent vs
+  // settled-green token switch on cell 3.
+  balanceIsPositive: boolean;
+  // A valid collected amount is present, both currency columns are present, and
+  // they differ (D-06). The mismatched figure is surfaced for the explanatory
+  // note; it is NOT converted and does NOT reduce cell 3.
   hasCurrencyMismatch: boolean;
   mismatchAmount: string | null;
   mismatchCurrency: string | null;
@@ -63,7 +101,7 @@ export type AttendeePayment = {
   // currency; "Paid at door" is the collected currency, falling back to the
   // ticket currency, then "RSD". The page renders each row keyed on THIS field,
   // never the ticket-level currency — so a door payment collected in RSD on an
-  // EUR ticket prints "… RSD", matching the mismatch note.
+  // EUR ticket prints "... RSD", matching the mismatch note.
   currency: string;
 };
 
@@ -84,13 +122,18 @@ function toMinorUnits(raw: string | null | undefined): bigint | null {
   return BigInt(whole) * HUNDRED + BigInt(fraction);
 }
 
-// Rebuild the two-decimal string from an exact minor-unit total: the whole
-// part from integer division, a dot, then the remainder left-padded to two
-// characters. Always exactly two fractional digits.
+// Rebuild the two-decimal string from an exact minor-unit total. Sign-aware
+// (DEC-2): a negative total would otherwise carry the sign on both the whole
+// and the remainder and emit a malformed string. Take the sign off with unary
+// BigInt negation (exact and allowed; the float-only absolute-value function on
+// the Math object is not used), format the magnitude by integer division, then
+// prepend the sign. Always exactly two fractional digits.
 function fromMinorUnits(total: bigint): string {
-  const whole = (total / HUNDRED).toString();
-  const minor = (total % HUNDRED).toString().padStart(2, "0");
-  return `${whole}.${minor}`;
+  const negative = total < ZERO;
+  const magnitude = negative ? -total : total;
+  const whole = (magnitude / HUNDRED).toString();
+  const minor = (magnitude % HUNDRED).toString().padStart(2, "0");
+  return `${negative ? "-" : ""}${whole}.${minor}`;
 }
 
 function normaliseCurrency(raw: string | null | undefined): string | null {
@@ -98,52 +141,58 @@ function normaliseCurrency(raw: string | null | undefined): string | null {
 }
 
 export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
-  const minorOwes = toMinorUnits(row.pay_at_door_amount);
-  const minorPrepaid = toMinorUnits(row.paid_amount);
+  const minorToPay = toMinorUnits(row.pay_at_door_amount);
   const minorCollected = toMinorUnits(row.pay_at_door_collected_amount);
 
   const currency = normaliseCurrency(row.currency);
   const collectedCurrency = normaliseCurrency(row.pay_at_door_collected_currency);
 
-  // A collected amount contributes to Paid / Left ONLY when it is a valid
-  // decimal AND its own currency column equals the ticket's currency (D-06).
-  const collectedSameCurrency =
-    minorCollected !== null &&
-    currency !== null &&
-    collectedCurrency !== null &&
-    collectedCurrency === currency
-      ? minorCollected
-      : null;
+  // Cell-1 currency: the normalised ticket currency, falling back to RSD. This
+  // is the module's single RSD literal.
+  const toPayCurrency = currency ?? "RSD";
+  // Cell-2 currency (DEC-3): the normalised collected currency, falling back to
+  // the cell-1 currency (which already carries the RSD fallback). Always a
+  // string by the time it leaves the helper.
+  const paidAtDoorCurrency = collectedCurrency ?? toPayCurrency;
 
-  // Owes is exactly pay_at_door_amount; blank when that column is absent.
-  const owes = minorOwes !== null ? fromMinorUnits(minorOwes) : null;
+  // Cell 1 — exactly pay_at_door_amount; null when that column is absent.
+  const toPay = minorToPay !== null ? fromMinorUnits(minorToPay) : null;
 
-  // Paid is blank only when NEITHER governing column contributes: no prepaid
-  // amount and no same-currency collected amount. A cross-currency collected
-  // amount never makes Paid non-null.
-  let paid: string | null = null;
-  if (minorPrepaid !== null || collectedSameCurrency !== null) {
-    const prepaidPart = minorPrepaid ?? ZERO;
-    const collectedPart = collectedSameCurrency ?? ZERO;
-    paid = fromMinorUnits(prepaidPart + collectedPart);
+  // Cell 2 — the raw collected column, on its own; null when it is absent or
+  // malformed. The prepaid column is not read here at all (attendeePayments
+  // owns it now).
+  const paidAtDoor =
+    minorCollected !== null ? fromMinorUnits(minorCollected) : null;
+
+  // Cell 3 (DEC-4 / DEC-5): null when the governing pay-at-door column is
+  // absent. Otherwise subtract the collected minor units when they parsed AND
+  // the two RESOLVED cell currencies match; in every other case (nothing
+  // collected, or the currencies differ) it is a straight copy of cell 1. The
+  // result is UNCLAMPED — it may be negative.
+  let balance: string | null = null;
+  let balanceLabel: "Owes" | "Settled" | "Change" = "Settled";
+  let balanceIsPositive = false;
+  if (minorToPay !== null) {
+    const subtracts =
+      minorCollected !== null && paidAtDoorCurrency === toPayCurrency;
+    const balanceMinor = subtracts
+      ? minorToPay - minorCollected
+      : minorToPay;
+    balance = fromMinorUnits(balanceMinor);
+    if (balanceMinor > ZERO) {
+      balanceLabel = "Owes";
+      balanceIsPositive = true;
+    } else if (balanceMinor < ZERO) {
+      balanceLabel = "Change";
+      balanceIsPositive = false;
+    } else {
+      balanceLabel = "Settled";
+      balanceIsPositive = false;
+    }
   }
 
-  // Left = max(0, owes − same-currency collected); blank when the governing
-  // pay_at_door_amount column is absent. paid_amount (the prepaid ticket price)
-  // is a SEPARATE debt that never reduces Left — the door balance and the
-  // prepaid ticket price are independent debts (G-17-4, operator-locked
-  // "independent debts", UAT 2026-09-03). minorPrepaid stays in use above for
-  // Paid, which is unchanged. A cross-currency collected amount still does not
-  // reduce Left.
-  let left: string | null = null;
-  let leftIsPositive = false;
-  if (minorOwes !== null) {
-    const rawLeft = minorOwes - (collectedSameCurrency ?? ZERO);
-    const clamped = rawLeft > ZERO ? rawLeft : ZERO;
-    left = fromMinorUnits(clamped);
-    leftIsPositive = clamped > ZERO;
-  }
-
+  // Left exactly as it was: requires a valid collected amount and BOTH currency
+  // columns present and differing.
   const hasCurrencyMismatch =
     minorCollected !== null &&
     currency !== null &&
@@ -151,10 +200,12 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
     collectedCurrency !== currency;
 
   return {
-    owes,
-    paid,
-    left,
-    leftIsPositive,
+    toPay,
+    paidAtDoor,
+    paidAtDoorCurrency,
+    balance,
+    balanceLabel,
+    balanceIsPositive,
     hasCurrencyMismatch,
     mismatchAmount:
       hasCurrencyMismatch && minorCollected !== null
@@ -164,11 +215,11 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
   };
 }
 
-// Pure presentation over the same two flat columns (D-07): paid_amount →
-// "Prepaid", pay_at_door_collected_amount → "Paid at door", each included only
+// Pure presentation over the same two flat columns (D-07): paid_amount ->
+// "Prepaid", pay_at_door_collected_amount -> "Paid at door", each included only
 // when it is a valid decimal, Prepaid first. No dates, no cash/card channel,
-// no `payments` table. Both absent → an empty list, which the caller renders
-// as the fixed "Nothing paid yet …" sentence.
+// no `payments` table. Both absent -> an empty list, which the caller renders
+// as the fixed "Nothing paid yet ..." sentence.
 //
 // Each row also carries its own currency (G-17-1 / WR-02): the Prepaid row is
 // the ticket currency (`normaliseCurrency(row.currency) ?? "RSD"`); the "Paid

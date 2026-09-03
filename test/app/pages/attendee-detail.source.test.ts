@@ -125,14 +125,37 @@ describe("D-05 — every money column crosses the wire as a ::text decimal strin
     expect(detail).toMatch(/formatMoney\(value \?\? "0\.00",/);
   });
 
-  it(`${DETAIL}: the Left cell switches between the accent and the settled-green token`, () => {
+  it(`${DETAIL}: the third strip cell switches between the accent and the settled-green token`, () => {
     expect(detail).toContain("var(--color-accent-700)");
     expect(detail).toContain("var(--color-checked-in)");
-    expect(detail).toMatch(/leftIsPositive/);
+    expect(detail).toMatch(/balanceIsPositive/);
   });
 
   it(`${DETAIL}: uses no six-digit hex colour literal — tokens only`, () => {
     expect(detail).not.toMatch(/#[0-9a-fA-F]{6}\b/);
+  });
+});
+
+describe("q6i — the reworked three-cell money strip labels", () => {
+  it(`${DETAIL}: cell 1 is the static label "To pay" and cell 2 is the static label "Paid at the door"`, () => {
+    expect(detail).toMatch(/>\s*To pay\s*</);
+    expect(detail).toMatch(/>\s*Paid at the door\s*</);
+  });
+
+  it(`${DETAIL}: cell 3's label is interpolated from strip.balanceLabel — never a static word`, () => {
+    expect(detail).toMatch(/\{strip\.balanceLabel\}/);
+  });
+
+  it(`${DETAIL}: none of the stale / dynamic strip label words survives as a bare JSX text node`, () => {
+    for (const word of ["Owes", "Paid", "Left", "Settled", "Change"]) {
+      expect(detail).not.toMatch(new RegExp(`>\\s*${word}\\s*<`));
+    }
+  });
+
+  it(`${DETAIL}: cell 2 prints the helper's per-cell currency (strip.paidAtDoorCurrency), cells 1 and 3 the strip currency`, () => {
+    expect(detail).toMatch(/money\(strip\.toPay\)/);
+    expect(detail).toMatch(/money\(strip\.paidAtDoor,\s*strip\.paidAtDoorCurrency\)/);
+    expect(detail).toMatch(/money\(strip\.balance\)/);
   });
 });
 
@@ -246,7 +269,7 @@ describe("ADETAIL-V5-03/05/06 — check-in is delegated to the CheckInPanel clie
 
   it(`${DETAIL}: renders <CheckInPanel> behind the checked-in-and-settled read-out guard`, () => {
     expect(detail).toMatch(
-      /!\(\s*statusIsCheckedIn\s*&&\s*!strip\.leftIsPositive\s*\)/,
+      /!\(\s*statusIsCheckedIn\s*&&\s*!strip\.balanceIsPositive\s*\)/,
     );
   });
 

@@ -4,30 +4,32 @@ import { attendeeMoneyStrip, attendeePayments } from "@/lib/attendee-money";
 import type { AttendeeMoneyRow } from "@/lib/attendee-money";
 
 /**
- * The attendee detail page's money contract (D-05 / D-06 / D-07). A
- * node-importable sibling of src/lib/door-money.ts. This battery pins the
- * load-bearing properties before the Server Component renders a figure:
+ * The attendee detail page's money contract, reworked by quick task 260903-q6i
+ * (operator decision 2026-09-03). A node-importable sibling of
+ * src/lib/door-money.ts. This battery pins the load-bearing properties before
+ * the Server Component renders a figure:
  *
- *  - Owes = pay_at_door_amount; Paid = paid_amount + same-currency collected;
- *    Left = max(0, Owes − same-currency collected) — paid_amount is an
- *    INDEPENDENT debt (the prepaid ticket price) and never reduces Left
- *    (G-17-4, operator-locked "independent debts", UAT 2026-09-03); never a
- *    negative string, floored at zero;
- *  - a NULL / undefined / blank money column renders BLANK (null), never "0"
- *    (D-05: null is not the same fact as zero); a recorded "0" is kept;
+ *  - Cell 1 "To pay" = pay_at_door_amount, in the ticket currency (RSD fallback);
+ *  - Cell 2 "Paid at the door" = pay_at_door_collected_amount RAW, in the
+ *    currency it was actually taken in (collected -> ticket -> RSD). The prepaid
+ *    paid_amount is no longer part of the strip;
+ *  - Cell 3 = cell1 minus cell2 UNCLAMPED when the two cell currencies agree or
+ *    nothing was collected, else a straight copy of cell1 (never a cross-currency
+ *    subtraction, D-06). Its label follows the sign of its own value:
+ *    above zero -> "Owes", exactly zero -> "Settled", below zero -> "Change";
+ *    balanceIsPositive is true only above zero;
+ *  - a NULL / undefined / blank money column still yields null (D-05: null is not
+ *    zero); a recorded "0" is kept;
  *  - a malformed amount ("12.345", "1e3", "-5", "abc") is treated as absent —
  *    never coerced, never thrown;
- *  - a pay_at_door_collected payment whose currency differs from the ticket's
- *    does NOT reduce Paid or Left, and the mismatch is flagged (D-06); EUR and
- *    RSD are never converted;
- *  - PAYMENTS is at most two synthesized rows (Prepaid, then Paid at door),
- *    each a two-decimal string, no dates and no channel (D-07);
- *  - all arithmetic is exact integer-minor-unit BigInt math — the Ana Petrović
- *    worked example the operator confirmed lands exactly.
+ *  - all arithmetic is exact integer-minor-unit BigInt math, sign-aware — the Ana
+ *    Petrovic worked example the operator confirmed lands exactly;
+ *  - PAYMENTS is at most two synthesized rows (Prepaid, then Paid at door), each
+ *    a two-decimal string carrying its own currency (D-07) — unchanged by q6i.
  */
 
-describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", () => {
-  it("computes the Ana Petrović worked example exactly (2500 / 500 / 1500 → 2500, 2000, 1000)", () => {
+describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balance strip (q6i)", () => {
+  it("computes the Ana Petrovic worked example exactly (2500 / prepaid 500 / collected 1500, both RSD)", () => {
     const row: AttendeeMoneyRow = {
       pay_at_door_amount: "2500",
       paid_amount: "500",
@@ -36,32 +38,47 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
       pay_at_door_collected_currency: "RSD",
     };
     expect(attendeeMoneyStrip(row)).toEqual({
-      owes: "2500.00",
-      paid: "2000.00",
-      left: "1000.00",
-      leftIsPositive: true,
+      toPay: "2500.00",
+      paidAtDoor: "1500.00",
+      paidAtDoorCurrency: "RSD",
+      balance: "1000.00",
+      balanceLabel: "Owes",
+      balanceIsPositive: true,
       hasCurrencyMismatch: false,
       mismatchAmount: null,
       mismatchCurrency: null,
     });
   });
 
-  it("clamps Left at zero when the same-currency collected amount exceeds Owes — never a negative string", () => {
-    const row: AttendeeMoneyRow = {
+  it("leaves cell 3 unclamped when the same-currency collected amount exceeds To pay — a negative Change figure", () => {
+    const strip = attendeeMoneyStrip({
       pay_at_door_amount: "1000",
       paid_amount: undefined,
       pay_at_door_collected_amount: "1200",
       currency: "RSD",
       pay_at_door_collected_currency: "RSD",
-    };
-    const strip = attendeeMoneyStrip(row);
-    expect(strip.owes).toBe("1000.00");
-    expect(strip.paid).toBe("1200.00");
-    expect(strip.left).toBe("0.00");
-    expect(strip.leftIsPositive).toBe(false);
+    });
+    expect(strip.toPay).toBe("1000.00");
+    expect(strip.paidAtDoor).toBe("1200.00");
+    expect(strip.balance).toBe("-200.00");
+    expect(strip.balanceLabel).toBe("Change");
+    expect(strip.balanceIsPositive).toBe(false);
   });
 
-  it("never lets paid_amount reduce Left — the Stevan case (Owes 500, prepaid 6900, nothing collected at the door)", () => {
+  it("reads an exact settle as Settled at zero, not positive", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "1000",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "1000",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(strip.balance).toBe("0.00");
+    expect(strip.balanceLabel).toBe("Settled");
+    expect(strip.balanceIsPositive).toBe(false);
+  });
+
+  it("never lets the prepaid amount reach the strip — the Stevan case (To pay 500, prepaid 6900, nothing collected)", () => {
     const strip = attendeeMoneyStrip({
       pay_at_door_amount: "500",
       paid_amount: "6900",
@@ -69,13 +86,25 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
       currency: "RSD",
       pay_at_door_collected_currency: null,
     });
-    expect(strip.owes).toBe("500.00");
-    expect(strip.paid).toBe("6900.00");
-    expect(strip.left).toBe("500.00");
-    expect(strip.leftIsPositive).toBe(true);
+    expect(strip.toPay).toBe("500.00");
+    expect(strip.paidAtDoor).toBe(null);
+    expect(strip.balance).toBe("500.00");
+    expect(strip.balanceLabel).toBe("Owes");
+    expect(strip.balanceIsPositive).toBe(true);
   });
 
-  it("renders every cell blank (null), not zero, when every money column is absent", () => {
+  it("returns null cells (never zero) when every money column is absent — undefined, null and empty-string forms alike", () => {
+    const expected = {
+      toPay: null,
+      paidAtDoor: null,
+      paidAtDoorCurrency: "RSD",
+      balance: null,
+      balanceLabel: "Settled",
+      balanceIsPositive: false,
+      hasCurrencyMismatch: false,
+      mismatchAmount: null,
+      mismatchCurrency: null,
+    };
     expect(
       attendeeMoneyStrip({
         pay_at_door_amount: undefined,
@@ -84,17 +113,7 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
         currency: undefined,
         pay_at_door_collected_currency: undefined,
       }),
-    ).toEqual({
-      owes: null,
-      paid: null,
-      left: null,
-      leftIsPositive: false,
-      hasCurrencyMismatch: false,
-      mismatchAmount: null,
-      mismatchCurrency: null,
-    });
-
-    // explicit null and empty-string forms behave identically to undefined
+    ).toEqual(expected);
     expect(
       attendeeMoneyStrip({
         pay_at_door_amount: null,
@@ -103,18 +122,10 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
         currency: "",
         pay_at_door_collected_currency: null,
       }),
-    ).toEqual({
-      owes: null,
-      paid: null,
-      left: null,
-      leftIsPositive: false,
-      hasCurrencyMismatch: false,
-      mismatchAmount: null,
-      mismatchCurrency: null,
-    });
+    ).toEqual(expected);
   });
 
-  it("keeps a recorded zero as \"0.00\" (not blank), with Left not positive at zero", () => {
+  it('keeps a recorded zero as "0.00" (not blank) and reads it as Settled', () => {
     const strip = attendeeMoneyStrip({
       pay_at_door_amount: "0",
       paid_amount: undefined,
@@ -122,10 +133,11 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
       currency: "RSD",
       pay_at_door_collected_currency: undefined,
     });
-    expect(strip.owes).toBe("0.00");
-    expect(strip.paid).toBe(null);
-    expect(strip.left).toBe("0.00");
-    expect(strip.leftIsPositive).toBe(false);
+    expect(strip.toPay).toBe("0.00");
+    expect(strip.paidAtDoor).toBe(null);
+    expect(strip.balance).toBe("0.00");
+    expect(strip.balanceLabel).toBe("Settled");
+    expect(strip.balanceIsPositive).toBe(false);
   });
 
   it("treats a malformed amount as absent — never coerced, never thrown", () => {
@@ -138,10 +150,12 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
     };
     expect(() => attendeeMoneyStrip(row)).not.toThrow();
     expect(attendeeMoneyStrip(row)).toEqual({
-      owes: null,
-      paid: null,
-      left: null,
-      leftIsPositive: false,
+      toPay: null,
+      paidAtDoor: null,
+      paidAtDoorCurrency: "RSD",
+      balance: null,
+      balanceLabel: "Settled",
+      balanceIsPositive: false,
       hasCurrencyMismatch: false,
       mismatchAmount: null,
       mismatchCurrency: null,
@@ -153,11 +167,11 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
         pay_at_door_collected_amount: undefined,
         currency: "RSD",
         pay_at_door_collected_currency: undefined,
-      }).owes,
+      }).toPay,
     ).toBe(null);
   });
 
-  it("does NOT let a cross-currency collected payment reduce Paid or Left, and flags the mismatch (D-06)", () => {
+  it("copies cell 1 into cell 3 on a cross-currency ticket — never a cross-currency subtraction — and flags the mismatch (D-06)", () => {
     const strip = attendeeMoneyStrip({
       pay_at_door_amount: "20",
       paid_amount: undefined,
@@ -165,41 +179,68 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
       currency: "EUR",
       pay_at_door_collected_currency: "RSD",
     });
-    expect(strip.owes).toBe("20.00");
-    expect(strip.paid).toBe(null); // only paid_amount would count — it is unset
-    expect(strip.left).toBe("20.00");
-    expect(strip.leftIsPositive).toBe(true);
+    expect(strip.toPay).toBe("20.00");
+    expect(strip.paidAtDoor).toBe("2000.00");
+    expect(strip.paidAtDoorCurrency).toBe("RSD");
+    expect(strip.balance).toBe("20.00");
+    expect(strip.balanceLabel).toBe("Owes");
+    expect(strip.balanceIsPositive).toBe(true);
     expect(strip.hasCurrencyMismatch).toBe(true);
     expect(strip.mismatchAmount).toBe("2000.00");
     expect(strip.mismatchCurrency).toBe("RSD");
   });
 
-  it("counts a same-currency prepaid amount toward Paid but NOT against Left, and still ignores the cross-currency collected amount", () => {
+  it("subtracts a collected amount whose currency column is absent on an EUR ticket, with no mismatch", () => {
     const strip = attendeeMoneyStrip({
       pay_at_door_amount: "20",
-      paid_amount: "5",
-      pay_at_door_collected_amount: "2000",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "5",
       currency: "EUR",
-      pay_at_door_collected_currency: "RSD",
+      pay_at_door_collected_currency: null,
     });
-    expect(strip.paid).toBe("5.00");
-    expect(strip.left).toBe("20.00");
-    expect(strip.hasCurrencyMismatch).toBe(true);
-    expect(strip.mismatchAmount).toBe("2000.00");
-    expect(strip.mismatchCurrency).toBe("RSD");
+    expect(strip.paidAtDoorCurrency).toBe("EUR");
+    expect(strip.balance).toBe("15.00");
+    expect(strip.hasCurrencyMismatch).toBe(false);
   });
 
-  it("counts a same-currency collected payment toward Paid and Left", () => {
+  it("subtracts when both currency columns are absent — cell 2 currency falls back to RSD", () => {
     const strip = attendeeMoneyStrip({
-      pay_at_door_amount: "2000",
+      pay_at_door_amount: "20",
       paid_amount: undefined,
-      pay_at_door_collected_amount: "1500",
+      pay_at_door_collected_amount: "5",
+      currency: null,
+      pay_at_door_collected_currency: null,
+    });
+    expect(strip.paidAtDoorCurrency).toBe("RSD");
+    expect(strip.balance).toBe("15.00");
+    expect(strip.hasCurrencyMismatch).toBe(false);
+  });
+
+  it("holds cell 3 null when pay_at_door_amount is absent even though a collected amount is present (DEC-5)", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: undefined,
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "500",
       currency: "RSD",
       pay_at_door_collected_currency: "RSD",
     });
-    expect(strip.paid).toBe("1500.00");
-    expect(strip.left).toBe("500.00");
-    expect(strip.hasCurrencyMismatch).toBe(false);
+    expect(strip.balance).toBe(null);
+    expect(strip.balanceLabel).toBe("Settled");
+    expect(strip.balanceIsPositive).toBe(false);
+    expect(strip.paidAtDoor).toBe("500.00");
+  });
+
+  it('formats a negative cell 3 exactly — To pay 0.05, collected 0.10, same currency -> "-0.05"', () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "0.05",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "0.10",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(strip.balance).toBe("-0.05");
+    expect(strip.balanceLabel).toBe("Change");
+    expect(strip.balanceIsPositive).toBe(false);
   });
 });
 
@@ -240,7 +281,7 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
     ).toEqual([{ label: "Paid at door", amount: "1500.00", currency: "RSD" }]);
   });
 
-  it("returns Prepaid then Paid at door, in that order, when both are set (Ana Petrović)", () => {
+  it("returns Prepaid then Paid at door, in that order, when both are set (Ana Petrovic)", () => {
     expect(
       attendeePayments({
         pay_at_door_amount: "2500",

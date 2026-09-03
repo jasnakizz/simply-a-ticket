@@ -111,16 +111,19 @@ export default async function AttendeeDetailPage({
 
   const currency = ticket.currency;
   // G-17-1 (operator-directed UAT reversal of D-05, scoped to the 3 money-strip
-  // cells ONLY): the strip always renders a figure — a null Owes / Paid / Left
-  // shows 0.00, and a ticket carrying no currency falls back to "RSD". Every
-  // other null-money surface on this page (the PAYMENTS empty-list sentence,
-  // the mismatch note) keeps the null-is-not-zero rule.
+  // cells ONLY): the strip always renders a figure — a null To pay / Paid at the
+  // door / balance shows 0.00, and a ticket carrying no currency falls back to
+  // "RSD". Every other null-money surface on this page (the PAYMENTS empty-list
+  // sentence, the mismatch note) keeps the null-is-not-zero rule.
   const stripCurrency =
     (typeof currency === "string" && currency !== "" ? currency : null) ?? "RSD";
-  // Always returns a formatted string: a null value renders as the zero amount
-  // with the strip currency, never a blank cell.
-  const money = (value: string | null) =>
-    formatMoney(value ?? "0.00", stripCurrency);
+  // Always returns a formatted string: a null value renders as the zero amount.
+  // The optional second argument lets a cell print a currency other than the
+  // ticket's (cell 2 prints the currency the door payment was actually taken in,
+  // via strip.paidAtDoorCurrency); it defaults to the strip currency so cells 1
+  // and 3 pass nothing.
+  const money = (value: string | null, currencyCode: string = stripCurrency) =>
+    formatMoney(value ?? "0.00", currencyCode);
 
   // D-12 guard shape, identical to the attendees list: only a non-empty string
   // that parses to a real instant reaches the wall-clock formatter. The
@@ -136,7 +139,8 @@ export default async function AttendeeDetailPage({
   // Footer render guard (Task 17-02): keyed on the raw status only, NOT the
   // clock guard above — a checked_in row with a NULL checked_in_at is still a
   // read-out, not a check-in target. The panel renders unless the ticket is
-  // checked in AND owes nothing left at the door.
+  // checked in AND its third strip cell is not strictly positive (nothing more
+  // to collect at the door).
   const statusIsCheckedIn = ticket.status === "checked_in";
 
   // D-15: Issued is date-only ("8 Sep"), rendered inline with an explicit
@@ -195,39 +199,44 @@ export default async function AttendeeDetailPage({
           </div>
         </div>
 
-        {/* 3. Money strip — Owes / Paid / Left, 2px rules top and bottom, 1px
-            cell dividers. A null cell renders blank (D-05); Left switches token
-            on leftIsPositive. */}
+        {/* 3. Money strip — To pay / Paid at the door / a sign-labelled third
+            cell, 2px rules top and bottom, 1px cell dividers. A null cell
+            renders 0.00 (G-17-1). Cell 2 prints the currency the door payment
+            was actually taken in (strip.paidAtDoorCurrency). Cell 3's label is
+            strip.balanceLabel (Owes / Settled / Change, driven by the sign of
+            its own unclamped value) and it switches token on
+            strip.balanceIsPositive — accent above zero, settled-green at or
+            below. */}
         <div className="grid grid-cols-3 border-y-2 border-border bg-[var(--color-surface)]">
           <div className="flex flex-col gap-1 px-3.5 py-3">
             <p className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              Owes
+              To pay
             </p>
             <p className="text-[17px] font-extrabold leading-none tracking-[-0.02em]">
-              {money(strip.owes)}
+              {money(strip.toPay)}
             </p>
           </div>
           <div className="flex flex-col gap-1 border-l border-border px-3.5 py-3">
             <p className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              Paid
+              Paid at the door
             </p>
             <p className="text-[17px] font-extrabold leading-none tracking-[-0.02em]">
-              {money(strip.paid)}
+              {money(strip.paidAtDoor, strip.paidAtDoorCurrency)}
             </p>
           </div>
           <div className="flex flex-col gap-1 border-l border-border px-3.5 py-3">
             <p className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              Left
+              {strip.balanceLabel}
             </p>
             <p
               className={[
                 "text-[17px] font-extrabold leading-none tracking-[-0.02em]",
-                strip.leftIsPositive
+                strip.balanceIsPositive
                   ? "text-[var(--color-accent-700)]"
                   : "text-[var(--color-checked-in)]",
               ].join(" ")}
             >
-              {money(strip.left)}
+              {money(strip.balance)}
             </p>
           </div>
         </div>
@@ -321,13 +330,13 @@ export default async function AttendeeDetailPage({
               the request and streams HTML. The panel below is the single
               client island on the page (it is the piece that needs the
               form-action + router hooks); nothing else here is interactive. */}
-          {!(statusIsCheckedIn && !strip.leftIsPositive) ? (
+          {!(statusIsCheckedIn && !strip.balanceIsPositive) ? (
             <CheckInPanel
               qrToken={ticket.qr_token}
               eventId={eventId}
               ticketStatus={ticket.status}
-              owesAtDoor={strip.owes}
-              leftAmount={strip.left}
+              owesAtDoor={strip.toPay}
+              leftAmount={strip.balance}
               currency={ticket.currency}
             />
           ) : null}
