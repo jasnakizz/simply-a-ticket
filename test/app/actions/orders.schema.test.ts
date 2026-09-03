@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 
-import { readCode } from "../pages/helpers";
+import { readCode, readSrc } from "../pages/helpers";
 
 /**
  * ORDER-02, ORDER-04, ORDER-05: Zod schema validation tests
@@ -349,5 +349,39 @@ describe("LIMIT-V5-03/-04 source parity — the shipped schema and inputs carry 
   it("src/app/events/[eventId]/order/order-form.tsx carries maxLength={100} on the attendee-email Input", () => {
     const code = readCode("src/app/events/[eventId]/order/order-form.tsx");
     expect(code).toContain("maxLength={100}");
+  });
+});
+
+describe("LIMIT-V5-04/-05 — reject, never truncate; no migration, no DB CHECK", () => {
+  // readSrc keeps comments intact on purpose: a truncation call hidden in a
+  // comment is still a signal worth failing on.
+  it("src/app/actions/events.ts contains no JavaScript string-truncation call", () => {
+    expect(readSrc("src/app/actions/events.ts")).not.toContain(".slice(");
+  });
+
+  it("src/app/actions/ticket-types.ts contains no JavaScript string-truncation call", () => {
+    expect(readSrc("src/app/actions/ticket-types.ts")).not.toContain(".slice(");
+  });
+
+  it("src/app/actions/orders.ts contains no JavaScript string-truncation call", () => {
+    expect(readSrc("src/app/actions/orders.ts")).not.toContain(".slice(");
+  });
+
+  it("src/app/actions/orders.ts rejects (safeParse) before it inserts or sends", () => {
+    const src = readSrc("src/app/actions/orders.ts");
+    // Match the CALL sites, not the top-of-file import bindings — the
+    // "(" disambiguates `sendTicketEmail(` / `createServiceClient(` from
+    // `import { sendTicketEmail } ...`.
+    const safeParseIdx = src.indexOf(".safeParse(");
+    const sendEmailIdx = src.indexOf("sendTicketEmail(");
+    const serviceClientIdx = src.indexOf("createServiceClient(");
+    expect(safeParseIdx).toBeGreaterThan(-1);
+    expect(sendEmailIdx).toBeGreaterThan(-1);
+    expect(serviceClientIdx).toBeGreaterThan(-1);
+    // An over-length attendee_email is rejected by the safeParse failure branch
+    // before any Supabase client is built and before Resend is called — the
+    // address is never shortened to fit.
+    expect(safeParseIdx).toBeLessThan(sendEmailIdx);
+    expect(safeParseIdx).toBeLessThan(serviceClientIdx);
   });
 });
