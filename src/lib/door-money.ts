@@ -174,3 +174,87 @@ export function sumCollectedByCurrency(
     })),
   );
 }
+
+// ── The Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8) ──
+//
+// The "residual" is what a ticket STILL owes at the door after a partial or a
+// cross-currency collection: max(0, pay_at_door_amount − same-currency
+// collected), expressed in the ticket currency. It mirrors the third cell of
+// attendeeMoneyStrip in src/lib/attendee-money.ts.
+//
+// This is added as a NEW pair rather than folded into sumOwedByCurrency
+// because the dashboard (src/app/events/[eventId]/page.tsx) still imports that
+// adapter for its gross "status = 'issued'" line; changing sumOwedByCurrency
+// in place would silently move a second page that is outside all three gap
+// definitions, and would break the "thin adapter that cannot drift from the
+// generic core" identity test.
+//
+// D-06's never-convert rule is why a collection taken in a currency other than
+// the ticket currency does NOT reduce the residual — it stays the full
+// pay_at_door_amount, and no exchange is ever applied.
+//
+// The "residual <= zero" early return IS the clamp: it guarantees a negative
+// value is never formatted. This module's fromMinorUnits is NOT sign-aware
+// (unlike the one in attendee-money.ts), so it must never be handed a negative
+// BigInt.
+
+// Structurally the union of the owed-side and collected-side row shapes. Not an
+// `export function`, so it does not affect the Gate 5 export count.
+export type ResidualOwedRow = OwedTicketRow & CollectedTicketRow;
+
+export type ResidualOwed = { amount: string; currency: string };
+
+// One ticket's residual, or null when nothing is still owed. Null cases: the
+// pay_at_door_amount is absent / malformed / zero; the ticket currency is
+// absent (the list page has no RSD fallback and has never rendered a figure
+// for a currency-less row); or a same-currency collection settles or
+// over-settles the balance.
+export function residualOwedForTicket(
+  ticket: ResidualOwedRow,
+): ResidualOwed | null {
+  const minorOwed = toMinorUnits(ticket.pay_at_door_amount);
+  if (minorOwed === null) return null;
+
+  const ticketCurrency =
+    typeof ticket.currency === "string" && ticket.currency !== ""
+      ? ticket.currency
+      : null;
+  if (ticketCurrency === null) return null;
+
+  const minorCollected = toMinorUnits(ticket.pay_at_door_collected_amount);
+  const collectedCurrencyRaw = ticket.pay_at_door_collected_currency;
+  // Parity with attendeeMoneyStrip: an absent collected currency falls back to
+  // the ticket currency, so a bare collected amount still subtracts.
+  const collectedCurrency =
+    typeof collectedCurrencyRaw === "string" && collectedCurrencyRaw !== ""
+      ? collectedCurrencyRaw
+      : ticketCurrency;
+
+  // One ternary so TypeScript narrows the nullable collected value — a hoisted
+  // boolean does not narrow `bigint | null`.
+  const residualMinor =
+    minorCollected !== null && collectedCurrency === ticketCurrency
+      ? minorOwed - minorCollected
+      : minorOwed;
+
+  if (residualMinor <= ZERO) return null;
+
+  return { amount: fromMinorUnits(residualMinor), currency: ticketCurrency };
+}
+
+// Per-currency residual sum for the attendees-list "STILL TO COLLECT" box.
+// Walks once, collects each ticket's residual, and delegates the grouping /
+// ordering / two-decimal formatting to sumMoneyByCurrency — it adds no
+// arithmetic of its own, which is what keeps the per-row badge and the
+// event-wide total structurally unable to disagree.
+export function sumResidualOwedByCurrency(
+  tickets: readonly ResidualOwedRow[],
+): DoorMoneySubtotal[] {
+  const rows: DoorMoneyRow[] = [];
+  for (const ticket of tickets) {
+    const residual = residualOwedForTicket(ticket);
+    if (residual === null) continue;
+    rows.push({ amount: residual.amount, currency: residual.currency });
+  }
+  return sumMoneyByCurrency(rows);
+}

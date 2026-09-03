@@ -5,11 +5,14 @@ import {
   sumMoneyByCurrency,
   sumOwedByCurrency,
   sumCollectedByCurrency,
+  residualOwedForTicket,
+  sumResidualOwedByCurrency,
 } from "@/lib/door-money";
 import type {
   DoorMoneyRow,
   OwedTicketRow,
   CollectedTicketRow,
+  ResidualOwedRow,
 } from "@/lib/door-money";
 
 /**
@@ -331,6 +334,240 @@ describe("sumCollectedByCurrency", () => {
       "25.50 EUR",
       "1200.00 RSD",
     ]);
+  });
+});
+
+/**
+ * Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8). The
+ * per-ticket residual is what is STILL owed at the door after a partial or
+ * cross-currency collection, expressed in the ticket currency, matching
+ * attendeeMoneyStrip's third cell. Added as a NEW pair rather than folded into
+ * sumOwedByCurrency because the dashboard still depends on that adapter's gross
+ * "status = 'issued'" semantics.
+ *
+ *  - residual = max(0, pay_at_door_amount − same-currency collected);
+ *  - a cross-currency collection (D-06) never reduces it and is never converted;
+ *  - an exact settle or an over-collection yields null — never a zero or a
+ *    negative line;
+ *  - an absent ticket currency yields null (the list page has no RSD fallback);
+ *  - sumResidualOwedByCurrency delegates to sumMoneyByCurrency, so the per-row
+ *    badge and the event-wide total are structurally unable to disagree, and it
+ *    deliberately differs from sumOwedByCurrency once any collection exists.
+ */
+
+describe("residualOwedForTicket — still-owed-at-the-door after a partial or cross-currency collection", () => {
+  it("returns null for an absent, malformed or zero pay_at_door_amount", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: null,
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "abc",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "0",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the full pay_at_door_amount in the ticket currency when nothing has been collected", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ amount: "7000.00", currency: "RSD" });
+  });
+
+  it("G-17-4: subtracts a same-currency partial collection — 7000 owed, 6000 collected -> 1000.00 RSD still owed", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ amount: "1000.00", currency: "RSD" });
+  });
+
+  it("returns null when a same-currency collection exactly settles the balance", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null on an over-collection — never a negative and never a zero residual", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7200",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toBeNull();
+  });
+
+  it("G-17-8 (D-06): a cross-currency collection does not reduce the balance — 20 EUR owed, 2400 RSD collected -> 20.00 EUR still owed", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: "2400",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ amount: "20.00", currency: "EUR" });
+  });
+
+  it("falls an absent collected currency back to the ticket currency, then subtracts (parity with attendeeMoneyStrip)", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ amount: "1000.00", currency: "RSD" });
+  });
+
+  it("returns null when the TICKET currency is absent — the list page has no RSD fallback and never renders a figure for a currency-less row (deliberate divergence from attendeeMoneyStrip's DEC-4 branch)", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "7000",
+        currency: null,
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("stays exact over fractional minor units — 0.30 owed, 0.10 collected -> 0.20 RSD", () => {
+    expect(
+      residualOwedForTicket({
+        pay_at_door_amount: "0.30",
+        currency: "RSD",
+        pay_at_door_collected_amount: "0.10",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ amount: "0.20", currency: "RSD" });
+  });
+});
+
+describe("sumResidualOwedByCurrency — per-currency residual sum, delegating to sumMoneyByCurrency", () => {
+  it("returns [] for no tickets", () => {
+    expect(sumResidualOwedByCurrency([])).toEqual([]);
+  });
+
+  it("G-17-4: sums the residual of every ticket regardless of status — settled + partial(1000) + untouched(500) -> one RSD line of 1500.00, ticketCount 2", () => {
+    const tickets: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7000",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: "500",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+    ];
+    expect(sumResidualOwedByCurrency(tickets)).toEqual([
+      { currency: "RSD", amount: "1500.00", ticketCount: 2 },
+    ]);
+  });
+
+  it("G-17-8: a cross-currency-collected EUR ticket and an RSD ticket stay two entries, EUR first, never one combined figure", () => {
+    const tickets: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: "2400",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: "1200",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+    ];
+    const result = sumResidualOwedByCurrency(tickets);
+    expect(result).toEqual([
+      { currency: "EUR", amount: "20.00", ticketCount: 1 },
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+    expect(result).toHaveLength(2);
+  });
+
+  it("drops a row whose currency is an unknown code (inherited from sumMoneyByCurrency)", () => {
+    const tickets: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "50",
+        currency: "USD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+    ];
+    expect(sumResidualOwedByCurrency(tickets)).toEqual([]);
+  });
+
+  it("an over-collected ticket contributes nothing — no negative line and no zero line", () => {
+    const tickets: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7200",
+        pay_at_door_collected_currency: "RSD",
+      },
+    ];
+    expect(sumResidualOwedByCurrency(tickets)).toEqual([]);
+  });
+
+  it("deliberately differs from sumOwedByCurrency when a same-currency partial collection exists — a future 'dedupe these two helpers' refactor must fail here", () => {
+    const tickets: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      },
+    ];
+    expect(sumResidualOwedByCurrency(tickets)).toEqual([
+      { currency: "RSD", amount: "1000.00", ticketCount: 1 },
+    ]);
+    expect(sumOwedByCurrency(tickets)).toEqual([
+      { currency: "RSD", amount: "7000.00", ticketCount: 1 },
+    ]);
+    expect(sumResidualOwedByCurrency(tickets)).not.toEqual(
+      sumOwedByCurrency(tickets),
+    );
   });
 });
 
