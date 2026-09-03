@@ -175,7 +175,7 @@ describe("D-07 — the synthesized PAYMENTS section", () => {
   });
 });
 
-describe("q6i — the per-currency PAYMENTS Total rows", () => {
+describe("q6i / G-17-3 — one PAYMENTS 'Total' label with the per-currency amounts stacked beneath it", () => {
   it(`${DETAIL}: imports attendeePaymentTotals from the money helper and calls it on the payments array`, () => {
     expect(detail).toMatch(
       /import\s*\{[\s\S]*attendeePaymentTotals[\s\S]*\}\s*from\s*"@\/lib\/attendee-money"/,
@@ -183,7 +183,7 @@ describe("q6i — the per-currency PAYMENTS Total rows", () => {
     expect(detail).toMatch(/attendeePaymentTotals\(payments\)/);
   });
 
-  it(`${DETAIL}: renders a "Total" row through formatMoney on each entry's own amount + currency`, () => {
+  it(`${DETAIL}: renders the Total amounts through formatMoney on each entry's own amount + currency`, () => {
     expect(detail).toMatch(/>\s*Total\s*</);
     expect(detail).toMatch(/formatMoney\(total\.amount,\s*total\.currency\)/);
   });
@@ -200,6 +200,32 @@ describe("q6i — the per-currency PAYMENTS Total rows", () => {
       (detail.match(/Nothing paid yet — full amount due at the door\./g) ?? [])
         .length,
     ).toBe(1);
+  });
+
+  it(`${DETAIL}: renders exactly one "Total" label, positioned OUTSIDE the per-currency map (G-17-3)`, () => {
+    // A count alone cannot distinguish the fixed shape from the broken one (a
+    // label INSIDE .map() also appears once in source text) — the position
+    // relative to paymentTotals.map( is what proves the label is the map's
+    // sibling, not its child.
+    expect((detail.match(/>\s*Total\s*</g) ?? []).length).toBe(1);
+    const labelIdx = detail.search(/>\s*Total\s*</);
+    const mapIdx = detail.indexOf("paymentTotals.map(");
+    expect(labelIdx).toBeGreaterThan(-1);
+    expect(mapIdx).toBeGreaterThan(-1);
+    expect(labelIdx).toBeLessThan(mapIdx);
+  });
+
+  it(`${DETAIL}: stacks the per-currency amounts in a column keyed on the currency`, () => {
+    const start = detail.indexOf("paymentTotals.length > 0");
+    const afterMap = detail.indexOf(
+      "</li>",
+      detail.indexOf("paymentTotals.map("),
+    );
+    expect(start).toBeGreaterThan(-1);
+    expect(afterMap).toBeGreaterThan(start);
+    const slice = detail.slice(start, afterMap);
+    expect(slice).toContain("flex flex-col items-end gap-1");
+    expect(slice).toContain("key={total.currency}");
   });
 });
 

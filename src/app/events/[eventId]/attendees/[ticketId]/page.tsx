@@ -280,20 +280,27 @@ export default async function AttendeeDetailPage({
                   </span>
                 </li>
               ))}
-              {/* q6i: one "Total" row per currency present in the rows above,
-                  same markup, same border + padding, never a cross-currency
-                  sum. Keyed on the currency. */}
-              {paymentTotals.map((total) => (
-                <li
-                  key={total.currency}
-                  className="flex items-center justify-between border-t border-border py-[11px]"
-                >
+              {/* q6i / G-17-3: a single summary row — one label, then the
+                  per-currency amounts stacked one below another (mirrors the
+                  collectedSubtotals column on the attendees list). Never a
+                  cross-currency sum; each figure keyed on its own currency.
+                  items-start keeps the label top-aligned against a two-line
+                  amount column. */}
+              {paymentTotals.length > 0 ? (
+                <li className="flex items-start justify-between border-t border-border py-[11px]">
                   <span className="text-[13.5px] font-semibold">Total</span>
-                  <span className="text-[14px] font-extrabold">
-                    {formatMoney(total.amount, total.currency)}
+                  <span className="flex flex-col items-end gap-1">
+                    {paymentTotals.map((total) => (
+                      <span
+                        key={total.currency}
+                        className="text-[14px] font-extrabold"
+                      >
+                        {formatMoney(total.amount, total.currency)}
+                      </span>
+                    ))}
                   </span>
                 </li>
-              ))}
+              ) : null}
             </ul>
           )}
           {strip.hasCurrencyMismatch &&
