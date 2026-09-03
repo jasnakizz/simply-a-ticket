@@ -173,10 +173,14 @@ describe("ADETAIL-V5-05 / D-15 — status badge and Issued date", () => {
 });
 
 describe("ADETAIL-V5-07 / T-17-01 — qr_token is select-only and never leaked", () => {
-  it(`${DETAIL}: selects qr_token but references it nowhere else`, () => {
+  it(`${DETAIL}: selects qr_token and passes it only as the CheckInPanel qrToken prop`, () => {
     expect(ticketChain).toContain("qr_token");
-    expect((detail.match(/qr_token/g) ?? []).length).toBe(1);
-    expect(detail).not.toMatch(/ticket\.qr_token/);
+    // 17-02: exactly two references remain — the select string and the single
+    // pass-through into the client island. Any third occurrence (a log, a URL,
+    // a second render) fails here by name.
+    expect((detail.match(/qr_token/g) ?? []).length).toBe(2);
+    expect((detail.match(/ticket\.qr_token/g) ?? []).length).toBe(1);
+    expect(detail).toContain("qrToken={ticket.qr_token}");
   });
 
   it(`${DETAIL}: no line carrying qr_token also carries a log, a redirect, a revalidate or a JSX tag`, () => {

@@ -7,7 +7,9 @@ import { formatMoney } from "@/lib/amount";
 import { formatCheckInClock } from "@/lib/date";
 import { attendeeMoneyStrip, attendeePayments } from "@/lib/attendee-money";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { CheckInPanel } from "./check-in-panel";
 
 // Same reasoning as every other /events page reading live Supabase data: staff
 // need the current ticket row, not a build-time snapshot. Living inside the
@@ -126,6 +128,11 @@ export default async function AttendeeDetailPage({
       ? formatCheckInClock(checkedInAt)
       : null;
   const isCheckedIn = ticket.status === "checked_in" && checkInClock !== null;
+  // Footer render guard (Task 17-02): keyed on the raw status only, NOT the
+  // clock guard above — a checked_in row with a NULL checked_in_at is still a
+  // read-out, not a check-in target. The panel renders unless the ticket is
+  // checked in AND owes nothing left at the door.
+  const statusIsCheckedIn = ticket.status === "checked_in";
 
   // D-15: Issued is date-only ("8 Sep"), rendered inline with an explicit
   // Europe/Belgrade pin (matches formatCheckInClock) behind the same
@@ -294,10 +301,43 @@ export default async function AttendeeDetailPage({
           </div>
         </div>
 
-        {/* 7. Footer — 2px top rule, empty shell. 17-02 adds the manual
-            check-in control and inert Resend button; 17-03 adds the balance-due
-            collect sub-form. No actions this plan. */}
-        <div className="border-t-2 border-border pt-3" />
+        {/* 7. Footer — 2px top rule. The manual check-in panel renders for
+            every ticket EXCEPT one that is checked in and owes nothing at the
+            door: that page is a pure read-out (handoff), so it shows no footer
+            actions at all (ADETAIL-V5-05). An inert "Resend ticket email"
+            button shows whenever the attendee is not checked in — rendered per
+            the handoff, wired to nothing this phase (C-1 / D-10). "Mark as
+            paid" is 17-03 (D-11 / C-2), inside the collect panel — not here.
+            17-03 fills the owes-branch and the checked-in-still-owes inert CTA
+            inside check-in-panel.tsx, with no further change to this file. */}
+        <div className="flex flex-col gap-2 border-t-2 border-border pt-3">
+          {/* Teaching note: this page stays a Server Component — it renders on
+              the request and streams HTML. The panel below is the single
+              client island on the page (it is the piece that needs the
+              form-action + router hooks); nothing else here is interactive. */}
+          {!(statusIsCheckedIn && !strip.leftIsPositive) ? (
+            <CheckInPanel
+              qrToken={ticket.qr_token}
+              eventId={eventId}
+              ticketStatus={ticket.status}
+              owesAtDoor={strip.owes}
+              leftAmount={strip.left}
+              currency={ticket.currency}
+            />
+          ) : null}
+          {!statusIsCheckedIn ? (
+            <button
+              type="button"
+              disabled
+              className={buttonVariants({
+                variant: "secondary",
+                className: "min-h-[44px] w-full justify-start text-left",
+              })}
+            >
+              Resend ticket email
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );
