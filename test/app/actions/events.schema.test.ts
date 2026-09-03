@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
+import { readCode } from "../pages/helpers";
+
 /**
  * EVENTS-02 / EVENT-V4-01..03: Zod schema validation tests
  *
@@ -17,7 +19,11 @@ import { z } from "zod";
 // Mirror the schema from events.ts to test it independently
 const eventSchema = z
   .object({
-    name: z.string().trim().min(1, "Name is required."),
+    name: z
+      .string()
+      .trim()
+      .min(1, "Name is required.")
+      .max(50, "Name must be 50 characters or fewer."),
     starts_at: z.string().trim().min(1, "Start date is required."),
     ends_at: z.string().trim().min(1, "End date is required."),
     location: z.string().trim().min(1, "Location is required."),
@@ -247,12 +253,60 @@ describe("EVENTS-02 / EVENT-V4-01..03: eventSchema validation", () => {
     // No uniqueness constraint at schema level
   });
 
-  it("accepts very long event names (no length cap)", () => {
-    const longName = "A".repeat(1000);
+  it("accepts a name of exactly 50 characters (LIMIT-V5-01, accept at N)", () => {
     const result = eventSchema.safeParse({
       ...baseData,
-      name: longName,
+      name: "A".repeat(50),
     });
     expect(result.success).toBe(true);
+  });
+
+  it("rejects a name of 51 characters with the max-length message (LIMIT-V5-01, reject at N+1)", () => {
+    const result = eventSchema.safeParse({
+      ...baseData,
+      name: "A".repeat(51),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.name).toBeDefined();
+      expect(errors.name).toContain("Name must be 50 characters or fewer.");
+    }
+  });
+
+  it("reports the required-field message, not the max-length message, for a blank name", () => {
+    const result = eventSchema.safeParse({
+      ...baseData,
+      name: "",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.name).toContain("Name is required.");
+      expect(errors.name).not.toContain("Name must be 50 characters or fewer.");
+    }
+  });
+
+  it("accepts a 50-character name padded with whitespace, because .trim() runs before .max()", () => {
+    const result = eventSchema.safeParse({
+      ...baseData,
+      name: "  " + "A".repeat(50) + "  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.name).toBe("A".repeat(50));
+    }
+  });
+});
+
+describe("LIMIT-V5-01 source parity — the shipped schema and input carry the cap", () => {
+  it("src/app/actions/events.ts carries the exact .max(50, ...) call", () => {
+    const code = readCode("src/app/actions/events.ts");
+    expect(code).toContain('.max(50, "Name must be 50 characters or fewer.")');
+  });
+
+  it("src/app/events/new/create-event-form.tsx carries maxLength={50} on the name Input", () => {
+    const code = readCode("src/app/events/new/create-event-form.tsx");
+    expect(code).toContain("maxLength={50}");
   });
 });
