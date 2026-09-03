@@ -9,7 +9,9 @@ import type { AttendeeMoneyRow } from "@/lib/attendee-money";
  * load-bearing properties before the Server Component renders a figure:
  *
  *  - Owes = pay_at_door_amount; Paid = paid_amount + same-currency collected;
- *    Left = max(0, Owes − paid_amount − same-currency collected) — never a
+ *    Left = max(0, Owes − same-currency collected) — paid_amount is an
+ *    INDEPENDENT debt (the prepaid ticket price) and never reduces Left
+ *    (G-17-4, operator-locked "independent debts", UAT 2026-09-03); never a
  *    negative string, floored at zero;
  *  - a NULL / undefined / blank money column renders BLANK (null), never "0"
  *    (D-05: null is not the same fact as zero); a recorded "0" is kept;
@@ -25,7 +27,7 @@ import type { AttendeeMoneyRow } from "@/lib/attendee-money";
  */
 
 describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", () => {
-  it("computes the Ana Petrović worked example exactly (2500 / 500 / 1500 → 2500, 2000, 500)", () => {
+  it("computes the Ana Petrović worked example exactly (2500 / 500 / 1500 → 2500, 2000, 1000)", () => {
     const row: AttendeeMoneyRow = {
       pay_at_door_amount: "2500",
       paid_amount: "500",
@@ -36,7 +38,7 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
     expect(attendeeMoneyStrip(row)).toEqual({
       owes: "2500.00",
       paid: "2000.00",
-      left: "500.00",
+      left: "1000.00",
       leftIsPositive: true,
       hasCurrencyMismatch: false,
       mismatchAmount: null,
@@ -44,19 +46,33 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
     });
   });
 
-  it("clamps Left at zero when Paid exceeds Owes — never a negative string", () => {
+  it("clamps Left at zero when the same-currency collected amount exceeds Owes — never a negative string", () => {
     const row: AttendeeMoneyRow = {
       pay_at_door_amount: "1000",
-      paid_amount: "1200",
-      pay_at_door_collected_amount: undefined,
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "1200",
       currency: "RSD",
-      pay_at_door_collected_currency: undefined,
+      pay_at_door_collected_currency: "RSD",
     };
     const strip = attendeeMoneyStrip(row);
     expect(strip.owes).toBe("1000.00");
     expect(strip.paid).toBe("1200.00");
     expect(strip.left).toBe("0.00");
     expect(strip.leftIsPositive).toBe(false);
+  });
+
+  it("never lets paid_amount reduce Left — the Stevan case (Owes 500, prepaid 6900, nothing collected at the door)", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "500",
+      paid_amount: "6900",
+      pay_at_door_collected_amount: null,
+      currency: "RSD",
+      pay_at_door_collected_currency: null,
+    });
+    expect(strip.owes).toBe("500.00");
+    expect(strip.paid).toBe("6900.00");
+    expect(strip.left).toBe("500.00");
+    expect(strip.leftIsPositive).toBe(true);
   });
 
   it("renders every cell blank (null), not zero, when every money column is absent", () => {
@@ -158,7 +174,7 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
     expect(strip.mismatchCurrency).toBe("RSD");
   });
 
-  it("still counts a same-currency prepaid amount while ignoring the cross-currency collected amount", () => {
+  it("counts a same-currency prepaid amount toward Paid but NOT against Left, and still ignores the cross-currency collected amount", () => {
     const strip = attendeeMoneyStrip({
       pay_at_door_amount: "20",
       paid_amount: "5",
@@ -167,7 +183,7 @@ describe("attendeeMoneyStrip — the 3-cell Owes / Paid / Left strip (D-05)", ()
       pay_at_door_collected_currency: "RSD",
     });
     expect(strip.paid).toBe("5.00");
-    expect(strip.left).toBe("15.00");
+    expect(strip.left).toBe("20.00");
     expect(strip.hasCurrencyMismatch).toBe(true);
     expect(strip.mismatchAmount).toBe("2000.00");
     expect(strip.mismatchCurrency).toBe("RSD");
@@ -209,7 +225,7 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
         currency: "RSD",
         pay_at_door_collected_currency: undefined,
       }),
-    ).toEqual([{ label: "Prepaid", amount: "500.00" }]);
+    ).toEqual([{ label: "Prepaid", amount: "500.00", currency: "RSD" }]);
   });
 
   it("returns a single Paid at door row when only the collected amount is set", () => {
@@ -221,7 +237,7 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
         currency: "RSD",
         pay_at_door_collected_currency: "RSD",
       }),
-    ).toEqual([{ label: "Paid at door", amount: "1500.00" }]);
+    ).toEqual([{ label: "Paid at door", amount: "1500.00", currency: "RSD" }]);
   });
 
   it("returns Prepaid then Paid at door, in that order, when both are set (Ana Petrović)", () => {
@@ -234,9 +250,36 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
         pay_at_door_collected_currency: "RSD",
       }),
     ).toEqual([
-      { label: "Prepaid", amount: "500.00" },
-      { label: "Paid at door", amount: "1500.00" },
+      { label: "Prepaid", amount: "500.00", currency: "RSD" },
+      { label: "Paid at door", amount: "1500.00", currency: "RSD" },
     ]);
+  });
+
+  it("derives each row's currency — Prepaid from the ticket, Paid at door from the collected currency (WR-02)", () => {
+    expect(
+      attendeePayments({
+        pay_at_door_amount: "2500",
+        paid_amount: "500",
+        pay_at_door_collected_amount: "1500",
+        currency: "EUR",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual([
+      { label: "Prepaid", amount: "500.00", currency: "EUR" },
+      { label: "Paid at door", amount: "1500.00", currency: "RSD" },
+    ]);
+  });
+
+  it("falls the Paid at door row back to the ticket currency when the collected currency is absent", () => {
+    expect(
+      attendeePayments({
+        pay_at_door_amount: "2500",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "1500",
+        currency: "EUR",
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual([{ label: "Paid at door", amount: "1500.00", currency: "EUR" }]);
   });
 
   it("skips a malformed amount and keeps the valid one, with two-decimal strings", () => {
@@ -248,6 +291,6 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
         currency: "RSD",
         pay_at_door_collected_currency: "RSD",
       }),
-    ).toEqual([{ label: "Paid at door", amount: "1500.00" }]);
+    ).toEqual([{ label: "Paid at door", amount: "1500.00", currency: "RSD" }]);
   });
 });

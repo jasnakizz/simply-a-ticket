@@ -37,7 +37,11 @@ export type AttendeeMoneyRow = {
 
 export type AttendeeMoneyStrip = {
   // Two-decimal decimal strings, or null when the governing column(s) are
-  // absent — the caller renders a blank cell, never "0.00", for null (D-05).
+  // absent. The helper still returns null so other callers keep the D-05
+  // "null is not zero" distinction; the attendee detail page is the one caller
+  // that deliberately renders a null strip cell as `0.00 <currency>` instead of
+  // a blank cell (G-17-1, operator-directed UAT reversal scoped to the 3 strip
+  // cells only).
   owes: string | null;
   paid: string | null;
   left: string | null;
@@ -55,6 +59,12 @@ export type AttendeeMoneyStrip = {
 export type AttendeePayment = {
   label: "Prepaid" | "Paid at door";
   amount: string;
+  // Per-row currency (G-17-1 / code-review WR-02): Prepaid is the ticket
+  // currency; "Paid at door" is the collected currency, falling back to the
+  // ticket currency, then "RSD". The page renders each row keyed on THIS field,
+  // never the ticket-level currency — so a door payment collected in RSD on an
+  // EUR ticket prints "… RSD", matching the mismatch note.
+  currency: string;
 };
 
 // Parse one raw amount to an exact count of minor units, or null when the
@@ -118,13 +128,17 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
     paid = fromMinorUnits(prepaidPart + collectedPart);
   }
 
-  // Left = max(0, owes − prepaid − same-currency collected); blank when the
-  // governing pay_at_door_amount column is absent.
+  // Left = max(0, owes − same-currency collected); blank when the governing
+  // pay_at_door_amount column is absent. paid_amount (the prepaid ticket price)
+  // is a SEPARATE debt that never reduces Left — the door balance and the
+  // prepaid ticket price are independent debts (G-17-4, operator-locked
+  // "independent debts", UAT 2026-09-03). minorPrepaid stays in use above for
+  // Paid, which is unchanged. A cross-currency collected amount still does not
+  // reduce Left.
   let left: string | null = null;
   let leftIsPositive = false;
   if (minorOwes !== null) {
-    const rawLeft =
-      minorOwes - (minorPrepaid ?? ZERO) - (collectedSameCurrency ?? ZERO);
+    const rawLeft = minorOwes - (collectedSameCurrency ?? ZERO);
     const clamped = rawLeft > ZERO ? rawLeft : ZERO;
     left = fromMinorUnits(clamped);
     leftIsPositive = clamped > ZERO;
@@ -155,12 +169,25 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
 // when it is a valid decimal, Prepaid first. No dates, no cash/card channel,
 // no `payments` table. Both absent → an empty list, which the caller renders
 // as the fixed "Nothing paid yet …" sentence.
+//
+// Each row also carries its own currency (G-17-1 / WR-02): the Prepaid row is
+// the ticket currency (`normaliseCurrency(row.currency) ?? "RSD"`); the "Paid
+// at door" row is `normaliseCurrency(row.pay_at_door_collected_currency)`
+// falling back to that same ticket currency. The page renders each row keyed on
+// this field, never the ticket-level currency, so a door payment recorded in a
+// different currency prints the currency it was actually taken in.
 export function attendeePayments(row: AttendeeMoneyRow): AttendeePayment[] {
   const payments: AttendeePayment[] = [];
 
+  const ticketCurrency = normaliseCurrency(row.currency) ?? "RSD";
+
   const minorPrepaid = toMinorUnits(row.paid_amount);
   if (minorPrepaid !== null) {
-    payments.push({ label: "Prepaid", amount: fromMinorUnits(minorPrepaid) });
+    payments.push({
+      label: "Prepaid",
+      amount: fromMinorUnits(minorPrepaid),
+      currency: ticketCurrency,
+    });
   }
 
   const minorCollected = toMinorUnits(row.pay_at_door_collected_amount);
@@ -168,6 +195,8 @@ export function attendeePayments(row: AttendeeMoneyRow): AttendeePayment[] {
     payments.push({
       label: "Paid at door",
       amount: fromMinorUnits(minorCollected),
+      currency:
+        normaliseCurrency(row.pay_at_door_collected_currency) ?? ticketCurrency,
     });
   }
 
