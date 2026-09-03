@@ -157,12 +157,15 @@ export function CheckInPanel({
   }, [checkInState.ok, router]);
 
   const statusIsCheckedIn = ticketStatus === "checked_in";
-  // G-17-4 / WR-01: the collect-vs-plain branch keys on the NET LEFT figure
-  // (the leftAmount prop = strip.left), not gross owes. The same pure string
-  // predicate, now applied to leftAmount — equivalent to strip.leftIsPositive
-  // for every input. A not-checked-in pay_at_door ticket already fully
-  // collected at the door (net LEFT "0.00") takes the plain "Check in manually"
-  // path, never a "Collect 0.00" button. owesAtDoor stays used in balanceDisplay.
+  // The collect-vs-plain branch keys on the leftAmount prop, which now carries
+  // the detail strip's third-cell value (strip.balance). That cell can be a
+  // strictly positive "Owes" figure, a settled "0.00", a negative change-owed
+  // figure, or a cross-currency straight copy of cell 1. isPositiveAmount is a
+  // pure string test whose anchored decimal admits no leading minus and needs a
+  // non-zero digit, so all three non-positive shapes (settled zero, negative
+  // change, and a zero copy) fall through to the plain manual check-in control
+  // for free — a "Collect …" button appears only for a strictly positive third
+  // cell. Do not loosen that regex. owesAtDoor stays used in balanceDisplay.
   const leftPositive = isPositiveAmount(leftAmount);
 
   // Collect sub-form UI state (D-02 / handoff). collectOpen: the collapsed
@@ -230,6 +233,10 @@ export function CheckInPanel({
   // outstanding figure) drives the label and the amount default; a rejected
   // submit re-applies whatever the staff member typed via checkInState.values.
   const balanceDisplay = toTwoDecimals(leftAmount ?? owesAtDoor ?? "");
+  // Resolved currency for the collapsed collect button label. Logical-or (not
+  // nullish) so an empty-string currency column also falls back — the button
+  // must never render an amount followed by a trailing space and no code.
+  const resolvedCurrency = currency || "RSD";
   const amountDefault = checkInState.values?.collected_amount || balanceDisplay;
   const currencyDefault =
     checkInState.values?.collected_currency || currency || "RSD";
@@ -398,7 +405,7 @@ export function CheckInPanel({
             className="min-h-[44px] w-full justify-between text-left"
           >
             <span>
-              Collect {balanceDisplay} {currency}
+              Collect {balanceDisplay} {resolvedCurrency}
             </span>
             <span aria-hidden="true" className="opacity-80">
               +

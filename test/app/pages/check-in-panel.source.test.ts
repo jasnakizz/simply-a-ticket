@@ -246,6 +246,17 @@ describe("ADETAIL-V5-04 — the balance-due collect sub-form", () => {
   });
 });
 
+describe("q6i — the collapsed collect button always carries a currency code", () => {
+  it(`${PANEL}: declares resolvedCurrency with a logical-or "RSD" fallback (empty string falls back too)`, () => {
+    expect(panel).toMatch(/const\s+resolvedCurrency\s*=\s*currency\s*\|\|\s*"RSD"/);
+  });
+
+  it(`${PANEL}: the collapsed collect button interpolates resolvedCurrency, never the raw currency prop`, () => {
+    expect(panel).toMatch(/Collect \{balanceDisplay\} \{resolvedCurrency\}/);
+    expect(panel).not.toMatch(/Collect \{balanceDisplay\} \{currency\}/);
+  });
+});
+
 describe("G-17-5 — the panel settles to the checked-in view after router.refresh", () => {
   it(`${PANEL}: the checkInState.ok confirmation early-return is guarded by ticketStatus !== "checked_in"`, () => {
     expect(panel).toContain('checkInState.ok && ticketStatus !== "checked_in"');
