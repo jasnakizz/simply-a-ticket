@@ -301,15 +301,13 @@ export default async function AttendeeDetailPage({
           </div>
         </div>
 
-        {/* 7. Footer — 2px top rule. The manual check-in panel renders for
-            every ticket EXCEPT one that is checked in and owes nothing at the
-            door: that page is a pure read-out (handoff), so it shows no footer
-            actions at all (ADETAIL-V5-05). An inert "Resend ticket email"
-            button shows whenever the attendee is not checked in — rendered per
-            the handoff, wired to nothing this phase (C-1 / D-10). "Mark as
-            paid" is 17-03 (D-11 / C-2), inside the collect panel — not here.
-            17-03 fills the owes-branch and the checked-in-still-owes inert CTA
-            inside check-in-panel.tsx, with no further change to this file. */}
+        {/* 7. Footer — 2px top rule. The check-in panel renders for every
+            ticket except one that is checked in and already settled at the door
+            (that page is a pure read-out — no footer actions, ADETAIL-V5-05).
+            The resend-email button below is inert this phase, rendered per the
+            handoff (C-1 / D-10). The collect / mark-paid control is 17-03
+            (D-11 / C-2) and lives inside the panel, not here. 17-03 fills the
+            owes-branch inside check-in-panel.tsx with no further change here. */}
         <div className="flex flex-col gap-2 border-t-2 border-border pt-3">
           {/* Teaching note: this page stays a Server Component — it renders on
               the request and streams HTML. The panel below is the single

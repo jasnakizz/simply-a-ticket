@@ -222,3 +222,40 @@ describe("D-13 — the Back link preserves the Attendees-list filter query strin
     expect(detail).toContain("backHref");
   });
 });
+
+describe("ADETAIL-V5-03/05/06 — check-in is delegated to the CheckInPanel client island (17-02)", () => {
+  it(`${DETAIL}: imports CheckInPanel from ./check-in-panel and renders it exactly once`, () => {
+    expect(detail).toMatch(
+      /import\s*\{\s*CheckInPanel\s*\}\s*from\s*"\.\/check-in-panel"/,
+    );
+    expect((detail.match(/<CheckInPanel\b/g) ?? []).length).toBe(1);
+  });
+
+  it(`${DETAIL}: renders <CheckInPanel> behind the checked-in-and-settled read-out guard`, () => {
+    expect(detail).toMatch(
+      /!\(\s*statusIsCheckedIn\s*&&\s*!strip\.leftIsPositive\s*\)/,
+    );
+  });
+
+  it(`${DETAIL}: the page itself still wires no Server Action — no checkInTicket, no <form>, no "use server"`, () => {
+    expect(detail).not.toContain("checkInTicket");
+    expect(detail).not.toContain("use server");
+    expect(detail).not.toMatch(/<form\b/);
+    expect(detail).not.toMatch(/\saction=\{/);
+  });
+
+  it(`${DETAIL}: renders exactly one <button> — the inert, disabled "Resend ticket email" control wired to nothing (C-1 / D-10)`, () => {
+    expect(detail).not.toContain("resendTicketEmail");
+    const buttonTags = detail.match(/<button\b[\s\S]*?>/g) ?? [];
+    expect(buttonTags.length).toBe(1);
+    expect(buttonTags[0]).toMatch(/\sdisabled\b/);
+    expect(buttonTags[0]).not.toMatch(/\son[A-Z]/);
+    expect(detail).toMatch(
+      /<button\b[\s\S]*?>\s*Resend ticket email\s*<\/button>/,
+    );
+  });
+
+  it(`${DETAIL}: adds no "Mark as paid" control — deferred to 17-03`, () => {
+    expect(detail).not.toContain("Mark as paid");
+  });
+});
