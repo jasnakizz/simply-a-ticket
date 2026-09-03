@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 
+import { readCode } from "../pages/helpers";
+
 /**
  * ORDER-02, ORDER-04, ORDER-05: Zod schema validation tests
  *
@@ -20,8 +22,14 @@ const amountSchema = z
 const orderSchema = z.object({
   event_id: z.uuid(),
   ticket_type_id: z.uuid("Select a ticket type."),
-  attendee_name: z.string().trim().min(1, "Attendee name is required."),
-  attendee_email: z.email("Enter a valid email address."),
+  attendee_name: z
+    .string()
+    .trim()
+    .min(1, "Attendee name is required.")
+    .max(30, "Attendee name must be 30 characters or fewer."),
+  attendee_email: z
+    .email("Enter a valid email address.")
+    .max(100, "Email address must be 100 characters or fewer."),
   paid_amount: amountSchema,
   pay_at_door_amount: amountSchema,
   currency: z.enum(["EUR", "RSD"]).default("RSD"),
@@ -90,6 +98,99 @@ describe("ORDER-02: orderSchema validation", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.flatten().fieldErrors.attendee_email).toBeDefined();
+    }
+  });
+
+  it("accepts an attendee name of exactly 30 characters (LIMIT-V5-03, accept at N)", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_name: "A".repeat(30),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an attendee name of 31 characters with the max-length message (LIMIT-V5-03, reject at N+1)", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_name: "A".repeat(31),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.attendee_name).toBeDefined();
+      expect(errors.attendee_name).toContain(
+        "Attendee name must be 30 characters or fewer."
+      );
+    }
+  });
+
+  it("reports the required-field message, not the max-length message, for a blank attendee name", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_name: "",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.attendee_name).toContain("Attendee name is required.");
+      expect(errors.attendee_name).not.toContain(
+        "Attendee name must be 30 characters or fewer."
+      );
+    }
+  });
+
+  it("accepts a 30-character attendee name padded with whitespace, because .trim() runs before .max()", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_name: "  " + "A".repeat(30) + "  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.attendee_name).toBe("A".repeat(30));
+    }
+  });
+
+  it("accepts a well-formed attendee email of exactly 100 characters (LIMIT-V5-04, accept at N)", () => {
+    const email = "a".repeat(88) + "@example.com";
+    expect(email.length).toBe(100);
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_email: email,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a well-formed attendee email of 101 characters with the max-length message (LIMIT-V5-04, reject at N+1)", () => {
+    const email = "a".repeat(89) + "@example.com";
+    expect(email.length).toBe(101);
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_email: email,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.attendee_email).toBeDefined();
+      expect(errors.attendee_email).toContain(
+        "Email address must be 100 characters or fewer."
+      );
+    }
+  });
+
+  it("reports the invalid-address message first for a malformed 101-character address (z.email stays ahead of .max)", () => {
+    const malformed = "a".repeat(101);
+    expect(malformed.length).toBe(101);
+    const result = orderSchema.safeParse({
+      ...baseData,
+      attendee_email: malformed,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.attendee_email).toBeDefined();
+      // z.email() is chained before .max(100), so the format issue is raised
+      // first — a malformed address is scolded for its shape, not its length.
+      expect(errors.attendee_email?.[0]).toBe("Enter a valid email address.");
     }
   });
 
@@ -217,5 +318,36 @@ describe("ORDER-04/ORDER-05: amountSchema validation", () => {
     if (result.success) {
       expect(result.data).toBe("999999999.99");
     }
+  });
+});
+
+describe("LIMIT-V5-03/-04 source parity — the shipped schema and inputs carry the caps", () => {
+  it("src/app/actions/orders.ts carries the exact .max(30, ...) call for attendee_name", () => {
+    const code = readCode("src/app/actions/orders.ts");
+    expect(code).toContain(
+      '.max(30, "Attendee name must be 30 characters or fewer.")'
+    );
+  });
+
+  it("src/app/actions/orders.ts carries the exact .max(100, ...) call for attendee_email", () => {
+    const code = readCode("src/app/actions/orders.ts");
+    expect(code).toContain(
+      '.max(100, "Email address must be 100 characters or fewer.")'
+    );
+  });
+
+  it("src/app/actions/orders.ts keeps z.email(...) ahead of the .max(100, ...) cap", () => {
+    const code = readCode("src/app/actions/orders.ts");
+    expect(code).toContain('z.email("Enter a valid email address.")');
+  });
+
+  it("src/app/events/[eventId]/order/order-form.tsx carries maxLength={30} on the attendee-name Input", () => {
+    const code = readCode("src/app/events/[eventId]/order/order-form.tsx");
+    expect(code).toContain("maxLength={30}");
+  });
+
+  it("src/app/events/[eventId]/order/order-form.tsx carries maxLength={100} on the attendee-email Input", () => {
+    const code = readCode("src/app/events/[eventId]/order/order-form.tsx");
+    expect(code).toContain("maxLength={100}");
   });
 });
