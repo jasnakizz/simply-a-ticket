@@ -180,9 +180,10 @@ describe("Gate 4 — the money helper stays node-importable and pure (D-05)", ()
     expect(money).not.toContain("use server");
   });
 
-  it(`${MONEY}: exports attendeeMoneyStrip and attendeePayments`, () => {
+  it(`${MONEY}: exports attendeeMoneyStrip, attendeePayments and attendeePaymentTotals`, () => {
     expect(money).toMatch(/export function attendeeMoneyStrip\b/);
     expect(money).toMatch(/export function attendeePayments\b/);
+    expect(money).toMatch(/export function attendeePaymentTotals\b/);
   });
 });
 

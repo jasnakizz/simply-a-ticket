@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 
-import { attendeeMoneyStrip, attendeePayments } from "@/lib/attendee-money";
-import type { AttendeeMoneyRow } from "@/lib/attendee-money";
+import {
+  attendeeMoneyStrip,
+  attendeePayments,
+  attendeePaymentTotals,
+} from "@/lib/attendee-money";
+import type {
+  AttendeeMoneyRow,
+  AttendeePayment,
+} from "@/lib/attendee-money";
 
 /**
  * The attendee detail page's money contract, reworked by quick task 260903-q6i
@@ -333,5 +340,61 @@ describe("attendeePayments — the synthesized PAYMENTS list (D-07)", () => {
         pay_at_door_collected_currency: "RSD",
       }),
     ).toEqual([{ label: "Paid at door", amount: "1500.00", currency: "RSD" }]);
+  });
+});
+
+describe("attendeePaymentTotals — the per-currency PAYMENTS Total rows (q6i, DEC-6 / DEC-7)", () => {
+  it("returns [] for an empty input array — the empty PAYMENTS branch can never sprout a Total", () => {
+    expect(attendeePaymentTotals([])).toEqual([]);
+  });
+
+  it("sums one currency across two rows into a single entry (Prepaid 500 + Paid at door 1500 RSD -> 2000.00)", () => {
+    const rows: AttendeePayment[] = [
+      { label: "Prepaid", amount: "500.00", currency: "RSD" },
+      { label: "Paid at door", amount: "1500.00", currency: "RSD" },
+    ];
+    expect(attendeePaymentTotals(rows)).toEqual([
+      { currency: "RSD", amount: "2000.00" },
+    ]);
+  });
+
+  it("keeps two currencies as two entries in first-appearance order — never one combined figure", () => {
+    const rows: AttendeePayment[] = [
+      { label: "Prepaid", amount: "5.00", currency: "EUR" },
+      { label: "Paid at door", amount: "2000.00", currency: "RSD" },
+    ];
+    expect(attendeePaymentTotals(rows)).toEqual([
+      { currency: "EUR", amount: "5.00" },
+      { currency: "RSD", amount: "2000.00" },
+    ]);
+  });
+
+  it("keeps a zero-summing currency as one 0.00 line — a row exists, so its Total shows (DEC-7)", () => {
+    const rows: AttendeePayment[] = [
+      { label: "Prepaid", amount: "0.00", currency: "RSD" },
+      { label: "Paid at door", amount: "0.00", currency: "RSD" },
+    ];
+    expect(attendeePaymentTotals(rows)).toEqual([
+      { currency: "RSD", amount: "0.00" },
+    ]);
+  });
+
+  it("produces its own line for a currency code the door-money helper does not know (DEC-7)", () => {
+    const rows: AttendeePayment[] = [
+      { label: "Prepaid", amount: "10.00", currency: "USD" },
+    ];
+    expect(attendeePaymentTotals(rows)).toEqual([
+      { currency: "USD", amount: "10.00" },
+    ]);
+  });
+
+  it("adds fractional amounts in the same currency exactly (0.10 + 0.20 -> 0.30)", () => {
+    const rows: AttendeePayment[] = [
+      { label: "Prepaid", amount: "0.10", currency: "RSD" },
+      { label: "Paid at door", amount: "0.20", currency: "RSD" },
+    ];
+    expect(attendeePaymentTotals(rows)).toEqual([
+      { currency: "RSD", amount: "0.30" },
+    ]);
   });
 });

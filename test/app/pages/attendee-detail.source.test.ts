@@ -175,6 +175,34 @@ describe("D-07 — the synthesized PAYMENTS section", () => {
   });
 });
 
+describe("q6i — the per-currency PAYMENTS Total rows", () => {
+  it(`${DETAIL}: imports attendeePaymentTotals from the money helper and calls it on the payments array`, () => {
+    expect(detail).toMatch(
+      /import\s*\{[\s\S]*attendeePaymentTotals[\s\S]*\}\s*from\s*"@\/lib\/attendee-money"/,
+    );
+    expect(detail).toMatch(/attendeePaymentTotals\(payments\)/);
+  });
+
+  it(`${DETAIL}: renders a "Total" row through formatMoney on each entry's own amount + currency`, () => {
+    expect(detail).toMatch(/>\s*Total\s*</);
+    expect(detail).toMatch(/formatMoney\(total\.amount,\s*total\.currency\)/);
+  });
+
+  it(`${DETAIL}: the Total render site comes AFTER the payments.map site`, () => {
+    const mapIdx = detail.indexOf("payments.map(");
+    const totalIdx = detail.indexOf("paymentTotals.map(");
+    expect(mapIdx).toBeGreaterThan(-1);
+    expect(totalIdx).toBeGreaterThan(mapIdx);
+  });
+
+  it(`${DETAIL}: keeps the empty-list sentence exactly once — an empty list still sprouts no Total`, () => {
+    expect(
+      (detail.match(/Nothing paid yet — full amount due at the door\./g) ?? [])
+        .length,
+    ).toBe(1);
+  });
+});
+
 describe("ADETAIL-V5-05 / D-15 — status badge and Issued date", () => {
   it(`${DETAIL}: calls the Belgrade wall-clock formatter from exactly one site`, () => {
     expect((detail.match(/formatCheckInClock\(/g) ?? []).length).toBe(1);

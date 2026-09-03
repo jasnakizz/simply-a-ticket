@@ -105,6 +105,14 @@ export type AttendeePayment = {
   currency: string;
 };
 
+// Currency + amount for one PAYMENTS "Total" row (DEC-6): a per-currency sum of
+// the rows the page is already rendering, never summed across currencies. The
+// amount is a two-decimal decimal string.
+export type AttendeePaymentTotal = {
+  currency: string;
+  amount: string;
+};
+
 // Parse one raw amount to an exact count of minor units, or null when the
 // value is not a well-formed non-negative decimal with at most two fractional
 // digits. Same anchored shape src/lib/amount.ts and src/lib/door-money.ts use:
@@ -252,4 +260,54 @@ export function attendeePayments(row: AttendeeMoneyRow): AttendeePayment[] {
   }
 
   return payments;
+}
+
+// Per-currency "Total" rows for the PAYMENTS list (DEC-6 / DEC-7). Consumes the
+// SAME AttendeePayment[] the page renders as rows, so the Total can never
+// disagree with the lines above it.
+//
+// This is a small dedicated reducer rather than a call into
+// src/lib/door-money.ts's sumMoneyByCurrency on purpose, and the two should NOT
+// be "deduped": that helper drops a line whose sum is zero and only recognises
+// the two currency codes EUR / RSD, aggregating many tickets in a fixed
+// currency order. Here there are at most two rows in a known order (Prepaid,
+// then Paid at door), a zero-valued line is KEPT (a row exists, so the operator
+// should see its Total), and ANY currency code is accepted — the Total lines
+// read in first-appearance order so they line up with the rows above.
+//
+// Walk once with a for...of. Skip a row whose amount fails to parse. Record
+// first-appearance order in a plain array and accumulate into a Map keyed by
+// the row's own currency, storing the running total plus the new minor units
+// with a plain assignment — the compound-add operator and the array fold are
+// both banned in this module even though door-money.ts uses one of them
+// (door-money.ts is not covered by the phase17-contract float gate). Emit one
+// entry per recorded currency, in that order, formatted through the sign-aware
+// minor-unit formatter.
+export function attendeePaymentTotals(
+  rows: readonly AttendeePayment[],
+): AttendeePaymentTotal[] {
+  const order: string[] = [];
+  const totals = new Map<string, bigint>();
+
+  for (const row of rows) {
+    const minor = toMinorUnits(row.amount);
+    if (minor === null) continue;
+
+    const existing = totals.get(row.currency);
+    if (existing === undefined) {
+      order.push(row.currency);
+      totals.set(row.currency, minor);
+    } else {
+      totals.set(row.currency, existing + minor);
+    }
+  }
+
+  const result: AttendeePaymentTotal[] = [];
+  for (const currency of order) {
+    result.push({
+      currency,
+      amount: fromMinorUnits(totals.get(currency) ?? ZERO),
+    });
+  }
+  return result;
 }

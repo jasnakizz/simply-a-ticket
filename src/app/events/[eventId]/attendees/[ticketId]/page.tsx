@@ -5,7 +5,11 @@ import { ArrowLeft } from "lucide-react";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatMoney } from "@/lib/amount";
 import { formatCheckInClock } from "@/lib/date";
-import { attendeeMoneyStrip, attendeePayments } from "@/lib/attendee-money";
+import {
+  attendeeMoneyStrip,
+  attendeePayments,
+  attendeePaymentTotals,
+} from "@/lib/attendee-money";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,6 +112,10 @@ export default async function AttendeeDetailPage({
 
   const strip = attendeeMoneyStrip(ticket);
   const payments = attendeePayments(ticket);
+  // One "Total" row per currency present in the rendered payment rows (never a
+  // single figure summed across currencies). Derived from the SAME array the
+  // list renders, so a Total can never disagree with the lines above it.
+  const paymentTotals = attendeePaymentTotals(payments);
 
   const currency = ticket.currency;
   // G-17-1 (operator-directed UAT reversal of D-05, scoped to the 3 money-strip
@@ -269,6 +277,20 @@ export default async function AttendeeDetailPage({
                         an EUR ticket reads "… RSD", matching the mismatch note
                         below. */}
                     {formatMoney(payment.amount, payment.currency)}
+                  </span>
+                </li>
+              ))}
+              {/* q6i: one "Total" row per currency present in the rows above,
+                  same markup, same border + padding, never a cross-currency
+                  sum. Keyed on the currency. */}
+              {paymentTotals.map((total) => (
+                <li
+                  key={total.currency}
+                  className="flex items-center justify-between border-t border-border py-[11px]"
+                >
+                  <span className="text-[13.5px] font-semibold">Total</span>
+                  <span className="text-[14px] font-extrabold">
+                    {formatMoney(total.amount, total.currency)}
                   </span>
                 </li>
               ))}
