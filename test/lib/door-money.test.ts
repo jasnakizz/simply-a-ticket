@@ -952,3 +952,96 @@ describe("addCollectedAmount", () => {
     expect(addCollectedAmount("10.05", "0.95")).toBe(summed[0].amount);
   });
 });
+
+/**
+ * PAID-V6-03 exact-sum battery (plan 20-02, Task 1). The battery above (added
+ * as a Rule 2 fix in plan 20-01) pins the shape of addCollectedAmount's
+ * contract; this describe is the fuller, plan-specified proof: every case in
+ * the plan's own <behavior> block, including the null/blank-as-zero boundary,
+ * the present-but-unparseable-is-refused boundary, a 15-digit magnitude no
+ * IEEE-754 double can hold exactly, and — the two composition cases — that
+ * the adder agrees with doorBalanceForTicket / residualOwedForTicket at the
+ * exact-settle and one-minor-unit-over-settle thresholds. Comparisons are
+ * string/BigInt only, never a numeric coercion, matching the no-drift
+ * discipline the rest of this file already uses.
+ */
+describe("addCollectedAmount — the settle-side exact adder (PAID-V6-03)", () => {
+  it('carries across the minor-unit boundary: "10.05" + "0.95" -> "11.00"', () => {
+    expect(addCollectedAmount("10.05", "0.95")).toBe("11.00");
+  });
+
+  it('the case an IEEE-754 double gets wrong: "0.10" + "0.20" -> "0.30"', () => {
+    expect(addCollectedAmount("0.10", "0.20")).toBe("0.30");
+  });
+
+  it('"19.99" + "0.01" -> "20.00"', () => {
+    expect(addCollectedAmount("19.99", "0.01")).toBe("20.00");
+  });
+
+  it('both operands normalise to two decimals: "100" + "0.5" -> "100.50"', () => {
+    expect(addCollectedAmount("100", "0.5")).toBe("100.50");
+  });
+
+  it.each([null, undefined, "", "   "])(
+    "an absent stored amount (%j) counts as zero — the first-ever collection case: existing + \"25.00\" -> \"25.00\"",
+    (existing) => {
+      expect(addCollectedAmount(existing, "25.00")).toBe("25.00");
+    },
+  );
+
+  it('a recorded zero and an absent value reach the same sum by different routes: "0.00" + "25.00" -> "25.00"', () => {
+    expect(addCollectedAmount("0.00", "25.00")).toBe("25.00");
+  });
+
+  it.each(["abc", "-1", "1.234", "1e3", "  12 34 "])(
+    'a stored amount that cannot be read ("%s") is REFUSED, never silently treated as zero',
+    (existing) => {
+      expect(addCollectedAmount(existing, "25.00")).toBeNull();
+    },
+  );
+
+  it.each(["", "abc", "-1", "1.234"])(
+    'an unparseable entered amount ("%s") is refused',
+    (entered) => {
+      expect(addCollectedAmount("25.00", entered)).toBeNull();
+    },
+  );
+
+  it('exact at a magnitude a double cannot represent: "999999999999999.99" + "0.02" -> "1000000000000000.01"', () => {
+    expect(addCollectedAmount("999999999999999.99", "0.02")).toBe(
+      "1000000000000000.01",
+    );
+  });
+
+  it('a numeric existing figure (PostgREST forgetting the ::text cast) is tolerated the same way toMinorUnits documents: 10 + "5.00" -> "15.00"', () => {
+    expect(addCollectedAmount(10, "5.00")).toBe("15.00");
+  });
+
+  it("the exact-settle boundary: entering exactly the residual settles doorBalanceForTicket to minor BigInt(0) and residualOwedForTicket to null", () => {
+    const nextAmount = addCollectedAmount("7.50", "12.50");
+    expect(nextAmount).toBe("20.00");
+
+    const row = {
+      pay_at_door_amount: "20.00",
+      currency: "RSD",
+      pay_at_door_collected_amount: nextAmount,
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(doorBalanceForTicket(row)!.minor).toBe(BigInt(0));
+    expect(residualOwedForTicket(row)).toBeNull();
+  });
+
+  it("the over-settle boundary: one more minor unit past the residual drives doorBalanceForTicket negative by exactly one minor unit and residualOwedForTicket stays null", () => {
+    const nextAmount = addCollectedAmount("7.50", "12.51");
+    expect(nextAmount).toBe("20.01");
+
+    const row = {
+      pay_at_door_amount: "20.00",
+      currency: "RSD",
+      pay_at_door_collected_amount: nextAmount,
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(doorBalanceForTicket(row)!.minor).toBe(BigInt(-1));
+    expect(residualOwedForTicket(row)).toBeNull();
+  });
+});
