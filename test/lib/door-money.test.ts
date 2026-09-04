@@ -7,6 +7,7 @@ import {
   doorBalanceForTicket,
   residualOwedForTicket,
   sumResidualOwedByCurrency,
+  addCollectedAmount,
 } from "@/lib/door-money";
 import type {
   DoorMoneyRow,
@@ -891,5 +892,156 @@ describe("door-money output feeds formatMoney from @/lib/amount unchanged", () =
     for (const s of subtotals) {
       expect(formatMoney(s.amount, s.currency)).toBe(`${s.amount} ${s.currency}`);
     }
+  });
+});
+
+/**
+ * addCollectedAmount (Phase 20, PAID-V6-03) — markAsPaid's one arithmetic
+ * primitive. Pins the exact behavior the plan's <behavior> block specifies:
+ * exact BigInt-minor-unit summation across the boundary, an absent existing
+ * figure treated as zero (never a refusal), a PRESENT-but-unparseable
+ * existing figure refused (never silently zeroed — that would erase recorded
+ * money), and no binary-floating drift.
+ */
+describe("addCollectedAmount", () => {
+  it('sums "10.05" + "0.95" -> "11.00", carrying across the minor-unit boundary exactly', () => {
+    expect(addCollectedAmount("10.05", "0.95")).toBe("11.00");
+  });
+
+  it('sums "0.10" + "0.20" -> "0.30" — no binary-floating-point drift', () => {
+    expect(addCollectedAmount("0.10", "0.20")).toBe("0.30");
+  });
+
+  it.each([null, undefined, "", "   "])(
+    "treats an absent existing amount (%j) as zero — returns the entered amount normalised to two decimals",
+    (existing) => {
+      expect(addCollectedAmount(existing, "7")).toBe("7.00");
+    },
+  );
+
+  it.each(["abc", "-1", "1.234", "1e3"])(
+    'refuses a PRESENT but unparseable existing amount ("%s") — never silently treated as zero',
+    (existing) => {
+      expect(addCollectedAmount(existing, "5.00")).toBeNull();
+    },
+  );
+
+  it.each(["abc", "-1", "1.234", ""])(
+    'refuses an unparseable entered amount ("%s")',
+    (entered) => {
+      expect(addCollectedAmount("10.00", entered)).toBeNull();
+    },
+  );
+
+  it("sums two 15-digit whole-part amounts to the exact BigInt total — no precision loss", () => {
+    const a = "123456789012345.00";
+    const b = "123456789012345.00";
+    expect(addCollectedAmount(a, b)).toBe("246913578024690.00");
+  });
+
+  it('normalises a whole-number entered amount to two decimals ("7" -> "7.00") with a zero existing figure', () => {
+    expect(addCollectedAmount("0", "7")).toBe("7.00");
+    expect(addCollectedAmount("0.00", "7")).toBe("7.00");
+  });
+
+  it("reuses this module's own minor-unit arithmetic — the result matches a hand-summed subtotal via sumMoneyByCurrency", () => {
+    const summed = sumMoneyByCurrency([
+      { amount: "10.05", currency: "EUR" },
+      { amount: "0.95", currency: "EUR" },
+    ]);
+    expect(addCollectedAmount("10.05", "0.95")).toBe(summed[0].amount);
+  });
+});
+
+/**
+ * PAID-V6-03 exact-sum battery (plan 20-02, Task 1). The battery above (added
+ * as a Rule 2 fix in plan 20-01) pins the shape of addCollectedAmount's
+ * contract; this describe is the fuller, plan-specified proof: every case in
+ * the plan's own <behavior> block, including the null/blank-as-zero boundary,
+ * the present-but-unparseable-is-refused boundary, a 15-digit magnitude no
+ * IEEE-754 double can hold exactly, and — the two composition cases — that
+ * the adder agrees with doorBalanceForTicket / residualOwedForTicket at the
+ * exact-settle and one-minor-unit-over-settle thresholds. Comparisons are
+ * string/BigInt only, never a numeric coercion, matching the no-drift
+ * discipline the rest of this file already uses.
+ */
+describe("addCollectedAmount — the settle-side exact adder (PAID-V6-03)", () => {
+  it('carries across the minor-unit boundary: "10.05" + "0.95" -> "11.00"', () => {
+    expect(addCollectedAmount("10.05", "0.95")).toBe("11.00");
+  });
+
+  it('the case an IEEE-754 double gets wrong: "0.10" + "0.20" -> "0.30"', () => {
+    expect(addCollectedAmount("0.10", "0.20")).toBe("0.30");
+  });
+
+  it('"19.99" + "0.01" -> "20.00"', () => {
+    expect(addCollectedAmount("19.99", "0.01")).toBe("20.00");
+  });
+
+  it('both operands normalise to two decimals: "100" + "0.5" -> "100.50"', () => {
+    expect(addCollectedAmount("100", "0.5")).toBe("100.50");
+  });
+
+  it.each([null, undefined, "", "   "])(
+    "an absent stored amount (%j) counts as zero — the first-ever collection case: existing + \"25.00\" -> \"25.00\"",
+    (existing) => {
+      expect(addCollectedAmount(existing, "25.00")).toBe("25.00");
+    },
+  );
+
+  it('a recorded zero and an absent value reach the same sum by different routes: "0.00" + "25.00" -> "25.00"', () => {
+    expect(addCollectedAmount("0.00", "25.00")).toBe("25.00");
+  });
+
+  it.each(["abc", "-1", "1.234", "1e3", "  12 34 "])(
+    'a stored amount that cannot be read ("%s") is REFUSED, never silently treated as zero',
+    (existing) => {
+      expect(addCollectedAmount(existing, "25.00")).toBeNull();
+    },
+  );
+
+  it.each(["", "abc", "-1", "1.234"])(
+    'an unparseable entered amount ("%s") is refused',
+    (entered) => {
+      expect(addCollectedAmount("25.00", entered)).toBeNull();
+    },
+  );
+
+  it('exact at a magnitude a double cannot represent: "999999999999999.99" + "0.02" -> "1000000000000000.01"', () => {
+    expect(addCollectedAmount("999999999999999.99", "0.02")).toBe(
+      "1000000000000000.01",
+    );
+  });
+
+  it('a numeric existing figure (PostgREST forgetting the ::text cast) is tolerated the same way toMinorUnits documents: 10 + "5.00" -> "15.00"', () => {
+    expect(addCollectedAmount(10, "5.00")).toBe("15.00");
+  });
+
+  it("the exact-settle boundary: entering exactly the residual settles doorBalanceForTicket to minor BigInt(0) and residualOwedForTicket to null", () => {
+    const nextAmount = addCollectedAmount("7.50", "12.50");
+    expect(nextAmount).toBe("20.00");
+
+    const row = {
+      pay_at_door_amount: "20.00",
+      currency: "RSD",
+      pay_at_door_collected_amount: nextAmount,
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(doorBalanceForTicket(row)!.minor).toBe(BigInt(0));
+    expect(residualOwedForTicket(row)).toBeNull();
+  });
+
+  it("the over-settle boundary: one more minor unit past the residual drives doorBalanceForTicket negative by exactly one minor unit and residualOwedForTicket stays null", () => {
+    const nextAmount = addCollectedAmount("7.50", "12.51");
+    expect(nextAmount).toBe("20.01");
+
+    const row = {
+      pay_at_door_amount: "20.00",
+      currency: "RSD",
+      pay_at_door_collected_amount: nextAmount,
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(doorBalanceForTicket(row)!.minor).toBe(BigInt(-1));
+    expect(residualOwedForTicket(row)).toBeNull();
   });
 });

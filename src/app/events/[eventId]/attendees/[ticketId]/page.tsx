@@ -367,6 +367,9 @@ export default async function AttendeeDetailPage({
               owesAtDoor={strip.toPay}
               leftAmount={strip.balance}
               currency={ticket.currency}
+              ticketId={ticket.id}
+              collectedCurrency={ticket.pay_at_door_collected_currency}
+              hasCurrencyMismatch={strip.hasCurrencyMismatch}
             />
           ) : null}
           {!statusIsCheckedIn ? (

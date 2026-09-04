@@ -348,4 +348,16 @@ describe("ADETAIL-V5-03/05/06 — check-in is delegated to the CheckInPanel clie
   it(`${DETAIL}: adds no "Mark as paid" control — deferred to 17-03`, () => {
     expect(detail).not.toContain("Mark as paid");
   });
+
+  it(`${DETAIL}: passes ticketId, collectedCurrency and hasCurrencyMismatch to <CheckInPanel — the page still wires no Server Action of its own (Phase 20)`, () => {
+    expect(detail).toContain("ticketId={ticket.id}");
+    expect(detail).toContain(
+      "collectedCurrency={ticket.pay_at_door_collected_currency}",
+    );
+    expect(detail).toContain("hasCurrencyMismatch={strip.hasCurrencyMismatch}");
+    expect(detail).not.toContain("checkInTicket");
+    expect(detail).not.toContain("use server");
+    expect(detail).not.toMatch(/<form\b/);
+    expect(detail).not.toMatch(/\saction=\{/);
+  });
 });
