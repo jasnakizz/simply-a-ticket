@@ -7,6 +7,7 @@ import {
   doorBalanceForTicket,
   residualOwedForTicket,
   sumResidualOwedByCurrency,
+  addCollectedAmount,
 } from "@/lib/door-money";
 import type {
   DoorMoneyRow,
@@ -891,5 +892,63 @@ describe("door-money output feeds formatMoney from @/lib/amount unchanged", () =
     for (const s of subtotals) {
       expect(formatMoney(s.amount, s.currency)).toBe(`${s.amount} ${s.currency}`);
     }
+  });
+});
+
+/**
+ * addCollectedAmount (Phase 20, PAID-V6-03) — markAsPaid's one arithmetic
+ * primitive. Pins the exact behavior the plan's <behavior> block specifies:
+ * exact BigInt-minor-unit summation across the boundary, an absent existing
+ * figure treated as zero (never a refusal), a PRESENT-but-unparseable
+ * existing figure refused (never silently zeroed — that would erase recorded
+ * money), and no binary-floating drift.
+ */
+describe("addCollectedAmount", () => {
+  it('sums "10.05" + "0.95" -> "11.00", carrying across the minor-unit boundary exactly', () => {
+    expect(addCollectedAmount("10.05", "0.95")).toBe("11.00");
+  });
+
+  it('sums "0.10" + "0.20" -> "0.30" — no binary-floating-point drift', () => {
+    expect(addCollectedAmount("0.10", "0.20")).toBe("0.30");
+  });
+
+  it.each([null, undefined, "", "   "])(
+    "treats an absent existing amount (%j) as zero — returns the entered amount normalised to two decimals",
+    (existing) => {
+      expect(addCollectedAmount(existing, "7")).toBe("7.00");
+    },
+  );
+
+  it.each(["abc", "-1", "1.234", "1e3"])(
+    'refuses a PRESENT but unparseable existing amount ("%s") — never silently treated as zero',
+    (existing) => {
+      expect(addCollectedAmount(existing, "5.00")).toBeNull();
+    },
+  );
+
+  it.each(["abc", "-1", "1.234", ""])(
+    'refuses an unparseable entered amount ("%s")',
+    (entered) => {
+      expect(addCollectedAmount("10.00", entered)).toBeNull();
+    },
+  );
+
+  it("sums two 15-digit whole-part amounts to the exact BigInt total — no precision loss", () => {
+    const a = "123456789012345.00";
+    const b = "123456789012345.00";
+    expect(addCollectedAmount(a, b)).toBe("246913578024690.00");
+  });
+
+  it('normalises a whole-number entered amount to two decimals ("7" -> "7.00") with a zero existing figure', () => {
+    expect(addCollectedAmount("0", "7")).toBe("7.00");
+    expect(addCollectedAmount("0.00", "7")).toBe("7.00");
+  });
+
+  it("reuses this module's own minor-unit arithmetic — the result matches a hand-summed subtotal via sumMoneyByCurrency", () => {
+    const summed = sumMoneyByCurrency([
+      { amount: "10.05", currency: "EUR" },
+      { amount: "0.95", currency: "EUR" },
+    ]);
+    expect(addCollectedAmount("10.05", "0.95")).toBe(summed[0].amount);
   });
 });
