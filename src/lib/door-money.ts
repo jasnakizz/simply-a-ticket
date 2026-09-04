@@ -7,6 +7,12 @@
 // the arithmetic. That reuse is a milestone invariant — one shared helper, two
 // call sites.
 //
+// This module also owns the per-ticket same-currency door-balance rule.
+// doorBalanceForTicket (Phase 18, MONEY-V6-01) is the SINGLE signed core:
+// residualOwedForTicket / sumResidualOwedByCurrency are its clamped derivations,
+// and attendee-money.ts's cell-3 strip becomes a thin wrapper over it (plan
+// 18-02). See the block comment above the residual pair for the clamp rationale.
+//
 // Why integer minor units in a BigInt rather than a float:
 // JavaScript has no decimal type in the language. Adding money through a
 // `number` (an IEEE-754 double) lets binary-floating-point drift into a figure
@@ -175,28 +181,33 @@ export function sumCollectedByCurrency(
   );
 }
 
-// ── The Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8) ──
+// ── The signed door-balance core and its clamped derivations ──
+// (core: Phase 18 plan 18-01, MONEY-V6-01 · residual pair: Phase 17 plan 17-05,
+//  gaps G-17-3 / G-17-4 / G-17-8)
 //
-// The "residual" is what a ticket STILL owes at the door after a partial or a
-// cross-currency collection: max(0, pay_at_door_amount − same-currency
-// collected), expressed in the ticket currency. It mirrors the third cell of
-// attendeeMoneyStrip in src/lib/attendee-money.ts.
-//
-// This is added as a NEW pair rather than folded into sumOwedByCurrency
-// because the dashboard (src/app/events/[eventId]/page.tsx) still imports that
-// adapter for its gross "status = 'issued'" line; changing sumOwedByCurrency
-// in place would silently move a second page that is outside all three gap
-// definitions, and would break the "thin adapter that cannot drift from the
-// generic core" identity test.
+// doorBalanceForTicket is the SINGLE owner of the same-currency door-balance
+// rule for the whole app: it returns the signed, UNCLAMPED difference
+// (pay_at_door_amount − same-currency collected) in the ticket currency —
+// positive = still owed, negative = change owed back, zero = settled.
+// residualOwedForTicket and sumResidualOwedByCurrency are thin CLAMPED
+// derivations over it — max(0, …) applied by residualOwedForTicket's early
+// return, not by the core — and the identity battery in
+// test/lib/door-money.test.ts proves they cannot drift from it. From plan 18-02
+// the third cell of attendeeMoneyStrip in src/lib/attendee-money.ts becomes a
+// thin wrapper over the same core. No second copy of the arithmetic survives.
 //
 // D-06's never-convert rule is why a collection taken in a currency other than
-// the ticket currency does NOT reduce the residual — it stays the full
-// pay_at_door_amount, and no exchange is ever applied.
+// the ticket currency does NOT reduce the balance — it stays the full
+// pay_at_door_amount, and no exchange is ever applied. EUR and RSD are never
+// summed or converted.
 //
-// The "residual <= zero" early return IS the clamp: it guarantees a negative
-// value is never formatted. This module's fromMinorUnits is NOT sign-aware
-// (unlike the one in attendee-money.ts), so it must never be handed a negative
-// BigInt.
+// Why the residual is clamped and why this module's formatter is not sign-aware:
+// residualOwedForTicket formats ONLY the strictly-positive branch of the signed
+// core (a settled or over-settled balance returns null, never a zero or a
+// negative line). That clamp is what lets this module's fromMinorUnits stay
+// NON-sign-aware (unlike the one in attendee-money.ts) — it is never handed a
+// negative BigInt. The signed value a caller needs for "change owed back" comes
+// straight off doorBalanceForTicket's `minor`, not from a formatted string.
 
 // Structurally the union of the owed-side and collected-side row shapes. Not an
 // `export function`, so it does not affect the Gate 5 export count.

@@ -14,6 +14,7 @@ import type {
   OwedTicketRow,
   CollectedTicketRow,
   ResidualOwedRow,
+  ResidualOwed,
 } from "@/lib/door-money";
 
 /**
@@ -32,6 +33,15 @@ import type {
  *  - subtotals come back in a fixed currency order that does not depend on row
  *    order;
  *  - sumOwedByCurrency is a thin adapter that cannot drift from the generic core.
+ *
+ * It also pins the Phase 18 signed core:
+ *
+ *  - doorBalanceForTicket is the single owner of the same-currency door-balance
+ *    rule — signed, unclamped minor units of (owed − same-currency collected)
+ *    plus the resolved ticket currency;
+ *  - residualOwedForTicket and sumResidualOwedByCurrency are exactly the
+ *    strictly-positive clamp of that core: the identity describe below asserts
+ *    the observable equivalence so the derivations cannot drift from it.
  */
 
 describe("sumMoneyByCurrency", () => {
@@ -634,6 +644,136 @@ describe("doorBalanceForTicket — the signed same-currency door balance", () =>
       { currency: "RSD", amount: "1200.00", ticketCount: 1 },
     ]);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe("residual derivations are exactly the clamp of the core", () => {
+  // fromMinorUnits is module-private by design (phase11-contract Gate 5 pins the
+  // export set); re-parse the residual's decimal string locally rather than
+  // exporting it just to make this test easier.
+  function toMinor(decimal: string): bigint {
+    const [whole, fraction = ""] = decimal.split(".");
+    return BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, "0"));
+  }
+
+  // One row per case in the doorBalanceForTicket battery above.
+  const fixtures: ResidualOwedRow[] = [
+    // exact settle -> core minor 0 -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "7000",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // same-currency partial -> core minor > 0 -> residual non-null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "6000",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // over-payment -> core minor < 0 -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "7200",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // cross-currency -> core minor = full owed -> residual non-null
+    {
+      pay_at_door_amount: "20",
+      currency: "EUR",
+      pay_at_door_collected_amount: "2400",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // null collected
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // recorded "0" collected
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "0",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // ticket currency absent -> core null -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: null,
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // malformed amount -> core null -> residual null
+    {
+      pay_at_door_amount: "12.345",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // absent collected currency -> falls back, subtracts
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "6000",
+      pay_at_door_collected_currency: null,
+    },
+    // fractional exactness
+    {
+      pay_at_door_amount: "0.30",
+      currency: "RSD",
+      pay_at_door_collected_amount: "0.10",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // unknown currency -> core non-null, dropped only by the sum adapter
+    {
+      pay_at_door_amount: "50",
+      currency: "USD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+  ];
+
+  it("residualOwedForTicket is non-null iff the core is non-null with a strictly positive minor", () => {
+    for (const row of fixtures) {
+      const core = doorBalanceForTicket(row);
+      const residual = residualOwedForTicket(row);
+      const shouldBeNonNull = core !== null && core.minor > BigInt(0);
+      expect(residual !== null).toBe(shouldBeNonNull);
+    }
+  });
+
+  it("when non-null, the residual currency equals the core currency", () => {
+    for (const row of fixtures) {
+      const residual = residualOwedForTicket(row);
+      if (residual === null) continue;
+      const core = doorBalanceForTicket(row);
+      expect(core).not.toBeNull();
+      expect(residual.currency).toBe(core!.currency);
+    }
+  });
+
+  it("when non-null, the residual amount re-parsed to minor units equals the core minor", () => {
+    for (const row of fixtures) {
+      const residual = residualOwedForTicket(row);
+      if (residual === null) continue;
+      const core = doorBalanceForTicket(row);
+      expect(toMinor(residual.amount)).toBe(core!.minor);
+    }
+  });
+
+  it("sumResidualOwedByCurrency over the fixtures equals sumMoneyByCurrency of the mapped non-null residuals", () => {
+    const viaAdapter = sumResidualOwedByCurrency(fixtures);
+    const viaCore = sumMoneyByCurrency(
+      fixtures
+        .map((row) => residualOwedForTicket(row))
+        .filter((r): r is ResidualOwed => r !== null)
+        .map((r) => ({ amount: r.amount, currency: r.currency })),
+    );
+    expect(viaAdapter).toEqual(viaCore);
   });
 });
 
