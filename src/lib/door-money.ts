@@ -204,14 +204,30 @@ export type ResidualOwedRow = OwedTicketRow & CollectedTicketRow;
 
 export type ResidualOwed = { amount: string; currency: string };
 
-// One ticket's residual, or null when nothing is still owed. Null cases: the
-// pay_at_door_amount is absent / malformed / zero; the ticket currency is
-// absent (the list page has no RSD fallback and has never rendered a figure
-// for a currency-less row); or a same-currency collection settles or
-// over-settles the balance.
-export function residualOwedForTicket(
+// The signed same-currency door balance for one ticket: integer minor units of
+// (owed − same-currency collected), plus the resolved ticket currency. Positive
+// = still owed at the door, negative = change owed back to the attendee, zero =
+// exactly settled. UNCLAMPED and UNFORMATTED on purpose — every downstream view
+// derives itself from `minor` rather than re-parsing a formatted string, so
+// residualOwedForTicket (below) and attendee-money.ts's cell-3 strip cannot
+// drift from it.
+//
+// Null cases (D-02): pay_at_door_amount is absent / malformed / non-numeric, OR
+// the ticket currency is absent. There is deliberately NO RSD fallback here —
+// that presentation choice belongs to the attendee-money strip, not the shared
+// core, so the list and dashboard get null for a currency-less row for free.
+//
+// A collection taken in a currency other than the ticket currency (D-04 / D-06)
+// never converts and never credits — `minor` stays the full owed amount. An
+// absent collected currency falls back to the ticket currency, so a bare
+// collected amount still subtracts. EUR/RSD enforcement is NOT done here: an
+// unknown currency passes through the per-ticket core exactly as
+// residualOwedForTicket did before, and is dropped later by sumMoneyByCurrency.
+export type DoorBalance = { minor: bigint; currency: string };
+
+export function doorBalanceForTicket(
   ticket: ResidualOwedRow,
-): ResidualOwed | null {
+): DoorBalance | null {
   const minorOwed = toMinorUnits(ticket.pay_at_door_amount);
   if (minorOwed === null) return null;
 
@@ -231,15 +247,29 @@ export function residualOwedForTicket(
       : ticketCurrency;
 
   // One ternary so TypeScript narrows the nullable collected value — a hoisted
-  // boolean does not narrow `bigint | null`.
-  const residualMinor =
+  // boolean does not narrow `bigint | null`. Signed and UNCLAMPED: the clamp is
+  // residualOwedForTicket's job, not the core's.
+  const minor =
     minorCollected !== null && collectedCurrency === ticketCurrency
       ? minorOwed - minorCollected
       : minorOwed;
 
-  if (residualMinor <= ZERO) return null;
+  return { minor, currency: ticketCurrency };
+}
 
-  return { amount: fromMinorUnits(residualMinor), currency: ticketCurrency };
+// One ticket's residual, or null when nothing is still owed — the clamped,
+// formatted derivation of doorBalanceForTicket. It formats only the strictly
+// positive branch of the signed core, so this module's NON-sign-aware
+// fromMinorUnits is never handed a negative value. Null cases: the core is null
+// (pay_at_door_amount absent / malformed, or the ticket currency absent), or a
+// same-currency collection settles or over-settles the balance (core minor <= 0).
+export function residualOwedForTicket(
+  ticket: ResidualOwedRow,
+): ResidualOwed | null {
+  const balance = doorBalanceForTicket(ticket);
+  return balance !== null && balance.minor > ZERO
+    ? { amount: fromMinorUnits(balance.minor), currency: balance.currency }
+    : null;
 }
 
 // Per-currency residual sum for the attendees-list "STILL TO COLLECT" box.

@@ -5,6 +5,7 @@ import {
   sumMoneyByCurrency,
   sumOwedByCurrency,
   sumCollectedByCurrency,
+  doorBalanceForTicket,
   residualOwedForTicket,
   sumResidualOwedByCurrency,
 } from "@/lib/door-money";
@@ -469,6 +470,170 @@ describe("residualOwedForTicket — still-owed-at-the-door after a partial or cr
         pay_at_door_collected_currency: "RSD",
       }),
     ).toEqual({ amount: "0.20", currency: "RSD" });
+  });
+});
+
+/**
+ * MONEY-V6-03 battery on the signed core (Phase 18, plan 18-01). doorBalanceForTicket
+ * is the ONE owner of the same-currency door-balance rule: signed integer minor
+ * units of (owed − same-currency collected) plus the resolved ticket currency,
+ * UNCLAMPED and UNFORMATTED. residualOwedForTicket is its clamp; the identity
+ * describe below proves the derivation cannot drift from it.
+ */
+describe("doorBalanceForTicket — the signed same-currency door balance", () => {
+  it("exact settle — a same-currency collection equal to owed -> minor BigInt(0)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(0), currency: "RSD" });
+  });
+
+  it("same-currency partial collection -> strictly positive minor still owed", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(100000), currency: "RSD" });
+  });
+
+  it("same-currency over-payment -> strictly negative minor (change owed back)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7200",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(-20000), currency: "RSD" });
+  });
+
+  it("cross-currency collection never credits — minor is the full owed amount, no conversion", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: "2400",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(2000), currency: "EUR" });
+  });
+
+  it("null collected amount -> minor is the full owed amount", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ minor: BigInt(700000), currency: "RSD" });
+  });
+
+  it('a recorded "0" collected amount subtracts to the full owed amount (not null, not zero)', () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "0",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(700000), currency: "RSD" });
+  });
+
+  it("returns null when the ticket currency is absent — no RSD fallback in the core", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: null,
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when pay_at_door_amount is absent or malformed", () => {
+    for (const bad of [null, undefined, "abc", "12.345", "-5", ""]) {
+      expect(
+        doorBalanceForTicket({
+          pay_at_door_amount: bad,
+          currency: "RSD",
+          pay_at_door_collected_amount: null,
+          pay_at_door_collected_currency: null,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("an absent collected currency falls back to the ticket currency, then subtracts", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ minor: BigInt(100000), currency: "RSD" });
+  });
+
+  it("stays exact over fractional minor units — 0.30 owed, 0.10 collected -> minor BigInt(20)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "0.30",
+        currency: "RSD",
+        pay_at_door_collected_amount: "0.10",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(20), currency: "RSD" });
+  });
+
+  it("passes an unknown currency through at the per-ticket level; the drop happens only in sumResidualOwedByCurrency", () => {
+    const usdTicket: ResidualOwedRow = {
+      pay_at_door_amount: "50",
+      currency: "USD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    expect(doorBalanceForTicket(usdTicket)).toEqual({
+      minor: BigInt(5000),
+      currency: "USD",
+    });
+    expect(sumResidualOwedByCurrency([usdTicket])).toEqual([]);
+  });
+
+  it("keeps one EUR ticket and one RSD ticket as two separate subtotal lines through sumResidualOwedByCurrency, EUR first, never combined", () => {
+    const eurTicket: ResidualOwedRow = {
+      pay_at_door_amount: "20",
+      currency: "EUR",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    const rsdTicket: ResidualOwedRow = {
+      pay_at_door_amount: "1200",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    const result = sumResidualOwedByCurrency([rsdTicket, eurTicket]);
+    expect(result).toEqual([
+      { currency: "EUR", amount: "20.00", ticketCount: 1 },
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+    expect(result).toHaveLength(2);
   });
 });
 

@@ -188,13 +188,14 @@ describe("Gate 4 — money never goes through a float (v3 milestone invariant 1)
 });
 
 describe("Gate 5 — one shared money module: the generic core and its per-column adapters (v3 milestone invariant 4, D-11)", () => {
-  it(`${DOOR_MONEY}: exports the generic core, the owed + collected adapters and the Phase 17 residual pair — exactly five functions`, () => {
+  it(`${DOOR_MONEY}: exports the generic core, the owed + collected adapters, the signed same-currency door balance and the residual pair — exactly six functions`, () => {
     expect(doorMoney).toMatch(/export function sumMoneyByCurrency\b/);
     expect(doorMoney).toMatch(/export function sumOwedByCurrency\b/);
     expect(doorMoney).toMatch(/export function sumCollectedByCurrency\b/);
+    expect(doorMoney).toMatch(/export function doorBalanceForTicket\b/);
     expect(doorMoney).toMatch(/export function residualOwedForTicket\b/);
     expect(doorMoney).toMatch(/export function sumResidualOwedByCurrency\b/);
-    expect(count(doorMoney, /export function /g)).toBe(5);
+    expect(count(doorMoney, /export function /g)).toBe(6);
   });
 
   it(`${DOOR_MONEY}: carries no server-only marker and no "use server" directive, so both pages can import it`, () => {
