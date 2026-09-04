@@ -211,17 +211,18 @@ describe("Gate 5 — one shared money module: the generic core and its per-colum
     expect(dashboard).not.toMatch(/\+=/);
   });
 
-  it(`${ATTENDEES}: imports the residual pair (sumResidualOwedByCurrency + residualOwedForTicket) and the collected adapter — never the gross sumOwedByCurrency, which stays the dashboard's`, () => {
+  it(`${ATTENDEES}: imports the still-owed subtotal adapter and the collected adapter from @/lib/door-money, plus attendeeMoneyStrip from @/lib/attendee-money — never the gross sumOwedByCurrency (the dashboard's) and never the retired residualOwedForTicket`, () => {
     expect(attendees).toMatch(
       /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
     expect(attendees).toMatch(
-      /import\s*\{[^}]*\bresidualOwedForTicket\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
-    expect(attendees).toMatch(
       /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\battendeeMoneyStrip\b[^}]*\}\s*from\s*"@\/lib\/attendee-money"/,
+    );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bresidualOwedForTicket\b/);
   });
 
   // MONEY-V6-01 single-owner gate (plan 18-02): the attendee strip's cell-3
@@ -364,17 +365,17 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
    * column set and the identical filter set, derived from the chain strings so
    * it keeps binding if either page's read changes later.
    */
-  it(`${ATTENDEES}: keeps exactly one rowOwesAtDoor whose body delegates to residualOwedForTicket, and the row badge reads the same helper`, () => {
+  it(`${ATTENDEES}: keeps exactly one rowOwesAtDoor whose body delegates to attendeeMoneyStrip, and the row badge reads the same helper`, () => {
     expect(count(attendees, /function rowOwesAtDoor/g)).toBe(1);
     const predicateBody = attendees.slice(
       attendees.indexOf("function rowOwesAtDoor"),
       attendees.indexOf("const visibleAttendees ="),
     );
     expect(predicateBody).toContain(
-      "return residualOwedForTicket(row) !== null;",
+      "return attendeeMoneyStrip(row).balanceIsPositive;",
     );
     expect(attendees).toContain(
-      "const residual = residualOwedForTicket(attendee);",
+      "const strip = attendeeMoneyStrip(attendee);",
     );
   });
 

@@ -152,17 +152,18 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
 });
 
 describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one shared helper", () => {
-  it("imports the residual pair and the collected adapter — never the gross sumOwedByCurrency (that adapter is the dashboard's)", () => {
+  it("imports the still-owed subtotal adapter and the collected adapter from door-money, plus attendeeMoneyStrip from attendee-money — never the gross sumOwedByCurrency (that adapter is the dashboard's) and never the retired residualOwedForTicket", () => {
     expect(attendees).toMatch(
       /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
     expect(attendees).toMatch(
-      /import\s*\{[^}]*\bresidualOwedForTicket\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
-    expect(attendees).toMatch(
       /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\battendeeMoneyStrip\b[^}]*\}\s*from\s*"@\/lib\/attendee-money"/,
+    );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bresidualOwedForTicket\b/);
   });
 
   it("has a dedicated residual read scoped to this event, NOT narrowed by status, selecting both the owed and the collected money columns (G-17-4)", () => {
@@ -317,19 +318,23 @@ describe("D-13 — the row shows exactly one of three mutually exclusive door-mo
     expect(listChain).toContain("pay_at_door_collected_currency");
   });
 
-  it("expresses the three states as one if / else-if / else chain, not three independent conditionals over the collected column", () => {
+  it("expresses the four rendered states as one if / else-if / else chain, not independent conditionals over the collected column", () => {
     expect((attendees.match(/\bisCollected\b/g) ?? []).length).toBe(2);
     expect(attendees).toMatch(/\{owedLabel !== null \? \(/);
+    expect(attendees).toMatch(/\) : changeLabel !== null \? \(/);
     expect(attendees).toMatch(/\) : isCollected \? \(/);
     expect(attendees).toMatch(/\) : null\}/);
   });
 
-  it("evaluates the still-owed branch BEFORE the collected branch — a partially or cross-currency paid row reads as still owing, never as settled (G-17-8)", () => {
+  it("evaluates still-owed, then change, then collected — a partially or cross-currency paid row reads as still owing, an over-paid row reads its change, never straight to settled (G-17-8)", () => {
     const owesIdx = attendees.search(/\{owedLabel !== null \? \(/);
+    const changeIdx = attendees.search(/\) : changeLabel !== null \? \(/);
     const collectedIdx = attendees.search(/\) : isCollected \? \(/);
     expect(owesIdx).toBeGreaterThan(-1);
+    expect(changeIdx).toBeGreaterThan(-1);
     expect(collectedIdx).toBeGreaterThan(-1);
-    expect(owesIdx).toBeLessThan(collectedIdx);
+    expect(owesIdx).toBeLessThan(changeIdx);
+    expect(changeIdx).toBeLessThan(collectedIdx);
   });
 
   it("recognises a collected amount by the shared anchored decimal shape, including a zero decimal string", () => {
@@ -339,17 +344,20 @@ describe("D-13 — the row shows exactly one of three mutually exclusive door-mo
     );
   });
 
-  it("delegates the owes shape test to the shared residualOwedForTicket helper — the page no longer inlines an anchored-decimal or positive-digit regex, and still coerces no number", () => {
-    expect(attendees).toContain("residualOwedForTicket");
+  it("delegates the row money shape to the shared attendeeMoneyStrip helper — the page no longer inlines an anchored-decimal or positive-digit regex, and still coerces no number", () => {
+    expect(attendees).toContain("attendeeMoneyStrip");
     expect(attendees).not.toContain("doorAmount");
     expect(attendees).not.toContain("/[1-9]/.test(");
     expect(attendees).not.toMatch(/\bNumber\(/);
     expect(attendees).not.toMatch(/parseFloat|parseInt|toFixed/);
   });
 
-  it("renders the outstanding amount only through the shared formatter, on the residual's own amount and currency", () => {
+  it("renders both row money figures only through the shared formatter, on the strip's own signed balance and balance currency", () => {
     expect(attendees).toMatch(
-      /owedLabel =[\s\S]*?formatMoney\(residual\.amount, residual\.currency\)/,
+      /owedLabel =[\s\S]*?formatMoney\(strip\.balance, strip\.balanceCurrency\)/,
+    );
+    expect(attendees).toMatch(
+      /changeLabel =[\s\S]*?formatMoney\(strip\.balance, strip\.balanceCurrency\)/,
     );
     expect(attendees).not.toMatch(/"EUR"|"RSD"/);
   });
@@ -358,12 +366,18 @@ describe("D-13 — the row shows exactly one of three mutually exclusive door-mo
     expect((attendees.match(/Paid at door/g) ?? []).length).toBe(1);
   });
 
-  it("keeps the owed amount and the paid label visually distinct per the UI-SPEC (accent-700 extrabold vs muted)", () => {
+  it("keeps the three money tokens visually distinct per the UI-SPEC — accent-700 owed, checked-in-green change carrying the inline word, muted paid label", () => {
     expect(attendees).toContain(
       "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]",
     );
     expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]",
+    );
+    expect(attendees).toContain(
       "shrink-0 text-right text-[12px] text-muted-foreground",
+    );
+    expect(attendees).toMatch(
+      /text-\[var\(--color-checked-in\)\]">\s*Change \{changeLabel\}/,
     );
   });
 });
@@ -446,18 +460,20 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(filterBlock).toContain("return typeFacetPass && owesFacetPass;");
   });
 
-  it("keeps one module-local owes predicate whose whole body delegates to residualOwedForTicket, and the row badge reads the SAME helper — chip filter and badge can never drift onto two predicates", () => {
+  it("keeps one module-local owes predicate whose whole body delegates to attendeeMoneyStrip, and the row badge reads the SAME helper — chip filter and badge can never drift onto two predicates", () => {
     expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
     const predicateBody = attendees.slice(
       attendees.indexOf("function rowOwesAtDoor"),
       attendees.indexOf("const visibleAttendees ="),
     );
-    expect(predicateBody).toContain("return residualOwedForTicket(row) !== null;");
+    expect(predicateBody).toContain(
+      "return attendeeMoneyStrip(row).balanceIsPositive;",
+    );
     expect(predicateBody).not.toContain(".test(");
     // call site 1: the reservation filter still calls the predicate
     expect(filterBlock).toContain("rowOwesAtDoor(attendee)");
     // call site 2: the row badge reads the same shared helper directly
-    expect(norm).toContain("const residual = residualOwedForTicket(attendee);");
+    expect(norm).toContain("const strip = attendeeMoneyStrip(attendee);");
   });
 
   it("keeps both totals chains free of any query-derived token", () => {
@@ -601,10 +617,11 @@ describe("ADETAIL-V5-01 — every row links to the per-ticket detail page carryi
     expect(liBlock).not.toMatch(/\saction=\{/);
   });
 
-  it("keeps the row's green left-bar and three money states inside the link, with the still-owed branch first (G-17-8)", () => {
+  it("keeps the row's green left-bar and money-state chain inside the link, with the still-owed branch first then change then collected (G-17-8)", () => {
     expect(liBlock).toContain("border-l-4");
     expect(liBlock).toContain("border-l-[var(--color-checked-in)]");
     expect(liBlock).toMatch(/\{owedLabel !== null \? \(/);
+    expect(liBlock).toMatch(/\) : changeLabel !== null \? \(/);
     expect(liBlock).toMatch(/\) : isCollected \? \(/);
   });
 });
@@ -634,9 +651,10 @@ describe("G-17-4 / G-17-8 — the list page reflects the residual door balance, 
     expect(owedChain).toContain('.not("pay_at_door_amount", "is", null)');
   });
 
-  it("resolves the chip filter, the row badge and the event-wide total through one residual helper — one rowOwesAtDoor, two residualOwedForTicket( call sites, one sumResidualOwedByCurrency( call site", () => {
+  it("resolves the chip filter, the row badge and the row token through one strip helper and the event-wide total through the residual adapter — one rowOwesAtDoor, two attendeeMoneyStrip( call sites, zero residualOwedForTicket(, one sumResidualOwedByCurrency( call site", () => {
     expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
-    expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(2);
+    expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
+    expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(0);
     expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(1);
   });
 });
