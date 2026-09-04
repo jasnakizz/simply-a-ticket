@@ -135,9 +135,10 @@ export default async function EventDetailPage({
   // two check-ins in the same clock tick keep a stable order across reloads.
   // The null-handling flag is set so a descending sort does NOT put NULLs
   // first (its Postgres default), which would float a timestamp-less row to the
-  // top of a recency list. The five-row bound (D-10-02) keeps a busy door from
-  // pushing the rest of the page off screen and from fetching every attendee
-  // row for no reader benefit.
+  // top of a recency list. The three-row bound (originally five per D-10-02;
+  // narrowed to three by operator direction on 2026-09-04) keeps a busy door
+  // from pushing the rest of the page off screen and from fetching every
+  // attendee row for no reader benefit.
   const { data: lastThroughTheDoor, error: lastThroughTheDoorError } =
     await supabase
       .from("tickets")
@@ -146,7 +147,7 @@ export default async function EventDetailPage({
       .eq("status", "checked_in")
       .order("checked_in_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false })
-      .limit(5);
+      .limit(3);
 
   // Same failure idiom as every read above: a Supabase error throws into
   // src/app/events/error.tsx. It must NOT be coalesced into an empty array —

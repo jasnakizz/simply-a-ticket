@@ -341,8 +341,9 @@ describe("DASH-V3-01 — the live, event-scoped, most-recent-first door list", (
     expect(doorChain).toContain('.eq("status", "checked_in")');
   });
 
-  it("bounds the door list to five rows", () => {
-    expect(dash).toContain(".limit(5)");
+  it("bounds the door list to three rows", () => {
+    expect(doorChain).toContain(".limit(3)");
+    expect(doorChain).not.toContain(".limit(5)");
   });
 
   it("fetches none of attendee_email / qr_token / paid_amount anywhere in the file", () => {
