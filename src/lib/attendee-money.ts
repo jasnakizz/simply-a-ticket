@@ -3,8 +3,8 @@
 // shape, the same "null is not zero" rule, and the same "never convert between
 // EUR and RSD". It imports exactly one symbol — the shared same-currency
 // door-balance rule from ./door-money (plan 18-02, MONEY-V6-01). This module
-// owns the PRESENTATION of the balance (the RSD
-// fallback, the Owes / Settled / Change label, the sign-aware formatter and the
+// owns the PRESENTATION of the balance (the RSD fallback, the
+// Owes / Settled / Change label, the sign-aware formatter and the
 // currency-mismatch note); the shared module owns the RULE. It carries no
 // framework-only import marker and no server-action directive, so it is
 // importable unchanged from a plain Node unit test and from a Server Component.
@@ -27,15 +27,22 @@
 //                              it was actually taken in
 //                              (collected -> ticket -> RSD). The prepaid amount
 //                              is NOT folded in here.
-//   Cell 3 (dynamic label)    = cell1 minus cell2, UNCLAMPED (may be negative),
-//                              when the two resolved cell currencies match OR
-//                              nothing was collected; otherwise a straight copy
-//                              of cell 1 (never a cross-currency subtraction).
-//                              Label follows the sign of its own value: above
-//                              zero "Owes", exactly zero "Settled", below zero
-//                              "Change". balanceIsPositive is true only above
-//                              zero, so the page shows the accent token above
-//                              zero and the settled-green token at or below.
+//   Cell 3 (dynamic label)    = the shared same-currency door-balance rule in
+//                              src/lib/door-money.ts, handed this module's
+//                              already-RSD-resolved cell-1 currency. This module
+//                              contributes ONLY the RSD fallback, the dynamic
+//                              label, the sign-aware two-decimal formatting and
+//                              the mismatch note — not the arithmetic. The core
+//                              value is signed and UNCLAMPED (may be negative):
+//                              cell1 minus cell2 when the two resolved cell
+//                              currencies match OR nothing was collected,
+//                              otherwise a straight copy of cell 1 (never a
+//                              cross-currency subtraction). Label follows the
+//                              sign of its own value: above zero "Owes", exactly
+//                              zero "Settled", below zero "Change".
+//                              balanceIsPositive is true only above zero, so the
+//                              page shows the accent token above zero and the
+//                              settled-green token at or below.
 //
 // DEC-4 degenerate case, accepted rather than papered over: a row with the
 // ticket currency absent but a collected currency present takes the copy branch
