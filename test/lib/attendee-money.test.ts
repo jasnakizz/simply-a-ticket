@@ -9,6 +9,7 @@ import type {
   AttendeeMoneyRow,
   AttendeePayment,
 } from "@/lib/attendee-money";
+import { doorBalanceForTicket } from "@/lib/door-money";
 
 /**
  * The attendee detail page's money contract, reworked by quick task 260903-q6i
@@ -248,6 +249,201 @@ describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balanc
     expect(strip.balance).toBe("-0.05");
     expect(strip.balanceLabel).toBe("Change");
     expect(strip.balanceIsPositive).toBe(false);
+  });
+
+  // Identity: cell 3 is exactly doorBalanceForTicket (the shared same-currency
+  // door-balance core in src/lib/door-money.ts) plus this module's own RSD
+  // fallback and its label/format layer. A drift between the strip wrapper and
+  // the core cannot happen without failing here (D-07 / MONEY-V6-03).
+  it("cell 3 equals the shared door-balance core plus the strip's RSD fallback, for value, sign and label", () => {
+    // Sign-aware two-decimal render of an exact minor-unit count — a local
+    // re-implementation so the module's private fromMinorUnits stays private.
+    // BigInt() constructor form, never an `n` literal (repo targets ES2017).
+    const renderMinor = (minor: bigint): string => {
+      const negative = minor < BigInt(0);
+      const magnitude = negative ? -minor : minor;
+      const whole = (magnitude / BigInt(100)).toString();
+      const frac = (magnitude % BigInt(100)).toString().padStart(2, "0");
+      return `${negative ? "-" : ""}${whole}.${frac}`;
+    };
+
+    const fixtures: AttendeeMoneyRow[] = [
+      // --- the twelve worked cases already asserted above ---
+      // Ana Petrovic: 2500 / prepaid 500 / collected 1500, both RSD
+      {
+        pay_at_door_amount: "2500",
+        paid_amount: "500",
+        pay_at_door_collected_amount: "1500",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // same-currency over-payment -> negative Change
+      {
+        pay_at_door_amount: "1000",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "1200",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // exact settle -> zero Settled
+      {
+        pay_at_door_amount: "1000",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "1000",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // prepaid never reaches the strip
+      {
+        pay_at_door_amount: "500",
+        paid_amount: "6900",
+        pay_at_door_collected_amount: null,
+        currency: "RSD",
+        pay_at_door_collected_currency: null,
+      },
+      // every money column absent -> null cells
+      {
+        pay_at_door_amount: undefined,
+        paid_amount: undefined,
+        pay_at_door_collected_amount: undefined,
+        currency: undefined,
+        pay_at_door_collected_currency: undefined,
+      },
+      // recorded "0" -> 0.00 Settled
+      {
+        pay_at_door_amount: "0",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: undefined,
+        currency: "RSD",
+        pay_at_door_collected_currency: undefined,
+      },
+      // malformed amounts -> treated as absent
+      {
+        pay_at_door_amount: "12.345",
+        paid_amount: "1e3",
+        pay_at_door_collected_amount: "-5",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // cross-currency EUR ticket / RSD collection -> copy cell 1, flag mismatch
+      {
+        pay_at_door_amount: "20",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "2000",
+        currency: "EUR",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // absent collected currency on an EUR ticket -> subtract
+      {
+        pay_at_door_amount: "20",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "5",
+        currency: "EUR",
+        pay_at_door_collected_currency: null,
+      },
+      // both currency columns absent -> subtract, cell-2 ccy falls back to RSD
+      {
+        pay_at_door_amount: "20",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "5",
+        currency: null,
+        pay_at_door_collected_currency: null,
+      },
+      // pay_at_door_amount absent though a collected amount is present -> null
+      {
+        pay_at_door_amount: undefined,
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "500",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // negative fractional -> "-0.05" Change
+      {
+        pay_at_door_amount: "0.05",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "0.10",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      // --- plus the two the acceptance criteria call out explicitly ---
+      // currency-absent row with an amount: the strip's RSD fallback yields a
+      // balance; the bare core (real, absent currency) would be null.
+      {
+        pay_at_door_amount: "750",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: null,
+        currency: null,
+        pay_at_door_collected_currency: null,
+      },
+      // cross-currency row: RSD ticket, collection taken in EUR -> never credited
+      {
+        pay_at_door_amount: "3000",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "20",
+        currency: "RSD",
+        pay_at_door_collected_currency: "EUR",
+      },
+    ];
+
+    for (const row of fixtures) {
+      const strip = attendeeMoneyStrip(row);
+
+      // The strip's own RSD-resolved cell-1 currency, substituted into the row
+      // handed to the core — exactly what attendeeMoneyStrip does internally.
+      const rsdResolved =
+        typeof row.currency === "string" && row.currency !== ""
+          ? row.currency
+          : "RSD";
+      const core = doorBalanceForTicket({
+        pay_at_door_amount: row.pay_at_door_amount,
+        currency: rsdResolved,
+        pay_at_door_collected_amount: row.pay_at_door_collected_amount,
+        pay_at_door_collected_currency: row.pay_at_door_collected_currency,
+      });
+
+      // balance: non-null exactly when the core is non-null; and when non-null,
+      // it is the core's minor rendered by the local sign-aware helper.
+      expect(strip.balance !== null).toBe(core !== null);
+      if (core !== null) {
+        expect(strip.balance).toBe(renderMinor(core.minor));
+      }
+
+      // balanceIsPositive: true exactly when the core's minor is strictly > 0.
+      const corePositive = core !== null && core.minor > BigInt(0);
+      expect(strip.balanceIsPositive).toBe(corePositive);
+
+      // balanceLabel follows the sign of the core's minor; "Settled" when the
+      // core is null or the minor is zero.
+      let expectedLabel: "Owes" | "Settled" | "Change" = "Settled";
+      if (core !== null && core.minor > BigInt(0)) {
+        expectedLabel = "Owes";
+      } else if (core !== null && core.minor < BigInt(0)) {
+        expectedLabel = "Change";
+      }
+      expect(strip.balanceLabel).toBe(expectedLabel);
+    }
+  });
+
+  it("the prepaid ticket price never moves cell 3 — the door debt is independent (17-04 UAT lock)", () => {
+    const base: AttendeeMoneyRow = {
+      pay_at_door_amount: "2500",
+      paid_amount: "500",
+      pay_at_door_collected_amount: "1000",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    };
+    const withLargerPrepaid: AttendeeMoneyRow = {
+      ...base,
+      paid_amount: "999999",
+    };
+
+    const a = attendeeMoneyStrip(base);
+    const b = attendeeMoneyStrip(withLargerPrepaid);
+
+    expect(a.balance).toBe("1500.00");
+    expect(b.balance).toBe(a.balance);
+    expect(b.balanceLabel).toBe(a.balanceLabel);
+    expect(b.balanceIsPositive).toBe(a.balanceIsPositive);
   });
 });
 

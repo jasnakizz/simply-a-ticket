@@ -1,9 +1,13 @@
 // Money-strip helper for the attendee detail page. A node-importable sibling of
 // src/lib/door-money.ts: same string-money discipline, the same anchored decimal
 // shape, the same "null is not zero" rule, and the same "never convert between
-// EUR and RSD". It imports nothing, carries no framework-only import marker and
-// no server-action directive, so it is importable unchanged from a plain Node
-// unit test and from a Server Component.
+// EUR and RSD". It imports exactly one symbol — the shared same-currency
+// door-balance rule from ./door-money (plan 18-02, MONEY-V6-01). This module
+// owns the PRESENTATION of the balance (the RSD fallback, the
+// Owes / Settled / Change label, the sign-aware formatter and the
+// currency-mismatch note); the shared module owns the RULE. It carries no
+// framework-only import marker and no server-action directive, so it is
+// importable unchanged from a plain Node unit test and from a Server Component.
 //
 // Reworked by quick task 260903-q6i (operator decision 2026-09-03). This
 // DELIBERATELY supersedes part of the shipped Phase 17 money contract:
@@ -23,15 +27,22 @@
 //                              it was actually taken in
 //                              (collected -> ticket -> RSD). The prepaid amount
 //                              is NOT folded in here.
-//   Cell 3 (dynamic label)    = cell1 minus cell2, UNCLAMPED (may be negative),
-//                              when the two resolved cell currencies match OR
-//                              nothing was collected; otherwise a straight copy
-//                              of cell 1 (never a cross-currency subtraction).
-//                              Label follows the sign of its own value: above
-//                              zero "Owes", exactly zero "Settled", below zero
-//                              "Change". balanceIsPositive is true only above
-//                              zero, so the page shows the accent token above
-//                              zero and the settled-green token at or below.
+//   Cell 3 (dynamic label)    = the shared same-currency door-balance rule in
+//                              src/lib/door-money.ts, handed this module's
+//                              already-RSD-resolved cell-1 currency. This module
+//                              contributes ONLY the RSD fallback, the dynamic
+//                              label, the sign-aware two-decimal formatting and
+//                              the mismatch note — not the arithmetic. The core
+//                              value is signed and UNCLAMPED (may be negative):
+//                              cell1 minus cell2 when the two resolved cell
+//                              currencies match OR nothing was collected,
+//                              otherwise a straight copy of cell 1 (never a
+//                              cross-currency subtraction). Label follows the
+//                              sign of its own value: above zero "Owes", exactly
+//                              zero "Settled", below zero "Change".
+//                              balanceIsPositive is true only above zero, so the
+//                              page shows the accent token above zero and the
+//                              settled-green token at or below.
 //
 // DEC-4 degenerate case, accepted rather than papered over: a row with the
 // ticket currency absent but a collected currency present takes the copy branch
@@ -50,6 +61,8 @@
 // negative, so the magnitude is formatted and the sign prepended. The repo
 // targets ES2017, so the BigInt() constructor is used throughout — never a
 // trailing-n literal.
+
+import { doorBalanceForTicket } from "./door-money";
 
 const HUNDRED = BigInt(100);
 const ZERO = BigInt(0);
@@ -172,20 +185,29 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
   const paidAtDoor =
     minorCollected !== null ? fromMinorUnits(minorCollected) : null;
 
-  // Cell 3 (DEC-4 / DEC-5): null when the governing pay-at-door column is
-  // absent. Otherwise subtract the collected minor units when they parsed AND
-  // the two RESOLVED cell currencies match; in every other case (nothing
-  // collected, or the currencies differ) it is a straight copy of cell 1. The
-  // result is UNCLAMPED — it may be negative.
+  // Cell 3 (DEC-4 / DEC-5): the shared same-currency door-balance rule. This
+  // module performs NO balance arithmetic of its own — it hands the shared core
+  // a row whose currency is the strip's already-resolved cell-1 currency
+  // (toPayCurrency, which carries this module's single RSD fallback), so the
+  // fallback stays a strip concern (DEC-4 / D-02) and the shared core never
+  // needs one of its own. Because toPayCurrency is never an empty
+  // string, the core returns null exactly when pay_at_door_amount fails to
+  // parse — precisely the strip's previous outer guard — and its signed,
+  // UNCLAMPED `minor` is exactly the value the inline owed-minus-collected
+  // subtraction produced before. The label and the sign-aware formatting below
+  // are presentation and stay here (DEC-4 / D-04).
+  const core = doorBalanceForTicket({
+    pay_at_door_amount: row.pay_at_door_amount,
+    currency: toPayCurrency,
+    pay_at_door_collected_amount: row.pay_at_door_collected_amount,
+    pay_at_door_collected_currency: row.pay_at_door_collected_currency,
+  });
+  const balanceMinor: bigint | null = core !== null ? core.minor : null;
+
   let balance: string | null = null;
   let balanceLabel: "Owes" | "Settled" | "Change" = "Settled";
   let balanceIsPositive = false;
-  if (minorToPay !== null) {
-    const subtracts =
-      minorCollected !== null && paidAtDoorCurrency === toPayCurrency;
-    const balanceMinor = subtracts
-      ? minorToPay - minorCollected
-      : minorToPay;
+  if (balanceMinor !== null) {
     balance = fromMinorUnits(balanceMinor);
     if (balanceMinor > ZERO) {
       balanceLabel = "Owes";

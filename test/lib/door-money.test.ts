@@ -3,16 +3,16 @@ import { describe, it, expect } from "vitest";
 import { formatMoney } from "@/lib/amount";
 import {
   sumMoneyByCurrency,
-  sumOwedByCurrency,
   sumCollectedByCurrency,
+  doorBalanceForTicket,
   residualOwedForTicket,
   sumResidualOwedByCurrency,
 } from "@/lib/door-money";
 import type {
   DoorMoneyRow,
-  OwedTicketRow,
   CollectedTicketRow,
   ResidualOwedRow,
+  ResidualOwed,
 } from "@/lib/door-money";
 
 /**
@@ -30,7 +30,17 @@ import type {
  *    toTwoDecimals in src/lib/amount.ts produces;
  *  - subtotals come back in a fixed currency order that does not depend on row
  *    order;
- *  - sumOwedByCurrency is a thin adapter that cannot drift from the generic core.
+ *  - sumCollectedByCurrency is a thin adapter that cannot drift from the generic
+ *    core.
+ *
+ * It also pins the Phase 18 signed core:
+ *
+ *  - doorBalanceForTicket is the single owner of the same-currency door-balance
+ *    rule — signed, unclamped minor units of (owed − same-currency collected)
+ *    plus the resolved ticket currency;
+ *  - residualOwedForTicket and sumResidualOwedByCurrency are exactly the
+ *    strictly-positive clamp of that core: the identity describe below asserts
+ *    the observable equivalence so the derivations cannot drift from it.
  */
 
 describe("sumMoneyByCurrency", () => {
@@ -205,39 +215,10 @@ describe("sumMoneyByCurrency", () => {
   });
 });
 
-describe("sumOwedByCurrency", () => {
-  it("returns [] for no tickets", () => {
-    expect(sumOwedByCurrency([])).toEqual([]);
-  });
-
-  it("produces exactly what sumMoneyByCurrency produces for the mapped rows", () => {
-    const tickets: OwedTicketRow[] = [
-      { pay_at_door_amount: "20.00", currency: "EUR" },
-      { pay_at_door_amount: "1200", currency: "RSD" },
-      { pay_at_door_amount: "5.50", currency: "EUR" },
-      { pay_at_door_amount: null, currency: "RSD" },
-      { pay_at_door_amount: "0", currency: "EUR" },
-      { pay_at_door_amount: "abc", currency: "EUR" },
-    ];
-    const viaAdapter = sumOwedByCurrency(tickets);
-    const viaCore = sumMoneyByCurrency(
-      tickets.map((t) => ({
-        amount: t.pay_at_door_amount,
-        currency: t.currency,
-      })),
-    );
-    expect(viaAdapter).toEqual(viaCore);
-    expect(viaAdapter).toEqual([
-      { currency: "EUR", amount: "25.50", ticketCount: 2 },
-      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
-    ]);
-  });
-});
-
 describe("sumCollectedByCurrency", () => {
-  // The collected-side sibling of sumOwedByCurrency (ATTENDEE-V3-03). It maps
-  // the pay_at_door_collected_* columns onto the generic core and delegates to
-  // sumMoneyByCurrency — so it cannot drift from sumOwedByCurrency or the core.
+  // The collected-side thin adapter (ATTENDEE-V3-03). It maps the
+  // pay_at_door_collected_* columns onto the generic core and delegates to
+  // sumMoneyByCurrency — so it cannot drift from the core.
   it("returns [] for no tickets", () => {
     expect(sumCollectedByCurrency([])).toEqual([]);
   });
@@ -338,12 +319,11 @@ describe("sumCollectedByCurrency", () => {
 });
 
 /**
- * Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8). The
- * per-ticket residual is what is STILL owed at the door after a partial or
- * cross-currency collection, expressed in the ticket currency, matching
- * attendeeMoneyStrip's third cell. Added as a NEW pair rather than folded into
- * sumOwedByCurrency because the dashboard still depends on that adapter's gross
- * "status = 'issued'" semantics.
+ * Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8), now the
+ * ONLY owed-side rule in the module (Phase 18 plan 18-03 retired the gross
+ * adapter). The per-ticket residual is what is STILL owed at the door after a
+ * partial or cross-currency collection, expressed in the ticket currency,
+ * matching attendeeMoneyStrip's third cell.
  *
  *  - residual = max(0, pay_at_door_amount − same-currency collected);
  *  - a cross-currency collection (D-06) never reduces it and is never converted;
@@ -351,8 +331,7 @@ describe("sumCollectedByCurrency", () => {
  *    negative line;
  *  - an absent ticket currency yields null (the list page has no RSD fallback);
  *  - sumResidualOwedByCurrency delegates to sumMoneyByCurrency, so the per-row
- *    badge and the event-wide total are structurally unable to disagree, and it
- *    deliberately differs from sumOwedByCurrency once any collection exists.
+ *    badge and the event-wide total are structurally unable to disagree.
  */
 
 describe("residualOwedForTicket — still-owed-at-the-door after a partial or cross-currency collection", () => {
@@ -472,6 +451,300 @@ describe("residualOwedForTicket — still-owed-at-the-door after a partial or cr
   });
 });
 
+/**
+ * MONEY-V6-03 battery on the signed core (Phase 18, plan 18-01). doorBalanceForTicket
+ * is the ONE owner of the same-currency door-balance rule: signed integer minor
+ * units of (owed − same-currency collected) plus the resolved ticket currency,
+ * UNCLAMPED and UNFORMATTED. residualOwedForTicket is its clamp; the identity
+ * describe below proves the derivation cannot drift from it.
+ */
+describe("doorBalanceForTicket — the signed same-currency door balance", () => {
+  it("exact settle — a same-currency collection equal to owed -> minor BigInt(0)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(0), currency: "RSD" });
+  });
+
+  it("same-currency partial collection -> strictly positive minor still owed", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(100000), currency: "RSD" });
+  });
+
+  it("same-currency over-payment -> strictly negative minor (change owed back)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "7200",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(-20000), currency: "RSD" });
+  });
+
+  it("cross-currency collection never credits — minor is the full owed amount, no conversion", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: "2400",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(2000), currency: "EUR" });
+  });
+
+  it("null collected amount -> minor is the full owed amount", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ minor: BigInt(700000), currency: "RSD" });
+  });
+
+  it('a recorded "0" collected amount subtracts to the full owed amount (not null, not zero)', () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "0",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(700000), currency: "RSD" });
+  });
+
+  it("returns null when the ticket currency is absent — no RSD fallback in the core", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: null,
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null when pay_at_door_amount is absent or malformed", () => {
+    for (const bad of [null, undefined, "abc", "12.345", "-5", ""]) {
+      expect(
+        doorBalanceForTicket({
+          pay_at_door_amount: bad,
+          currency: "RSD",
+          pay_at_door_collected_amount: null,
+          pay_at_door_collected_currency: null,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it("an absent collected currency falls back to the ticket currency, then subtracts", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: null,
+      }),
+    ).toEqual({ minor: BigInt(100000), currency: "RSD" });
+  });
+
+  it("stays exact over fractional minor units — 0.30 owed, 0.10 collected -> minor BigInt(20)", () => {
+    expect(
+      doorBalanceForTicket({
+        pay_at_door_amount: "0.30",
+        currency: "RSD",
+        pay_at_door_collected_amount: "0.10",
+        pay_at_door_collected_currency: "RSD",
+      }),
+    ).toEqual({ minor: BigInt(20), currency: "RSD" });
+  });
+
+  it("passes an unknown currency through at the per-ticket level; the drop happens only in sumResidualOwedByCurrency", () => {
+    const usdTicket: ResidualOwedRow = {
+      pay_at_door_amount: "50",
+      currency: "USD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    expect(doorBalanceForTicket(usdTicket)).toEqual({
+      minor: BigInt(5000),
+      currency: "USD",
+    });
+    expect(sumResidualOwedByCurrency([usdTicket])).toEqual([]);
+  });
+
+  it("keeps one EUR ticket and one RSD ticket as two separate subtotal lines through sumResidualOwedByCurrency, EUR first, never combined", () => {
+    const eurTicket: ResidualOwedRow = {
+      pay_at_door_amount: "20",
+      currency: "EUR",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    const rsdTicket: ResidualOwedRow = {
+      pay_at_door_amount: "1200",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    };
+    const result = sumResidualOwedByCurrency([rsdTicket, eurTicket]);
+    expect(result).toEqual([
+      { currency: "EUR", amount: "20.00", ticketCount: 1 },
+      { currency: "RSD", amount: "1200.00", ticketCount: 1 },
+    ]);
+    expect(result).toHaveLength(2);
+  });
+});
+
+describe("residual derivations are exactly the clamp of the core", () => {
+  // fromMinorUnits is module-private by design (phase11-contract Gate 5 pins the
+  // export set); re-parse the residual's decimal string locally rather than
+  // exporting it just to make this test easier.
+  function toMinor(decimal: string): bigint {
+    const [whole, fraction = ""] = decimal.split(".");
+    return BigInt(whole) * BigInt(100) + BigInt(fraction.padEnd(2, "0"));
+  }
+
+  // One row per case in the doorBalanceForTicket battery above.
+  const fixtures: ResidualOwedRow[] = [
+    // exact settle -> core minor 0 -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "7000",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // same-currency partial -> core minor > 0 -> residual non-null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "6000",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // over-payment -> core minor < 0 -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "7200",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // cross-currency -> core minor = full owed -> residual non-null
+    {
+      pay_at_door_amount: "20",
+      currency: "EUR",
+      pay_at_door_collected_amount: "2400",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // null collected
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // recorded "0" collected
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "0",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // ticket currency absent -> core null -> residual null
+    {
+      pay_at_door_amount: "7000",
+      currency: null,
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // malformed amount -> core null -> residual null
+    {
+      pay_at_door_amount: "12.345",
+      currency: "RSD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+    // absent collected currency -> falls back, subtracts
+    {
+      pay_at_door_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "6000",
+      pay_at_door_collected_currency: null,
+    },
+    // fractional exactness
+    {
+      pay_at_door_amount: "0.30",
+      currency: "RSD",
+      pay_at_door_collected_amount: "0.10",
+      pay_at_door_collected_currency: "RSD",
+    },
+    // unknown currency -> core non-null, dropped only by the sum adapter
+    {
+      pay_at_door_amount: "50",
+      currency: "USD",
+      pay_at_door_collected_amount: null,
+      pay_at_door_collected_currency: null,
+    },
+  ];
+
+  it("residualOwedForTicket is non-null iff the core is non-null with a strictly positive minor", () => {
+    for (const row of fixtures) {
+      const core = doorBalanceForTicket(row);
+      const residual = residualOwedForTicket(row);
+      const shouldBeNonNull = core !== null && core.minor > BigInt(0);
+      expect(residual !== null).toBe(shouldBeNonNull);
+    }
+  });
+
+  it("when non-null, the residual currency equals the core currency", () => {
+    for (const row of fixtures) {
+      const residual = residualOwedForTicket(row);
+      if (residual === null) continue;
+      const core = doorBalanceForTicket(row);
+      expect(core).not.toBeNull();
+      expect(residual.currency).toBe(core!.currency);
+    }
+  });
+
+  it("when non-null, the residual amount re-parsed to minor units equals the core minor", () => {
+    for (const row of fixtures) {
+      const residual = residualOwedForTicket(row);
+      if (residual === null) continue;
+      const core = doorBalanceForTicket(row);
+      expect(toMinor(residual.amount)).toBe(core!.minor);
+    }
+  });
+
+  it("sumResidualOwedByCurrency over the fixtures equals sumMoneyByCurrency of the mapped non-null residuals", () => {
+    const viaAdapter = sumResidualOwedByCurrency(fixtures);
+    const viaCore = sumMoneyByCurrency(
+      fixtures
+        .map((row) => residualOwedForTicket(row))
+        .filter((r): r is ResidualOwed => r !== null)
+        .map((r) => ({ amount: r.amount, currency: r.currency })),
+    );
+    expect(viaAdapter).toEqual(viaCore);
+  });
+});
+
 describe("sumResidualOwedByCurrency — per-currency residual sum, delegating to sumMoneyByCurrency", () => {
   it("returns [] for no tickets", () => {
     expect(sumResidualOwedByCurrency([])).toEqual([]);
@@ -549,38 +822,34 @@ describe("sumResidualOwedByCurrency — per-currency residual sum, delegating to
     ];
     expect(sumResidualOwedByCurrency(tickets)).toEqual([]);
   });
-
-  it("deliberately differs from sumOwedByCurrency when a same-currency partial collection exists — a future 'dedupe these two helpers' refactor must fail here", () => {
-    const tickets: ResidualOwedRow[] = [
-      {
-        pay_at_door_amount: "7000",
-        currency: "RSD",
-        pay_at_door_collected_amount: "6000",
-        pay_at_door_collected_currency: "RSD",
-      },
-    ];
-    expect(sumResidualOwedByCurrency(tickets)).toEqual([
-      { currency: "RSD", amount: "1000.00", ticketCount: 1 },
-    ]);
-    expect(sumOwedByCurrency(tickets)).toEqual([
-      { currency: "RSD", amount: "7000.00", ticketCount: 1 },
-    ]);
-    expect(sumResidualOwedByCurrency(tickets)).not.toEqual(
-      sumOwedByCurrency(tickets),
-    );
-  });
 });
 
 describe("door-money output feeds formatMoney from @/lib/amount unchanged", () => {
   // Binds this helper's two-decimal string output to the app's shipped D-09
   // money display contract (formatMoney = amount + one U+0020 space + code).
   // A later change to either module that would alter what a person counting
-  // cash reads breaks this line.
-  it("renders each subtotal as the exact string the dashboard shows in 10-04", () => {
-    const subtotals = sumOwedByCurrency([
-      { pay_at_door_amount: "20", currency: "EUR" },
-      { pay_at_door_amount: "5.5", currency: "EUR" },
-      { pay_at_door_amount: "1200", currency: "RSD" },
+  // cash reads breaks this line. Rows carry no collection, so each residual is
+  // the full owed amount and the mapping to a subtotal stays one-to-one.
+  it("renders each subtotal as the exact string the dashboard shows", () => {
+    const subtotals = sumResidualOwedByCurrency([
+      {
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+      {
+        pay_at_door_amount: "5.5",
+        currency: "EUR",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+      {
+        pay_at_door_amount: "1200",
+        currency: "RSD",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
     ]);
 
     const rendered = subtotals.map((s) => formatMoney(s.amount, s.currency));

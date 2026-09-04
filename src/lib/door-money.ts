@@ -2,10 +2,18 @@
 // ticket rows into "how much is still owed at the door", split by currency and
 // never summed across it.
 //
-// Born here for the dashboard's DASH-V3-03 "still owed" line; Phase 11's
-// ATTENDEE-V3-03 totals line imports this SAME module rather than re-deriving
-// the arithmetic. That reuse is a milestone invariant — one shared helper, two
-// call sites.
+// The shape of this module after Phase 18 (MONEY-V6-01): one generic
+// per-currency reducer (sumMoneyByCurrency), one signed per-ticket balance rule
+// (doorBalanceForTicket), and thin adapters over them (sumCollectedByCurrency,
+// residualOwedForTicket, sumResidualOwedByCurrency). No adapter carries its own
+// arithmetic. The dashboard "still owed" line and Phase 11's ATTENDEE-V3-03
+// totals line both read the residual through sumResidualOwedByCurrency — one
+// residual rule, both surfaces (DASH-V6-02).
+//
+// doorBalanceForTicket (Phase 18, MONEY-V6-01) is the SINGLE signed core:
+// residualOwedForTicket / sumResidualOwedByCurrency are its clamped derivations,
+// and attendee-money.ts's cell-3 strip is a thin wrapper over it (plan 18-02).
+// See the block comment above the residual pair for the clamp rationale.
 //
 // Why integer minor units in a BigInt rather than a float:
 // JavaScript has no decimal type in the language. Adding money through a
@@ -133,37 +141,21 @@ export function sumMoneyByCurrency(
   return result;
 }
 
-// Thin adapter for the dashboard's "still owed" side: map each ticket's
-// pay_at_door_amount onto the generic row's `amount` and delegate. It adds no
-// arithmetic of its own — that delegation is what "one shared helper, two call
-// sites" means, and Phase 11 will add a sibling adapter for the collected-side
-// columns beside this one.
-export function sumOwedByCurrency(
-  tickets: readonly OwedTicketRow[],
-): DoorMoneySubtotal[] {
-  return sumMoneyByCurrency(
-    tickets.map((ticket) => ({
-      amount: ticket.pay_at_door_amount,
-      currency: ticket.currency,
-    })),
-  );
-}
-
 export type CollectedTicketRow = {
   pay_at_door_collected_amount: string | number | null | undefined;
   pay_at_door_collected_currency: string | null | undefined;
 };
 
-// The collected-side sibling of sumOwedByCurrency (Phase 11, ATTENDEE-V3-03):
-// map each ticket's pay_at_door_collected_amount and its OWN
-// pay_at_door_collected_currency column onto the generic row shape and delegate.
-// It adds no arithmetic and no branch of its own — that delegation is what "one
-// shared helper, N call sites" means. The collected currency is deliberately a
-// separate column from the ticket's `currency` (migration 0003): door staff may
-// take payment in the other currency, so this adapter must never read `currency`
-// here. Everything else — CURRENCY_ORDER, the null / zero / malformed /
-// unknown-currency skips, the BigInt exactness, the two-decimal string out — is
-// inherited from sumMoneyByCurrency for free.
+// The collected-side thin adapter (Phase 11, ATTENDEE-V3-03): map each ticket's
+// pay_at_door_collected_amount and its OWN pay_at_door_collected_currency column
+// onto the generic row shape and delegate to sumMoneyByCurrency. It adds no
+// arithmetic and no branch of its own — that delegation is what "one generic
+// reducer, thin adapters over it" means. The collected currency is deliberately
+// a separate column from the ticket's `currency` (migration 0003): door staff
+// may take payment in the other currency, so this adapter must never read
+// `currency` here. Everything else — CURRENCY_ORDER, the null / zero / malformed
+// / unknown-currency skips, the BigInt exactness, the two-decimal string out —
+// is inherited from sumMoneyByCurrency for free.
 export function sumCollectedByCurrency(
   tickets: readonly CollectedTicketRow[],
 ): DoorMoneySubtotal[] {
@@ -175,28 +167,33 @@ export function sumCollectedByCurrency(
   );
 }
 
-// ── The Phase 17 residual pair (plan 17-05, gaps G-17-3 / G-17-4 / G-17-8) ──
+// ── The signed door-balance core and its clamped derivations ──
+// (core: Phase 18 plan 18-01, MONEY-V6-01 · residual pair: Phase 17 plan 17-05,
+//  gaps G-17-3 / G-17-4 / G-17-8)
 //
-// The "residual" is what a ticket STILL owes at the door after a partial or a
-// cross-currency collection: max(0, pay_at_door_amount − same-currency
-// collected), expressed in the ticket currency. It mirrors the third cell of
-// attendeeMoneyStrip in src/lib/attendee-money.ts.
-//
-// This is added as a NEW pair rather than folded into sumOwedByCurrency
-// because the dashboard (src/app/events/[eventId]/page.tsx) still imports that
-// adapter for its gross "status = 'issued'" line; changing sumOwedByCurrency
-// in place would silently move a second page that is outside all three gap
-// definitions, and would break the "thin adapter that cannot drift from the
-// generic core" identity test.
+// doorBalanceForTicket is the SINGLE owner of the same-currency door-balance
+// rule for the whole app: it returns the signed, UNCLAMPED difference
+// (pay_at_door_amount − same-currency collected) in the ticket currency —
+// positive = still owed, negative = change owed back, zero = settled.
+// residualOwedForTicket and sumResidualOwedByCurrency are thin CLAMPED
+// derivations over it — max(0, …) applied by residualOwedForTicket's early
+// return, not by the core — and the identity battery in
+// test/lib/door-money.test.ts proves they cannot drift from it. From plan 18-02
+// the third cell of attendeeMoneyStrip in src/lib/attendee-money.ts becomes a
+// thin wrapper over the same core. No second copy of the arithmetic survives.
 //
 // D-06's never-convert rule is why a collection taken in a currency other than
-// the ticket currency does NOT reduce the residual — it stays the full
-// pay_at_door_amount, and no exchange is ever applied.
+// the ticket currency does NOT reduce the balance — it stays the full
+// pay_at_door_amount, and no exchange is ever applied. EUR and RSD are never
+// summed or converted.
 //
-// The "residual <= zero" early return IS the clamp: it guarantees a negative
-// value is never formatted. This module's fromMinorUnits is NOT sign-aware
-// (unlike the one in attendee-money.ts), so it must never be handed a negative
-// BigInt.
+// Why the residual is clamped and why this module's formatter is not sign-aware:
+// residualOwedForTicket formats ONLY the strictly-positive branch of the signed
+// core (a settled or over-settled balance returns null, never a zero or a
+// negative line). That clamp is what lets this module's fromMinorUnits stay
+// NON-sign-aware (unlike the one in attendee-money.ts) — it is never handed a
+// negative BigInt. The signed value a caller needs for "change owed back" comes
+// straight off doorBalanceForTicket's `minor`, not from a formatted string.
 
 // Structurally the union of the owed-side and collected-side row shapes. Not an
 // `export function`, so it does not affect the Gate 5 export count.
@@ -204,14 +201,30 @@ export type ResidualOwedRow = OwedTicketRow & CollectedTicketRow;
 
 export type ResidualOwed = { amount: string; currency: string };
 
-// One ticket's residual, or null when nothing is still owed. Null cases: the
-// pay_at_door_amount is absent / malformed / zero; the ticket currency is
-// absent (the list page has no RSD fallback and has never rendered a figure
-// for a currency-less row); or a same-currency collection settles or
-// over-settles the balance.
-export function residualOwedForTicket(
+// The signed same-currency door balance for one ticket: integer minor units of
+// (owed − same-currency collected), plus the resolved ticket currency. Positive
+// = still owed at the door, negative = change owed back to the attendee, zero =
+// exactly settled. UNCLAMPED and UNFORMATTED on purpose — every downstream view
+// derives itself from `minor` rather than re-parsing a formatted string, so
+// residualOwedForTicket (below) and attendee-money.ts's cell-3 strip cannot
+// drift from it.
+//
+// Null cases (D-02): pay_at_door_amount is absent / malformed / non-numeric, OR
+// the ticket currency is absent. There is deliberately NO RSD fallback here —
+// that presentation choice belongs to the attendee-money strip, not the shared
+// core, so the list and dashboard get null for a currency-less row for free.
+//
+// A collection taken in a currency other than the ticket currency (D-04 / D-06)
+// never converts and never credits — `minor` stays the full owed amount. An
+// absent collected currency falls back to the ticket currency, so a bare
+// collected amount still subtracts. EUR/RSD enforcement is NOT done here: an
+// unknown currency passes through the per-ticket core exactly as
+// residualOwedForTicket did before, and is dropped later by sumMoneyByCurrency.
+export type DoorBalance = { minor: bigint; currency: string };
+
+export function doorBalanceForTicket(
   ticket: ResidualOwedRow,
-): ResidualOwed | null {
+): DoorBalance | null {
   const minorOwed = toMinorUnits(ticket.pay_at_door_amount);
   if (minorOwed === null) return null;
 
@@ -231,15 +244,29 @@ export function residualOwedForTicket(
       : ticketCurrency;
 
   // One ternary so TypeScript narrows the nullable collected value — a hoisted
-  // boolean does not narrow `bigint | null`.
-  const residualMinor =
+  // boolean does not narrow `bigint | null`. Signed and UNCLAMPED: the clamp is
+  // residualOwedForTicket's job, not the core's.
+  const minor =
     minorCollected !== null && collectedCurrency === ticketCurrency
       ? minorOwed - minorCollected
       : minorOwed;
 
-  if (residualMinor <= ZERO) return null;
+  return { minor, currency: ticketCurrency };
+}
 
-  return { amount: fromMinorUnits(residualMinor), currency: ticketCurrency };
+// One ticket's residual, or null when nothing is still owed — the clamped,
+// formatted derivation of doorBalanceForTicket. It formats only the strictly
+// positive branch of the signed core, so this module's NON-sign-aware
+// fromMinorUnits is never handed a negative value. Null cases: the core is null
+// (pay_at_door_amount absent / malformed, or the ticket currency absent), or a
+// same-currency collection settles or over-settles the balance (core minor <= 0).
+export function residualOwedForTicket(
+  ticket: ResidualOwedRow,
+): ResidualOwed | null {
+  const balance = doorBalanceForTicket(ticket);
+  return balance !== null && balance.minor > ZERO
+    ? { amount: fromMinorUnits(balance.minor), currency: balance.currency }
+    : null;
 }
 
 // Per-currency residual sum for the attendees-list "STILL TO COLLECT" box.

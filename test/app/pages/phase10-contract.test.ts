@@ -103,8 +103,9 @@ describe("Gate 3 — column discipline: no value renders that was never meant fo
     expect(page).not.toContain("paid_amount");
   });
 
-  it(`${PAGE}: references no pay_at_door_collected column`, () => {
-    expect(page).not.toMatch(/pay_at_door_collected/);
+  it(`${PAGE}: reads the pay_at_door_collected columns for the residual owed figure (DASH-V6-01)`, () => {
+    expect(page).toContain("pay_at_door_collected_amount::text");
+    expect(page).toContain("pay_at_door_collected_currency");
   });
 });
 
@@ -128,14 +129,14 @@ describe("Gate 4 — money never goes through a float (v3 milestone invariant)",
 });
 
 describe("Gate 5 — one shared helper, two call sites (v3 milestone invariant)", () => {
-  it(`${DOOR_MONEY}: exports both sumMoneyByCurrency and sumOwedByCurrency`, () => {
+  it(`${DOOR_MONEY}: exports the generic reducer sumMoneyByCurrency and the signed core doorBalanceForTicket`, () => {
     expect(doorMoney).toMatch(/export function sumMoneyByCurrency\b/);
-    expect(doorMoney).toMatch(/export function sumOwedByCurrency\b/);
+    expect(doorMoney).toMatch(/export function doorBalanceForTicket\b/);
   });
 
-  it(`${PAGE}: imports sumOwedByCurrency from @/lib/door-money`, () => {
+  it(`${PAGE}: imports sumResidualOwedByCurrency from @/lib/door-money`, () => {
     expect(page).toMatch(
-      /import\s*\{[^}]*\bsumOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
   });
 
