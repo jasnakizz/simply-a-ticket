@@ -5,9 +5,9 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   sumResidualOwedByCurrency,
   sumCollectedByCurrency,
-  residualOwedForTicket,
 } from "@/lib/door-money";
-import type { ResidualOwedRow } from "@/lib/door-money";
+import { attendeeMoneyStrip } from "@/lib/attendee-money";
+import type { AttendeeMoneyRow } from "@/lib/attendee-money";
 import { formatMoney } from "@/lib/amount";
 import { formatCheckInClock } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
@@ -208,18 +208,17 @@ export default async function AttendeesPage({
 
   const RESERVATION_LABEL = "RESERVATION";
 
-  // The single definition of "still owes money at the door" (D-04, revised by
-  // G-17-4 / G-17-8): a pure delegation to residualOwedForTicket in
-  // src/lib/door-money.ts. The residual rule — max(0, pay_at_door_amount −
-  // same-currency collected), null when nothing is still owed — now lives in
-  // exactly one place. Called from BOTH the reservation-chip filter and the
-  // row's own badge (which calls residualOwedForTicket directly), so a chip
-  // can never select a row the row does not itself mark as owing. The
-  // reservation chip's population therefore now also includes a checked-in
-  // attendee who still carries a residual — the intended operator meaning of
-  // "who do I still need to collect from".
-  function rowOwesAtDoor(row: ResidualOwedRow): boolean {
-    return residualOwedForTicket(row) !== null;
+  // The single definition of "still owes money at the door" (D-02, revised by
+  // Phase 19): a pure delegation to attendeeMoneyStrip in
+  // src/lib/attendee-money.ts — the same helper the row's own money token now
+  // reads, and the same helper the attendee detail page's third money cell
+  // reads. balanceIsPositive is true only strictly above zero, so a settled or
+  // over-paid row is NOT owing and drops out of the RESERVATION chip; a
+  // checked-in attendee who still carries a positive same-currency balance is
+  // included — the intended operator meaning of "who do I still need to collect
+  // from". Chip predicate and row badge cannot drift onto two predicates.
+  function rowOwesAtDoor(row: AttendeeMoneyRow): boolean {
+    return attendeeMoneyStrip(row).balanceIsPositive;
   }
 
   // The visible rows: the fetched list narrowed IN MEMORY only. The type facet
@@ -350,28 +349,36 @@ export default async function AttendeesPage({
                   : null;
               const isCheckedIn = checkInClock !== null;
 
-              // D-13 right side — three mutually exclusive states, decided by
-              // ONE if/else-if/else chain (see the JSX below) so exactly one
-              // renders. The still-owed branch is tested FIRST (G-17-8): a
-              // checked-in pay-at-door attendee who paid only partially, or
-              // paid in the other currency, carries BOTH a collected amount
-              // and a positive residual — and such a row must read as still
-              // owing, never as "Paid at door". "Paid at door" renders only
-              // when the ticket-currency balance is fully settled.
+              // D-13 right side — four rendered / three logical mutually
+              // exclusive states, decided by ONE if/else-if/else chain (see the
+              // JSX below) so exactly one renders. Ordering (G-17-8): still-owed
+              // FIRST, then change, then "Paid at door". A checked-in
+              // pay-at-door attendee who paid only partially, or paid in the
+              // other currency, carries BOTH a collected amount and a positive
+              // balance — and such a row must read as still owing. "Paid at
+              // door" renders only when the ticket-currency balance is fully
+              // settled; a same-currency over-payment reads its change back.
+              const strip = attendeeMoneyStrip(attendee);
+
               const collectedAmount = attendee.pay_at_door_collected_amount;
               const isCollected =
                 typeof collectedAmount === "string" &&
                 /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
 
-              // The outstanding amount is the ticket-currency residual from
-              // the shared helper — the same residualOwedForTicket the chip
-              // filter delegates to, so the chip and this badge can never
-              // disagree. A null residual (nothing still owed) falls through
-              // to the collected / render-nothing branches.
-              const residual = residualOwedForTicket(attendee);
+              // The row's two signed figures come straight off the shared strip
+              // helper — the same attendeeMoneyStrip the chip predicate and the
+              // detail page's third money cell read, so the three surfaces can
+              // never disagree. "Owes" -> accent token, "Change" -> the
+              // checked-in-green token; every other label falls through to the
+              // collected / render-nothing branches. The page formats nothing
+              // and carries no currency literal (D-04 / D-05).
               const owedLabel =
-                residual !== null
-                  ? formatMoney(residual.amount, residual.currency)
+                strip.balanceLabel === "Owes" && strip.balance !== null
+                  ? formatMoney(strip.balance, strip.balanceCurrency)
+                  : null;
+              const changeLabel =
+                strip.balanceLabel === "Change" && strip.balance !== null
+                  ? formatMoney(strip.balance, strip.balanceCurrency)
                   : null;
 
               return (
@@ -417,6 +424,10 @@ export default async function AttendeesPage({
                     {owedLabel !== null ? (
                       <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
                         {owedLabel}
+                      </span>
+                    ) : changeLabel !== null ? (
+                      <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]">
+                        {changeLabel}
                       </span>
                     ) : isCollected ? (
                       <span className="shrink-0 text-right text-[12px] text-muted-foreground">

@@ -52,6 +52,7 @@ describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balanc
       balance: "1000.00",
       balanceLabel: "Owes",
       balanceIsPositive: true,
+      balanceCurrency: "RSD",
       hasCurrencyMismatch: false,
       mismatchAmount: null,
       mismatchCurrency: null,
@@ -109,6 +110,7 @@ describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balanc
       balance: null,
       balanceLabel: "Settled",
       balanceIsPositive: false,
+      balanceCurrency: "RSD",
       hasCurrencyMismatch: false,
       mismatchAmount: null,
       mismatchCurrency: null,
@@ -164,6 +166,7 @@ describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balanc
       balance: null,
       balanceLabel: "Settled",
       balanceIsPositive: false,
+      balanceCurrency: "RSD",
       hasCurrencyMismatch: false,
       mismatchAmount: null,
       mismatchCurrency: null,
@@ -444,6 +447,187 @@ describe("attendeeMoneyStrip — the reworked To pay / Paid at the door / balanc
     expect(b.balance).toBe(a.balance);
     expect(b.balanceLabel).toBe(a.balanceLabel);
     expect(b.balanceIsPositive).toBe(a.balanceIsPositive);
+  });
+});
+
+describe("attendeeMoneyStrip.balanceCurrency — parity with the detail page's independently-resolved strip currency (LIST-V6-02)", () => {
+  // The exact expression the attendee detail page computes for its OWN strip
+  // currency (src/app/events/[eventId]/attendees/[ticketId]/page.tsx L126-127):
+  // a non-empty ticket-currency string, else the RSD fallback. The attendees
+  // list row's change token must resolve to the SAME value, so the row figure
+  // and the detail cell match by construction — not coincidence.
+  const detailStripCurrency = (
+    currency: string | null | undefined,
+  ): string =>
+    (typeof currency === "string" && currency !== "" ? currency : null) ?? "RSD";
+
+  const currencyCases: Array<{
+    label: string;
+    currency: string | null | undefined;
+    expected: string;
+  }> = [
+    { label: "ticket currency present (RSD)", currency: "RSD", expected: "RSD" },
+    { label: "ticket currency present (EUR)", currency: "EUR", expected: "EUR" },
+    { label: "ticket currency absent (null)", currency: null, expected: "RSD" },
+    {
+      label: "ticket currency absent (undefined)",
+      currency: undefined,
+      expected: "RSD",
+    },
+    { label: "ticket currency an empty string", currency: "", expected: "RSD" },
+    {
+      label: "a currency the app does not normally see (GBP)",
+      currency: "GBP",
+      expected: "GBP",
+    },
+  ];
+
+  for (const { label, currency, expected } of currencyCases) {
+    it(`resolves balanceCurrency to the detail page's expression — ${label}`, () => {
+      const row: AttendeeMoneyRow = {
+        pay_at_door_amount: "1000",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "1500",
+        currency,
+        pay_at_door_collected_currency: currency,
+      };
+      const strip = attendeeMoneyStrip(row);
+      expect(strip.balanceCurrency).toBe(detailStripCurrency(currency));
+      expect(strip.balanceCurrency).toBe(expected);
+    });
+  }
+
+  it("carries balanceCurrency as a non-empty string on every worked fixture — never null — and always equal to the detail page's expression", () => {
+    const rows: AttendeeMoneyRow[] = [
+      {
+        pay_at_door_amount: "2500",
+        paid_amount: "500",
+        pay_at_door_collected_amount: "1500",
+        currency: "RSD",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: undefined,
+        paid_amount: undefined,
+        pay_at_door_collected_amount: undefined,
+        currency: undefined,
+        pay_at_door_collected_currency: undefined,
+      },
+      {
+        pay_at_door_amount: "20",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: "2000",
+        currency: "EUR",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: "750",
+        paid_amount: undefined,
+        pay_at_door_collected_amount: null,
+        currency: "",
+        pay_at_door_collected_currency: null,
+      },
+    ];
+    for (const row of rows) {
+      const strip = attendeeMoneyStrip(row);
+      expect(typeof strip.balanceCurrency).toBe("string");
+      expect(strip.balanceCurrency.length).toBeGreaterThan(0);
+      expect(strip.balanceCurrency).toBe(detailStripCurrency(row.currency));
+    }
+  });
+});
+
+describe("attendeeMoneyStrip — the invariants the attendees-list change token must not break (LIST-V6-01)", () => {
+  it("threshold: one minor unit under owed -> Owes positive; exactly equal -> Settled at zero; one minor unit over -> Change negative", () => {
+    const under = attendeeMoneyStrip({
+      pay_at_door_amount: "10.00",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "9.99",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(under.balanceLabel).toBe("Owes");
+    expect(under.balanceIsPositive).toBe(true);
+    expect(under.balance).toBe("0.01");
+
+    const equal = attendeeMoneyStrip({
+      pay_at_door_amount: "10.00",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "10.00",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(equal.balanceLabel).toBe("Settled");
+    expect(equal.balanceIsPositive).toBe(false);
+    expect(equal.balance).toBe("0.00");
+
+    const over = attendeeMoneyStrip({
+      pay_at_door_amount: "10.00",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "10.01",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(over.balanceLabel).toBe("Change");
+    expect(over.balanceIsPositive).toBe(false);
+    expect(over.balance).toBe("-0.01");
+  });
+
+  it("adjacency: at exact equality the settled and change states never merge — Settled, never a zero-valued Change", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "7000",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "7000",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(strip.balanceLabel).toBe("Settled");
+    expect(strip.balanceLabel).not.toBe("Change");
+  });
+
+  it("cross-currency over-collection stays Owes carrying the FULL owed amount, a positive balance and the mismatch flag — never a Change figure, never a subtraction", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "3000",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "50",
+      currency: "RSD",
+      pay_at_door_collected_currency: "EUR",
+    });
+    expect(strip.balanceLabel).toBe("Owes");
+    expect(strip.balanceLabel).not.toBe("Change");
+    expect(strip.balance).toBe("3000.00");
+    expect(strip.balanceIsPositive).toBe(true);
+    expect(strip.hasCurrencyMismatch).toBe(true);
+  });
+
+  it("chip drop-out: an over-paid row's balanceIsPositive is false — the exact predicate the RESERVATION chip filter delegates to, so the chip cannot select it", () => {
+    const strip = attendeeMoneyStrip({
+      pay_at_door_amount: "5000",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: "5300",
+      currency: "RSD",
+      pay_at_door_collected_currency: "RSD",
+    });
+    expect(strip.balanceLabel).toBe("Change");
+    expect(strip.balanceIsPositive).toBe(false);
+  });
+
+  it("empty case: no recorded collection and a zero owed amount -> Settled at zero, and the page's collected-amount guard is false -> no money token", () => {
+    const row: AttendeeMoneyRow = {
+      pay_at_door_amount: "0",
+      paid_amount: undefined,
+      pay_at_door_collected_amount: undefined,
+      currency: "RSD",
+      pay_at_door_collected_currency: undefined,
+    };
+    const strip = attendeeMoneyStrip(row);
+    expect(strip.balanceLabel).toBe("Settled");
+    expect(strip.balance).toBe("0.00");
+    const collectedAmount = row.pay_at_door_collected_amount;
+    const isCollected =
+      typeof collectedAmount === "string" &&
+      /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
+    expect(isCollected).toBe(false);
   });
 });
 
