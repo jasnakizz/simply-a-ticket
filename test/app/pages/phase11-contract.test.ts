@@ -1,6 +1,9 @@
+import { readdirSync, readFileSync } from "fs";
+import { join } from "path";
+
 import { describe, it, expect } from "vitest";
 
-import { readCode } from "./helpers";
+import { readCode, stripComments } from "./helpers";
 
 /**
  * Phase 11 cross-file contract gate (plan 11-04).
@@ -29,6 +32,7 @@ import { readCode } from "./helpers";
 const ATTENDEES = "src/app/events/[eventId]/attendees/page.tsx";
 const CHIP = "src/app/events/[eventId]/attendees/filter-chip.tsx";
 const DOOR_MONEY = "src/lib/door-money.ts";
+const MONEY = "src/lib/attendee-money.ts";
 const DASHBOARD = "src/app/events/[eventId]/page.tsx";
 const BADGE = "src/components/ui/badge.tsx";
 const GLOBALS = "src/app/globals.css";
@@ -222,6 +226,57 @@ describe("Gate 5 — one shared money module: the generic core and its per-colum
       /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
+  });
+
+  // MONEY-V6-01 single-owner gate (plan 18-02): the attendee strip's cell-3
+  // balance is now a thin wrapper over doorBalanceForTicket, and NO other file
+  // under src/ carries its own copy of the same-currency owed-minus-collected
+  // arithmetic.
+  const money = readCode(MONEY);
+
+  it(`${MONEY}: delegates cell 3 to ${DOOR_MONEY}'s doorBalanceForTicket and keeps no inline balance subtraction (MONEY-V6-01)`, () => {
+    expect(money).toMatch(
+      /import\s*\{[^}]*\bdoorBalanceForTicket\b[^}]*\}\s*from\s*"\.\/door-money"/,
+    );
+    // one import binding + exactly one call site, nothing more
+    expect(count(money, /\bdoorBalanceForTicket\b/g)).toBe(2);
+    // the owed-minus-collected arithmetic is gone from the strip
+    expect(money).not.toMatch(/\bminor[A-Za-z]*\s*-\s*minor[A-Za-z]*/);
+  });
+
+  it(`exactly one file under src/ owns the same-currency door-balance rule (MONEY-V6-01)`, () => {
+    const srcRoot = join(__dirname, "..", "..", "..", "src");
+    const tsFiles: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (/\.tsx?$/.test(entry.name)) {
+          tsFiles.push(full);
+        }
+      }
+    };
+    walk(srcRoot);
+
+    const SUBTRACTION = /\bminor[A-Za-z]*\s*-\s*minor[A-Za-z]*/;
+    const CORE_DEF = /export function doorBalanceForTicket\b/;
+
+    const withSubtraction = tsFiles
+      .filter((f) => SUBTRACTION.test(stripComments(readFileSync(f, "utf8"))))
+      .map((f) => f.replace(/\\/g, "/"));
+    const withCoreDef = tsFiles
+      .filter((f) => CORE_DEF.test(stripComments(readFileSync(f, "utf8"))))
+      .map((f) => f.replace(/\\/g, "/"));
+
+    // door-money.ts is the ONLY file allowed a minor-unit balance subtraction —
+    // no second copy in attendee-money.ts, no third implementation anywhere.
+    expect(
+      withSubtraction.filter((f) => !f.endsWith("src/lib/door-money.ts")),
+    ).toEqual([]);
+    // and exactly one file defines the shared core
+    expect(withCoreDef.length).toBe(1);
+    expect(withCoreDef[0].endsWith("src/lib/door-money.ts")).toBe(true);
   });
 });
 
