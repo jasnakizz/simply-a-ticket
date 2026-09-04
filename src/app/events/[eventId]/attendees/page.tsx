@@ -427,7 +427,7 @@ export default async function AttendeesPage({
                       </span>
                     ) : changeLabel !== null ? (
                       <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]">
-                        Change {changeLabel}
+                        {changeLabel}
                       </span>
                     ) : isCollected ? (
                       <span className="shrink-0 text-right text-[12px] text-muted-foreground">

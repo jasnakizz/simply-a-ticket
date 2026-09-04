@@ -377,7 +377,7 @@ describe("D-13 — the row shows exactly one of three mutually exclusive door-mo
       "shrink-0 text-right text-[12px] text-muted-foreground",
     );
     expect(attendees).toMatch(
-      /text-\[var\(--color-checked-in\)\]">\s*Change \{changeLabel\}/,
+      /text-\[var\(--color-checked-in\)\]">\s* \{changeLabel\}/,
     );
   });
 });
