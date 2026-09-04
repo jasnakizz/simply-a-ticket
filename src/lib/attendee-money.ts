@@ -73,7 +73,12 @@ const ZERO = BigInt(0);
 // be absent.
 export type AttendeeMoneyRow = {
   pay_at_door_amount: string | null | undefined;
-  paid_amount: string | null | undefined;
+  // OPTIONAL (D-10): the prepaid ticket price plays no part in the door balance
+  // (independent debts — 17-04) and is banned from the attendees-list screen
+  // (phase11-contract Gate 3), whose select deliberately omits the column. Typing
+  // it optional lets that row satisfy this helper's parameter with no column
+  // change and no runtime effect — toMinorUnits already treats undefined as absent.
+  paid_amount?: string | null;
   pay_at_door_collected_amount: string | null | undefined;
   currency: string | null | undefined;
   pay_at_door_collected_currency: string | null | undefined;
@@ -99,6 +104,11 @@ export type AttendeeMoneyStrip = {
   // True only when balance is strictly greater than zero — drives the accent vs
   // settled-green token switch on cell 3.
   balanceIsPositive: boolean;
+  // Cell-3 currency: the ticket currency with this module's single fallback
+  // applied — the same value handed to the shared core. Always a string. The
+  // attendees list reads this for its over-payment "Change" token so that page
+  // carries no currency literal of its own.
+  balanceCurrency: string;
   // A valid collected amount is present, both currency columns are present, and
   // they differ (D-06). The mismatched figure is surfaced for the explanatory
   // note; it is NOT converted and does NOT reduce cell 3.
@@ -236,6 +246,9 @@ export function attendeeMoneyStrip(row: AttendeeMoneyRow): AttendeeMoneyStrip {
     balance,
     balanceLabel,
     balanceIsPositive,
+    // Passthrough of the local cell-1 currency (D-04) — no new computation, no
+    // second fallback literal.
+    balanceCurrency: toPayCurrency,
     hasCurrencyMismatch,
     mismatchAmount:
       hasCurrencyMismatch && minorCollected !== null
