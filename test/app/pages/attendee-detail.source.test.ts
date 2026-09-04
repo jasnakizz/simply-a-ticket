@@ -175,7 +175,7 @@ describe("D-07 — the synthesized PAYMENTS section", () => {
   });
 });
 
-describe("q6i / G-17-3 — one PAYMENTS 'Total' label with the per-currency amounts stacked beneath it", () => {
+describe("q6i / G-17-3 — one PAYMENTS 'Total paid' label with the per-currency amounts stacked beneath it", () => {
   it(`${DETAIL}: imports attendeePaymentTotals from the money helper and calls it on the payments array`, () => {
     expect(detail).toMatch(
       /import\s*\{[\s\S]*attendeePaymentTotals[\s\S]*\}\s*from\s*"@\/lib\/attendee-money"/,
@@ -183,32 +183,32 @@ describe("q6i / G-17-3 — one PAYMENTS 'Total' label with the per-currency amou
     expect(detail).toMatch(/attendeePaymentTotals\(payments\)/);
   });
 
-  it(`${DETAIL}: renders the Total amounts through formatMoney on each entry's own amount + currency`, () => {
-    expect(detail).toMatch(/>\s*Total\s*</);
+  it(`${DETAIL}: renders the Total paid amounts through formatMoney on each entry's own amount + currency`, () => {
+    expect(detail).toMatch(/>\s*Total paid\s*</);
     expect(detail).toMatch(/formatMoney\(total\.amount,\s*total\.currency\)/);
   });
 
-  it(`${DETAIL}: the Total render site comes AFTER the payments.map site`, () => {
+  it(`${DETAIL}: the Total paid render site comes AFTER the payments.map site`, () => {
     const mapIdx = detail.indexOf("payments.map(");
     const totalIdx = detail.indexOf("paymentTotals.map(");
     expect(mapIdx).toBeGreaterThan(-1);
     expect(totalIdx).toBeGreaterThan(mapIdx);
   });
 
-  it(`${DETAIL}: keeps the empty-list sentence exactly once — an empty list still sprouts no Total`, () => {
+  it(`${DETAIL}: keeps the empty-list sentence exactly once — an empty list still sprouts no Total paid`, () => {
     expect(
       (detail.match(/Nothing paid yet — full amount due at the door\./g) ?? [])
         .length,
     ).toBe(1);
   });
 
-  it(`${DETAIL}: renders exactly one "Total" label, positioned OUTSIDE the per-currency map (G-17-3)`, () => {
+  it(`${DETAIL}: renders exactly one "Total paid" label, positioned OUTSIDE the per-currency map (G-17-3)`, () => {
     // A count alone cannot distinguish the fixed shape from the broken one (a
     // label INSIDE .map() also appears once in source text) — the position
     // relative to paymentTotals.map( is what proves the label is the map's
     // sibling, not its child.
-    expect((detail.match(/>\s*Total\s*</g) ?? []).length).toBe(1);
-    const labelIdx = detail.search(/>\s*Total\s*</);
+    expect((detail.match(/>\s*Total paid\s*</g) ?? []).length).toBe(1);
+    const labelIdx = detail.search(/>\s*Total paid\s*</);
     const mapIdx = detail.indexOf("paymentTotals.map(");
     expect(labelIdx).toBeGreaterThan(-1);
     expect(mapIdx).toBeGreaterThan(-1);
@@ -226,6 +226,37 @@ describe("q6i / G-17-3 — one PAYMENTS 'Total' label with the per-currency amou
     const slice = detail.slice(start, afterMap);
     expect(slice).toContain("flex flex-col items-end gap-1");
     expect(slice).toContain("key={total.currency}");
+  });
+});
+
+describe("Q-02 (operator-directed, 2026-09-04) — one rule under the PAYMENTS heading, none between payment rows, one above Total paid", () => {
+  it(`${DETAIL}: the ul wrapping the payment rows carries the heading-anchor rule`, () => {
+    const mapIdx = detail.indexOf("payments.map(");
+    expect(mapIdx).toBeGreaterThan(-1);
+    const ulIdx = detail.lastIndexOf("<ul", mapIdx);
+    expect(ulIdx).toBeGreaterThan(-1);
+    const ulTagEnd = detail.indexOf(">", ulIdx);
+    const ulOpenTag = detail.slice(ulIdx, ulTagEnd + 1);
+    expect(ulOpenTag).toContain("border-t border-border");
+  });
+
+  it(`${DETAIL}: the payment-row region carries no top-rule utility between individual rows`, () => {
+    const mapIdx = detail.indexOf("payments.map(");
+    expect(mapIdx).toBeGreaterThan(-1);
+    const liEnd = detail.indexOf("</li>", mapIdx);
+    const region = detail.slice(mapIdx, liEnd);
+    expect(region).toContain(
+      'className="flex items-center justify-between py-[11px]"',
+    );
+    expect(region).not.toContain("border-t border-border");
+  });
+
+  it(`${DETAIL}: the summary-row region still carries its top-rule utility pair above Total paid`, () => {
+    const start = detail.indexOf("paymentTotals.length > 0");
+    expect(start).toBeGreaterThan(-1);
+    const liEnd = detail.indexOf("</li>", start);
+    const region = detail.slice(start, liEnd);
+    expect(region).toContain("border-t border-border");
   });
 });
 

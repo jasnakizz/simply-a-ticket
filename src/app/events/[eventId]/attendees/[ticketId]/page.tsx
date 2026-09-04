@@ -112,9 +112,10 @@ export default async function AttendeeDetailPage({
 
   const strip = attendeeMoneyStrip(ticket);
   const payments = attendeePayments(ticket);
-  // One "Total" row per currency present in the rendered payment rows (never a
-  // single figure summed across currencies). Derived from the SAME array the
-  // list renders, so a Total can never disagree with the lines above it.
+  // One "Total paid" row per currency present in the rendered payment rows
+  // (never a single figure summed across currencies). Derived from the SAME
+  // array the list renders, so a Total paid can never disagree with the lines
+  // above it.
   const paymentTotals = attendeePaymentTotals(payments);
 
   const currency = ticket.currency;
@@ -261,11 +262,11 @@ export default async function AttendeeDetailPage({
               Nothing paid yet — full amount due at the door.
             </p>
           ) : (
-            <ul className="flex flex-col">
+            <ul className="flex flex-col border-t border-border">
               {payments.map((payment) => (
                 <li
                   key={payment.label}
-                  className="flex items-center justify-between border-t border-border py-[11px]"
+                  className="flex items-center justify-between py-[11px]"
                 >
                   <span className="text-[13.5px] font-semibold">
                     {payment.label}
@@ -288,7 +289,7 @@ export default async function AttendeeDetailPage({
                   amount column. */}
               {paymentTotals.length > 0 ? (
                 <li className="flex items-start justify-between border-t border-border py-[11px]">
-                  <span className="text-[13.5px] font-semibold">Total</span>
+                  <span className="text-[13.5px] font-semibold">Total paid</span>
                   <span className="flex flex-col items-end gap-1">
                     {paymentTotals.map((total) => (
                       <span
