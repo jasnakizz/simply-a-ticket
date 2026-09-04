@@ -87,19 +87,16 @@ const attendeeTicketChains = chainsFrom(attendees, "tickets");
 const attendeeTypeChains = chainsFrom(attendees, "ticket_types");
 const attendeeEventChains = chainsFrom(attendees, "events");
 
-// The owed/residual totals chain on each page. On the ATTENDEES page 17-05
-// dropped the status filter (a checked-in ticket can still carry a residual
-// after a partial or cross-currency collection — G-17-4 / G-17-8), so it is
-// now located by the null filter it is the only tickets read to carry. The
-// DASHBOARD keeps the pre-Phase-17 gross chain and is still located by
-// status = 'issued'.
+// The residual owed totals chain on each page. Plan 18-03 (DASH-V6-01) moved
+// the DASHBOARD onto the residual model, so BOTH chains now drop the status
+// filter (a checked-in ticket can still carry a residual after a partial or
+// cross-currency collection — G-17-4 / G-17-8) and both are located by the
+// null filter each is the only tickets read to carry.
 const attendeesOwedChain = attendeeTicketChains.find((c) =>
   c.includes('.not("pay_at_door_amount", "is", null)'),
 );
-const dashboardOwedChain = chainsFrom(dashboard, "tickets").find(
-  (c) =>
-    c.includes("pay_at_door_amount::text") &&
-    c.includes('.eq("status", "issued")'),
+const dashboardOwedChain = chainsFrom(dashboard, "tickets").find((c) =>
+  c.includes('.not("pay_at_door_amount", "is", null)'),
 );
 
 const routeFiles: Array<[string, string]> = [
@@ -207,9 +204,9 @@ describe("Gate 5 — one shared money module: the generic core and its per-colum
     expect(doorMoney).not.toContain("use server");
   });
 
-  it(`${DASHBOARD}: imports the owed adapter from @/lib/door-money and computes no money itself`, () => {
+  it(`${DASHBOARD}: imports the residual adapter from @/lib/door-money and computes no money itself`, () => {
     expect(dashboard).toMatch(
-      /import\s*\{[^}]*\bsumOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
     );
     expect(dashboard).not.toMatch(/\.reduce\(/);
     expect(dashboard).not.toMatch(/\+=/);
@@ -360,12 +357,13 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
    * attendee who still carries a residual — the same population the total
    * counts.
    *
-   * DELIBERATE DIVERGENCE (recorded, not a bug): the DASHBOARD keeps the
-   * pre-Phase-17 gross `status = 'issued'` chain and sumOwedByCurrency, and is
-   * NOT migrated in 17-05 — it is outside all three gap definitions. Its
-   * "still owed" line can therefore disagree with the attendees page's for an
-   * event with a partially- or cross-currency-paid checked-in attendee. See
-   * 17-05-SUMMARY.md's open follow-up.
+   * Plan 18-03 (DASH-V6-01 / DASH-V6-02) removed the last divergence: the
+   * DASHBOARD "still owed at the door" line now reads the SAME residual rows
+   * through the SAME sumResidualOwedByCurrency adapter, with a byte-identical
+   * select and filter set. The final `it` in this describe is the DASH-V6-02
+   * structural equivalence proof — the two owed chains carry the identical
+   * column set and the identical filter set, derived from the chain strings so
+   * it keeps binding if either page's read changes later.
    */
   it(`${ATTENDEES}: keeps exactly one rowOwesAtDoor whose body delegates to residualOwedForTicket, and the row badge reads the same helper`, () => {
     expect(count(attendees, /function rowOwesAtDoor/g)).toBe(1);
@@ -390,14 +388,46 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     );
   });
 
-  it(`${DASHBOARD}: keeps the pre-Phase-17 gross owed chain (status = 'issued') — deliberately NOT migrated by 17-05`, () => {
+  it(`${DASHBOARD}: the residual owed chain is structurally identical to the attendees owed chain — same columns, same filters (DASH-V6-02)`, () => {
     expect(dashboardOwedChain).toBeDefined();
+    expect(attendeesOwedChain).toBeDefined();
+
+    // The dashboard chain on its own: event-scoped, NO status filter, keeps the
+    // not-null guard, and selects the owed amount cast to text plus both
+    // collected columns.
     expect(dashboardOwedChain).toContain('.eq("event_id", eventId)');
-    expect(dashboardOwedChain).toContain('.eq("status", "issued")');
+    expect(dashboardOwedChain).not.toContain('.eq("status"');
     expect(dashboardOwedChain).toContain(
       '.not("pay_at_door_amount", "is", null)',
     );
     expect(dashboardOwedChain).toContain("pay_at_door_amount::text");
+    expect(dashboardOwedChain).toContain("pay_at_door_collected_amount::text");
+    expect(dashboardOwedChain).toContain("pay_at_door_collected_currency");
+
+    // The equivalence proof: derive the selected-column set and the filter set
+    // from each chain string rather than hardcoding two literal lists, so this
+    // keeps binding if either page's read changes later.
+    const norm = (chain: string) => {
+      const selectBody = (chain.match(/\.select\(([\s\S]*?)\)/) ?? [])[1] ?? "";
+      const columns = selectBody
+        .replace(/[`"\s]/g, "")
+        .split(",")
+        .filter(Boolean)
+        .sort();
+      const filters = (
+        chain.match(/\.(?:eq|not|is|in|neq|gt|gte|lt|lte)\([^)]*\)/g) ?? []
+      )
+        .map((f) => f.trim())
+        .sort();
+      return { columns, filters };
+    };
+
+    const d = norm(dashboardOwedChain as string);
+    const a = norm(attendeesOwedChain as string);
+    expect(d.columns).toEqual(a.columns);
+    expect(d.filters).toEqual(a.filters);
+    expect(d.columns.length).toBeGreaterThan(0);
+    expect(d.filters.length).toBeGreaterThan(0);
   });
 });
 

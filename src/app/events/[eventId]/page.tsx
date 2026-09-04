@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDateRange, formatRelativeTime } from "@/lib/date";
 import { eventStatus } from "@/lib/event-status";
-import { sumOwedByCurrency } from "@/lib/door-money";
+import { sumResidualOwedByCurrency } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -156,38 +156,46 @@ export default async function EventDetailPage({
     throw lastThroughTheDoorError;
   }
 
-  // "Still owed at the door" — the real per-currency sum of pay_at_door_amount
-  // over this event's tickets that have NOT yet been checked in. status =
-  // 'issued' is the exact complement of 'checked_in' (the tickets.status CHECK
-  // in supabase/migrations/0002_tickets.sql is a closed two-value set), so the
-  // same filter that counts a ticket as checked-in above drops it out of this
-  // figure. The amount column is cast to text inside the select string
-  // (PostgREST column-cast form, D-10-05) so a decimal string — never a
-  // JavaScript double — crosses the wire; that is the whole reason
-  // src/lib/amount.ts exists. .not("pay_at_door_amount", "is", null) keeps
-  // tickets that owe nothing off the wire entirely.
+  // "Still owed at the door" — the per-currency RESIDUAL door balance across
+  // every ticket that owes at the door, issued or checked-in. Phase 17
+  // introduced partial and cross-currency door collections, so status =
+  // 'checked_in' no longer implies "door balance resolved": a checked-in ticket
+  // can still carry a residual after a partial (6000 of 7000) or a
+  // cross-currency collection. The read therefore carries NO status filter — a
+  // subtotal's ticket count is now "tickets with a positive residual", the
+  // accepted semantic under D-10, and "at the door" reads as where the debt is
+  // settled. Both money columns are cast to text inside the select string
+  // (PostgREST column-cast form) so a decimal string — never a JavaScript
+  // double — crosses the wire; that is the whole reason src/lib/amount.ts
+  // exists. .not("pay_at_door_amount", "is", null) keeps tickets that owe
+  // nothing off the wire entirely.
   //
-  // .eq("event_id", eventId) is what keeps another event's money off this
-  // dashboard. As with every read above, the error is thrown into
-  // src/app/events/error.tsx and never coalesced to [] — a failed read must not
-  // be able to render as "everyone has paid".
+  // This read is byte-identical to the attendees page's owed read — same
+  // select, same filters — so the two surfaces provably see the same rows and
+  // sum them through the same residual adapter (DASH-V6-02). .eq("event_id",
+  // eventId) is what keeps another event's money off this dashboard. As with
+  // every read above, the error is thrown into src/app/events/error.tsx and
+  // never coalesced to [] — a failed read must not be able to render as
+  // "everyone has paid".
   const { data: owedTickets, error: owedTicketsError } = await supabase
     .from("tickets")
-    .select("pay_at_door_amount::text, currency")
+    .select(
+      "pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
+    )
     .eq("event_id", eventId)
-    .eq("status", "issued")
     .not("pay_at_door_amount", "is", null);
 
   if (owedTicketsError) {
     throw owedTicketsError;
   }
 
-  // Every bit of the summation lives in the shared helper — this page does not
-  // sum, group by currency or format a money value itself. Phase 11's attendees
-  // page imports this SAME sumOwedByCurrency for its collected-side totals line;
-  // one helper, two call sites, is the milestone invariant that keeps the two
-  // screens from quietly disagreeing about how much money is outstanding.
-  const owedSubtotals = sumOwedByCurrency(owedTickets ?? []);
+  // Every bit of the summation lives in the shared residual adapter — this page
+  // does not sum, group by currency or format a money value itself. The
+  // attendees page reads the same rows through that same adapter for its
+  // "STILL TO COLLECT" line; one residual rule, both surfaces, is the milestone
+  // invariant that keeps the two screens from quietly disagreeing about how
+  // much money is outstanding.
+  const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);
 
   return (
     <div className="flex flex-col flex-1 items-center">
