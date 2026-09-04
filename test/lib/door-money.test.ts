@@ -822,6 +822,37 @@ describe("sumResidualOwedByCurrency — per-currency residual sum, delegating to
     ];
     expect(sumResidualOwedByCurrency(tickets)).toEqual([]);
   });
+
+  it("an over-paid ticket in a set moves no per-currency subtotal — the still-to-collect total is identical with and without it, and no line carries a minus (D-09)", () => {
+    const base: ResidualOwedRow[] = [
+      {
+        pay_at_door_amount: "7000",
+        currency: "RSD",
+        pay_at_door_collected_amount: "6000",
+        pay_at_door_collected_currency: "RSD",
+      },
+      {
+        pay_at_door_amount: "20",
+        currency: "EUR",
+        pay_at_door_collected_amount: null,
+        pay_at_door_collected_currency: null,
+      },
+    ];
+    const overPaid: ResidualOwedRow = {
+      pay_at_door_amount: "5000",
+      currency: "RSD",
+      pay_at_door_collected_amount: "5300",
+      pay_at_door_collected_currency: "RSD",
+    };
+
+    const withOverPaid = sumResidualOwedByCurrency([...base, overPaid]);
+    const withoutOverPaid = sumResidualOwedByCurrency(base);
+
+    expect(withOverPaid).toEqual(withoutOverPaid);
+    for (const line of withOverPaid) {
+      expect(line.amount.startsWith("-")).toBe(false);
+    }
+  });
 });
 
 describe("door-money output feeds formatMoney from @/lib/amount unchanged", () => {
