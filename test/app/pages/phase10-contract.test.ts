@@ -129,9 +129,9 @@ describe("Gate 4 — money never goes through a float (v3 milestone invariant)",
 });
 
 describe("Gate 5 — one shared helper, two call sites (v3 milestone invariant)", () => {
-  it(`${DOOR_MONEY}: exports both sumMoneyByCurrency and sumOwedByCurrency`, () => {
+  it(`${DOOR_MONEY}: exports the generic reducer sumMoneyByCurrency and the signed core doorBalanceForTicket`, () => {
     expect(doorMoney).toMatch(/export function sumMoneyByCurrency\b/);
-    expect(doorMoney).toMatch(/export function sumOwedByCurrency\b/);
+    expect(doorMoney).toMatch(/export function doorBalanceForTicket\b/);
   });
 
   it(`${PAGE}: imports sumResidualOwedByCurrency from @/lib/door-money`, () => {

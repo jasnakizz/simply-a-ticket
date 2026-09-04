@@ -2,16 +2,18 @@
 // ticket rows into "how much is still owed at the door", split by currency and
 // never summed across it.
 //
-// Born here for the dashboard's DASH-V3-03 "still owed" line; Phase 11's
-// ATTENDEE-V3-03 totals line imports this SAME module rather than re-deriving
-// the arithmetic. That reuse is a milestone invariant — one shared helper, two
-// call sites.
+// The shape of this module after Phase 18 (MONEY-V6-01): one generic
+// per-currency reducer (sumMoneyByCurrency), one signed per-ticket balance rule
+// (doorBalanceForTicket), and thin adapters over them (sumCollectedByCurrency,
+// residualOwedForTicket, sumResidualOwedByCurrency). No adapter carries its own
+// arithmetic. The dashboard "still owed" line and Phase 11's ATTENDEE-V3-03
+// totals line both read the residual through sumResidualOwedByCurrency — one
+// residual rule, both surfaces (DASH-V6-02).
 //
-// This module also owns the per-ticket same-currency door-balance rule.
 // doorBalanceForTicket (Phase 18, MONEY-V6-01) is the SINGLE signed core:
 // residualOwedForTicket / sumResidualOwedByCurrency are its clamped derivations,
-// and attendee-money.ts's cell-3 strip becomes a thin wrapper over it (plan
-// 18-02). See the block comment above the residual pair for the clamp rationale.
+// and attendee-money.ts's cell-3 strip is a thin wrapper over it (plan 18-02).
+// See the block comment above the residual pair for the clamp rationale.
 //
 // Why integer minor units in a BigInt rather than a float:
 // JavaScript has no decimal type in the language. Adding money through a
@@ -139,37 +141,21 @@ export function sumMoneyByCurrency(
   return result;
 }
 
-// Thin adapter for the dashboard's "still owed" side: map each ticket's
-// pay_at_door_amount onto the generic row's `amount` and delegate. It adds no
-// arithmetic of its own — that delegation is what "one shared helper, two call
-// sites" means, and Phase 11 will add a sibling adapter for the collected-side
-// columns beside this one.
-export function sumOwedByCurrency(
-  tickets: readonly OwedTicketRow[],
-): DoorMoneySubtotal[] {
-  return sumMoneyByCurrency(
-    tickets.map((ticket) => ({
-      amount: ticket.pay_at_door_amount,
-      currency: ticket.currency,
-    })),
-  );
-}
-
 export type CollectedTicketRow = {
   pay_at_door_collected_amount: string | number | null | undefined;
   pay_at_door_collected_currency: string | null | undefined;
 };
 
-// The collected-side sibling of sumOwedByCurrency (Phase 11, ATTENDEE-V3-03):
-// map each ticket's pay_at_door_collected_amount and its OWN
-// pay_at_door_collected_currency column onto the generic row shape and delegate.
-// It adds no arithmetic and no branch of its own — that delegation is what "one
-// shared helper, N call sites" means. The collected currency is deliberately a
-// separate column from the ticket's `currency` (migration 0003): door staff may
-// take payment in the other currency, so this adapter must never read `currency`
-// here. Everything else — CURRENCY_ORDER, the null / zero / malformed /
-// unknown-currency skips, the BigInt exactness, the two-decimal string out — is
-// inherited from sumMoneyByCurrency for free.
+// The collected-side thin adapter (Phase 11, ATTENDEE-V3-03): map each ticket's
+// pay_at_door_collected_amount and its OWN pay_at_door_collected_currency column
+// onto the generic row shape and delegate to sumMoneyByCurrency. It adds no
+// arithmetic and no branch of its own — that delegation is what "one generic
+// reducer, thin adapters over it" means. The collected currency is deliberately
+// a separate column from the ticket's `currency` (migration 0003): door staff
+// may take payment in the other currency, so this adapter must never read
+// `currency` here. Everything else — CURRENCY_ORDER, the null / zero / malformed
+// / unknown-currency skips, the BigInt exactness, the two-decimal string out —
+// is inherited from sumMoneyByCurrency for free.
 export function sumCollectedByCurrency(
   tickets: readonly CollectedTicketRow[],
 ): DoorMoneySubtotal[] {
