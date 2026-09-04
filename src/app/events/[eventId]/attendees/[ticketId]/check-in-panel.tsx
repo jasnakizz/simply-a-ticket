@@ -19,7 +19,8 @@ import { useRouter } from "next/navigation";
 import { ChevronUp, CircleAlert } from "lucide-react";
 
 import { checkInTicket } from "@/app/actions/check-in";
-import type { CheckInState } from "@/app/actions/types";
+import { markAsPaid } from "@/app/actions/mark-as-paid";
+import type { CheckInState, MarkAsPaidState } from "@/app/actions/types";
 import { amountSchema, toTwoDecimals } from "@/lib/amount";
 import { withTimeout } from "@/lib/with-timeout";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,9 @@ import {
 // The empty reducer seed — same shape as the scanner's initialCheckIn.
 const initialCheckIn: CheckInState = {};
 
+// Phase 20: the empty reducer seed for the settle form's useActionState.
+const initialMarkAsPaid: MarkAsPaidState = {};
+
 // D-03 / D-05 sibling value: the client-side wait bound that turns a silent
 // hang on "Checking in…" into a visible failure state. One value to tune if a
 // slow-but-live link trips a false positive.
@@ -49,6 +53,13 @@ const TIMEOUT_MS = 10_000;
 // check-in.ts so a future edit to one and not the other fails by name.
 const CHECKIN_NETWORK_ERROR =
   "Something went wrong checking this ticket in. Check your connection and try again.";
+
+// Phase 20: same discipline, same reason as CHECKIN_NETWORK_ERROR above — a
+// byte-for-byte copy of the string markAsPaid already returns for a caught
+// database error (src/app/actions/mark-as-paid.ts). A source gate pins the
+// two copies against each other.
+const MARK_AS_PAID_NETWORK_ERROR =
+  "Something went wrong recording this payment. Check your connection and try again.";
 
 // Mirrored from the scanner's / order form's FieldError — identical body, not
 // imported. role="alert" so a screen reader announces it; near-black text
@@ -91,6 +102,23 @@ async function checkInWithGuard(
   }
 }
 
+// Phase 20: the identical try / withTimeout / catch shape as checkInWithGuard
+// above, wrapping markAsPaid instead. The caught value is never read — same
+// reasoning as checkInWithGuard's own comment.
+async function markAsPaidWithGuard(
+  prevState: MarkAsPaidState,
+  formData: FormData,
+): Promise<MarkAsPaidState> {
+  try {
+    return await withTimeout(markAsPaid(prevState, formData), TIMEOUT_MS);
+  } catch {
+    return {
+      formError: MARK_AS_PAID_NETWORK_ERROR,
+      values: { settle_amount: String(formData.get("settle_amount") ?? "") },
+    };
+  }
+}
+
 // Format an action-returned instant string to Belgrade HH:MM without a numeric
 // round-trip — the same guard shape the page uses for the status badge. Returns
 // null (caller falls back to a timeless "Checked in") when the value is absent
@@ -129,6 +157,9 @@ export function CheckInPanel({
   owesAtDoor,
   leftAmount,
   currency,
+  ticketId,
+  collectedCurrency,
+  hasCurrencyMismatch,
 }: {
   qrToken: string;
   eventId: string;
@@ -136,6 +167,9 @@ export function CheckInPanel({
   owesAtDoor: string | null;
   leftAmount: string | null;
   currency: string | null;
+  ticketId: string;
+  collectedCurrency: string | null;
+  hasCurrencyMismatch: boolean;
 }) {
   // useActionState is the browser-side hook that tracks the Server Action's
   // pending flag and its returned value across a re-render — the real
@@ -143,18 +177,22 @@ export function CheckInPanel({
   // checkInTicket; this file only wires the form to it and renders what comes
   // back. Kept on one line so the wrapper wiring is greppable as one token.
   const [checkInState, checkInAction, checkInPending] = useActionState(checkInWithGuard, initialCheckIn);
+  const [markAsPaidState, markAsPaidAction, markAsPaidPending] = useActionState(markAsPaidWithGuard, initialMarkAsPaid);
   const router = useRouter();
 
-  // D-04: router.refresh() re-runs the parent Server Component's data read (a
-  // fresh request) without a full navigation, so the page settles into the
-  // post-write canonical state (green badge, Left recomputed, footer control
-  // gone). It does NOT reset useActionState — that is why the confirmation also
-  // renders directly from checkInState.ok below. Fires ONLY on success, once,
-  // in an effect keyed on checkInState.ok — never on a formError / field-error
-  // / notFound / alreadyCheckedIn return, and never unconditionally.
+  // D-04 / D-06: router.refresh() re-runs the parent Server Component's data
+  // read (a fresh request) without a full navigation, so the page settles
+  // into the post-write canonical state (green badge, Left recomputed,
+  // footer control gone or replaced). It does NOT reset useActionState —
+  // that is why the confirmation also renders directly from checkInState.ok
+  // below. Fires ONLY on success, once, in an effect keyed on
+  // checkInState.ok / markAsPaidState.ok — never on a formError /
+  // field-error / notFound / alreadyCheckedIn / staleBalance return, and
+  // never unconditionally. Phase 20 extends this SAME effect (one
+  // router.refresh() call site in the file) rather than adding a second one.
   useEffect(() => {
-    if (checkInState.ok) router.refresh();
-  }, [checkInState.ok, router]);
+    if (checkInState.ok || markAsPaidState.ok) router.refresh();
+  }, [checkInState.ok, markAsPaidState.ok, router]);
 
   const statusIsCheckedIn = ticketStatus === "checked_in";
   // The collect-vs-plain branch keys on the leftAmount prop, which now carries
@@ -240,6 +278,12 @@ export function CheckInPanel({
   const amountDefault = checkInState.values?.collected_amount || balanceDisplay;
   const currencyDefault =
     checkInState.values?.collected_currency || currency || "RSD";
+  // Phase 20 (D-05): the checked-in branch's currency is read-only text, no
+  // selector — resolved from the earlier door collection's own currency,
+  // falling back to the ticket currency, falling back to RSD.
+  const settleCurrency = collectedCurrency || currency || "RSD";
+  const settleAmountDefault =
+    markAsPaidState.values?.settle_amount || balanceDisplay;
 
   // The revealed amount + currency fields — identical markup whether the CTA is
   // the live "Mark as paid & check in" or the inert "Mark as paid" (C-2 / D-11).
@@ -328,6 +372,46 @@ export function CheckInPanel({
     </>
   );
 
+  // Phase 20 (D-05): the checked-in "Mark as paid" branch's own field set —
+  // an amount input and a plain read-only currency display. No <Select>, no
+  // disabled selector, no payment_collected Checkbox: D-04 makes a strictly
+  // positive entered amount the only gate for this branch.
+  const markAsPaidFields = (
+    <>
+      <div className="flex w-full flex-col gap-2">
+        <Label htmlFor="settle_amount" className="text-[13px] font-semibold">
+          Amount collected
+        </Label>
+        <Input
+          id="settle_amount"
+          name="settle_amount"
+          inputMode="decimal"
+          defaultValue={settleAmountDefault}
+          onBlur={(event) => {
+            // Same non-blocking client-side pre-validation as the collect
+            // form's amount field — the real gate is markAsPaidSchema's
+            // superRefine in the frozen-adjacent action.
+            const result = amountSchema.safeParse(event.currentTarget.value);
+            setAmountHint(
+              result.success
+                ? null
+                : "Enter a non-negative amount with up to 2 decimal places.",
+            );
+          }}
+        />
+        {markAsPaidState.errors?.settle_amount?.[0] ? (
+          <FieldError message={markAsPaidState.errors.settle_amount[0]} />
+        ) : amountHint ? (
+          <p className="text-[13px] text-muted-foreground">{amountHint}</p>
+        ) : null}
+      </div>
+      <div className="flex w-full flex-col gap-2">
+        <Label className="text-[13px] font-semibold">Currency</Label>
+        <p className="text-[13px] font-semibold">{settleCurrency}</p>
+      </div>
+    </>
+  );
+
   // The expanded collect panel. C-3: NO "Balance due: X" bar — a subtle gray
   // divider carrying only a fold-up chevron that collapses back to the button.
   const collectPanel = (
@@ -343,20 +427,43 @@ export function CheckInPanel({
         </button>
       </div>
       {statusIsCheckedIn ? (
-        // C-2 / D-11 / ADETAIL-V5-06: an already-checked-in attendee who still
-        // owes gets a "Mark as paid" CTA only (no "& check in") and it is inert
-        // this phase — wiring it needs a new tickets UPDATE, which ADETAIL-V5-06
-        // bars; deferred to Phase 18. No <form action>, no balance_due submit.
-        <div className="flex w-full flex-col gap-4">
-          {collectFields}
-          <Button
-            type="button"
-            disabled
-            className="min-h-[44px] w-full justify-start text-left"
+        // C-2 / D-11 / PAID-V6-01..06: an already-checked-in attendee who
+        // still owes gets a "Mark as paid" CTA only (no "& check in"). Live
+        // on a same-currency ticket — posts to markAsPaidAction. On a
+        // cross-currency ticket (PAID-V6-05) it stays the inert, disabled
+        // button from before — no <form action>, no settle submit.
+        hasCurrencyMismatch ? (
+          <div className="flex w-full flex-col gap-4">
+            <Button
+              type="button"
+              disabled
+              className="min-h-[44px] w-full justify-start text-left"
+            >
+              Mark as paid
+            </Button>
+            <p className="text-[12.5px] text-muted-foreground">
+              The earlier door payment was taken in a different currency, so
+              this can&apos;t be settled here.
+            </p>
+            {markAsPaidFields}
+          </div>
+        ) : (
+          <form
+            action={markAsPaidAction}
+            className="flex w-full flex-col gap-4"
           >
-            Mark as paid
-          </Button>
-        </div>
+            <input type="hidden" name="ticket_id" defaultValue={ticketId} />
+            <input type="hidden" name="event_id" defaultValue={eventId} />
+            {markAsPaidFields}
+            <Button
+              type="submit"
+              disabled={markAsPaidPending}
+              className="min-h-[44px] w-full justify-start text-left"
+            >
+              {markAsPaidPending ? "Marking as paid…" : "Mark as paid"}
+            </Button>
+          </form>
+        )
       ) : (
         <form action={checkInAction} className="flex w-full flex-col gap-4">
           <input type="hidden" name="token" defaultValue={qrToken} />
@@ -393,6 +500,21 @@ export function CheckInPanel({
       ) : null}
       {checkInState.errors?.event_id?.[0] ? (
         <FieldError message={checkInState.errors.event_id[0]} />
+      ) : null}
+      {markAsPaidState.formError ? (
+        <p
+          role="alert"
+          className="flex items-center gap-1 text-[15px] leading-[1.55] text-destructive break-words"
+        >
+          <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+          {markAsPaidState.formError}
+        </p>
+      ) : null}
+      {markAsPaidState.errors?.ticket_id?.[0] ? (
+        <FieldError message={markAsPaidState.errors.ticket_id[0]} />
+      ) : null}
+      {markAsPaidState.errors?.event_id?.[0] ? (
+        <FieldError message={markAsPaidState.errors.event_id[0]} />
       ) : null}
 
       {statusIsCheckedIn || leftPositive ? (

@@ -62,3 +62,35 @@ export type CheckInState = {
     collected_currency: string;
   };
 };
+
+// Shared contract between the markAsPaid Server Action (src/app/actions/
+// mark-as-paid.ts) and the attendee detail page's check-in panel. Same
+// errors/formError shape as the types above, plus this action's own outcome
+// flags — deliberately NOT a reuse or a widening of CheckInState.
+//
+// `staleBalance` is its own outcome (PAID-V6-04 / D-01), never the
+// already-checked-in flag: a double-submit or a losing concurrent settle
+// means the read-time snapshot no longer matches the row, which is a
+// distinct fact from "this ticket was already checked in" and needs its own
+// staff-facing copy ("someone already recorded a payment ... reload").
+// `notSettleable` covers every other server-side refusal that isn't a field
+// error — not checked in yet, cross-currency, or nothing left owed — each
+// still carrying its own `formError` copy so the three refusals never read
+// alike.
+//
+// Every value crossing the Server Action boundary is plain-serialisable (no
+// Date, no class instance) for the same RPC-boundary reason CheckInState's
+// `checkedInAt` is a string above.
+export type MarkAsPaidState = {
+  errors?: FieldErrors;
+  formError?: string;
+  ok?: boolean;
+  staleBalance?: boolean;
+  notSettleable?: boolean;
+  notFound?: boolean;
+  collectedAmount?: string;
+  collectedCurrency?: string | null;
+  values?: {
+    settle_amount: string;
+  };
+};

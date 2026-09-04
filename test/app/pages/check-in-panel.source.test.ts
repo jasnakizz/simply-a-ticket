@@ -206,17 +206,34 @@ describe("ADETAIL-V5-04 — the balance-due collect sub-form", () => {
     expect(panel).toContain("disabled={!paymentCollected || checkInPending}");
   });
 
-  it(`${PANEL}: the checked-in CTA is an inert, disabled "Mark as paid" — no & check in, no form action (C-2 / D-11)`, () => {
+  it(`${PANEL}: the checked-in CTA is a live submit into markAsPaidAction, and is inert ONLY on a cross-currency ticket (Phase 20, PAID-V6-01/05)`, () => {
+    // (a) the live branch posts to markAsPaidAction.
+    expect(panel).toContain("action={markAsPaidAction}");
+    // (b) the pending ternary literal — asserted as the two literals
+    // separately since the exact JSX line wraps.
+    expect(panel).toContain('"Marking as paid…"');
+    expect(panel).toContain('"Mark as paid"');
+    // (c) the inert, disabled "Mark as paid" Button still exists for the
+    // mismatch branch.
     expect(panel).toMatch(
       /<Button\s+type="button"\s+disabled\s+className="[^"]*"\s*>\s*Mark as paid\s*<\/Button>/,
     );
-    // The inert branch is a <div>, not a <form action> — its slice carries no
-    // balance_due submit path.
-    const inertIdx = panel.search(
-      /<Button\s+type="button"\s+disabled\s+className="[^"]*"\s*>\s*Mark as paid\s*<\/Button>/,
+    // (d) markAsPaidFields renders no <Select> of any kind.
+    const mapFieldsStart = panel.indexOf("const markAsPaidFields");
+    const mapFieldsEnd = panel.indexOf("const collectPanel", mapFieldsStart);
+    expect(mapFieldsStart).toBeGreaterThan(-1);
+    expect(mapFieldsEnd).toBeGreaterThan(mapFieldsStart);
+    const markAsPaidFieldsBody = panel.slice(mapFieldsStart, mapFieldsEnd);
+    expect(markAsPaidFieldsBody).not.toContain("<Select");
+  });
+
+  it(`${PANEL}: imports markAsPaid from @/app/actions/mark-as-paid and passes markAsPaidWithGuard — never the raw action — to useActionState`, () => {
+    expect(panel).toMatch(
+      /import\s*\{\s*markAsPaid\s*\}\s*from\s*"@\/app\/actions\/mark-as-paid"/,
     );
-    const inertBlock = panel.slice(Math.max(0, inertIdx - 400), inertIdx);
-    expect(inertBlock).not.toContain("action={checkInAction}");
+    expect(count(panel, /useActionState\(markAsPaidWithGuard\b/g)).toBe(1);
+    expect(panel).not.toContain("useActionState(markAsPaid,");
+    expect(panel).not.toContain("useActionState(markAsPaid ");
   });
 
   it(`${PANEL}: C-3 — no "Balance due:" bar; a fold-up chevron button toggles collectOpen`, () => {

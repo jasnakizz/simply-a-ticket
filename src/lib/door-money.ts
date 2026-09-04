@@ -285,3 +285,36 @@ export function sumResidualOwedByCurrency(
   }
   return sumMoneyByCurrency(rows);
 }
+
+// ── The settle-side adder (Phase 20, PAID-V6-03) ──
+//
+// addCollectedAmount is markAsPaid's one arithmetic primitive: it sums a
+// server-read existing collected amount with a staff-entered amount and
+// returns the exact two-decimal string, or null on any unparseable input. It
+// reuses this module's own toMinorUnits/fromMinorUnits — no third copy of the
+// minor-unit arithmetic. An absent existing figure (null, undefined, or a
+// string that is blank after trim) counts as zero, never as a refusal; a
+// PRESENT but unparseable existing figure returns null so a corrupt stored
+// value is never silently treated as zero (which would erase recorded
+// money). Both operands are non-negative decimal strings by the time they
+// reach this function (the caller's own schema enforces non-negativity on
+// `entered`, and a stored `pay_at_door_collected_amount` is never negative in
+// practice), so the sum is always >= 0 and this module's non-sign-aware
+// fromMinorUnits — unlike attendee-money.ts's sign-aware pair — is safe here.
+export function addCollectedAmount(
+  existing: string | number | null | undefined,
+  entered: string,
+): string | null {
+  const existingIsAbsent =
+    existing === null ||
+    existing === undefined ||
+    (typeof existing === "string" && existing.trim() === "");
+
+  const minorExisting = existingIsAbsent ? ZERO : toMinorUnits(existing);
+  if (minorExisting === null) return null;
+
+  const minorEntered = toMinorUnits(entered);
+  if (minorEntered === null) return null;
+
+  return fromMinorUnits(minorExisting + minorEntered);
+}
