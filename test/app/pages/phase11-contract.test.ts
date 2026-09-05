@@ -188,15 +188,16 @@ describe("Gate 4 — money never goes through a float (v3 milestone invariant 1)
   }
 });
 
-describe("Gate 5 — one shared money module: the generic core, its per-column adapters, and the Phase 20 settle-side adder (v3 milestone invariant 4, D-11)", () => {
-  it(`${DOOR_MONEY}: exports the generic reducer, the collected adapter, the signed same-currency door balance, the residual pair, and addCollectedAmount — exactly six functions`, () => {
+describe("Gate 5 — one shared money module: the generic core, its per-column adapters, the Phase 20 settle-side adder, and the Phase 21 capped return-side subtractor (v3 milestone invariant 4, D-11)", () => {
+  it(`${DOOR_MONEY}: exports the generic reducer, the collected adapter, the signed same-currency door balance, the residual pair, addCollectedAmount, and subtractCollectedAmount — exactly seven functions`, () => {
     expect(doorMoney).toMatch(/export function sumMoneyByCurrency\b/);
     expect(doorMoney).toMatch(/export function sumCollectedByCurrency\b/);
     expect(doorMoney).toMatch(/export function doorBalanceForTicket\b/);
     expect(doorMoney).toMatch(/export function residualOwedForTicket\b/);
     expect(doorMoney).toMatch(/export function sumResidualOwedByCurrency\b/);
     expect(doorMoney).toMatch(/export function addCollectedAmount\b/);
-    expect(count(doorMoney, /export function /g)).toBe(6);
+    expect(doorMoney).toMatch(/export function subtractCollectedAmount\b/);
+    expect(count(doorMoney, /export function /g)).toBe(7);
   });
 
   it(`${DOOR_MONEY}: carries no server-only marker and no "use server" directive, so both pages can import it`, () => {

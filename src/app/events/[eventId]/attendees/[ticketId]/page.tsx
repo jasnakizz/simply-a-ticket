@@ -360,7 +360,10 @@ export default async function AttendeeDetailPage({
               the request and streams HTML. The panel below is the single
               client island on the page (it is the piece that needs the
               form-action + router hooks); nothing else here is interactive. */}
-          {!(statusIsCheckedIn && !strip.balanceIsPositive) ? (
+          {!(
+            statusIsCheckedIn &&
+            (strip.balance === null || strip.balance === "0.00")
+          ) ? (
             <CheckInPanel
               qrToken={ticket.qr_token}
               eventId={eventId}

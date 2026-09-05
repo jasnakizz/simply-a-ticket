@@ -20,7 +20,12 @@ import { ChevronUp, CircleAlert } from "lucide-react";
 
 import { checkInTicket } from "@/app/actions/check-in";
 import { markAsPaid } from "@/app/actions/mark-as-paid";
-import type { CheckInState, MarkAsPaidState } from "@/app/actions/types";
+import { markAsReturned } from "@/app/actions/mark-as-returned";
+import type {
+  CheckInState,
+  MarkAsPaidState,
+  MarkAsReturnedState,
+} from "@/app/actions/types";
 import { amountSchema, toTwoDecimals } from "@/lib/amount";
 import { withTimeout } from "@/lib/with-timeout";
 import { Button } from "@/components/ui/button";
@@ -41,6 +46,9 @@ const initialCheckIn: CheckInState = {};
 // Phase 20: the empty reducer seed for the settle form's useActionState.
 const initialMarkAsPaid: MarkAsPaidState = {};
 
+// Phase 21: the empty reducer seed for the return form's useActionState.
+const initialMarkAsReturned: MarkAsReturnedState = {};
+
 // D-03 / D-05 sibling value: the client-side wait bound that turns a silent
 // hang on "Checking in…" into a visible failure state. One value to tune if a
 // slow-but-live link trips a false positive.
@@ -60,6 +68,13 @@ const CHECKIN_NETWORK_ERROR =
 // two copies against each other.
 const MARK_AS_PAID_NETWORK_ERROR =
   "Something went wrong recording this payment. Check your connection and try again.";
+
+// Phase 21: same discipline, same reason as MARK_AS_PAID_NETWORK_ERROR above
+// — a byte-for-byte copy of the string markAsReturned already returns for a
+// caught database error (src/app/actions/mark-as-returned.ts). A source gate
+// pins the two copies against each other.
+const MARK_AS_RETURNED_NETWORK_ERROR =
+  "Something went wrong recording this return. Check your connection and try again.";
 
 // Mirrored from the scanner's / order form's FieldError — identical body, not
 // imported. role="alert" so a screen reader announces it; near-black text
@@ -119,6 +134,25 @@ async function markAsPaidWithGuard(
   }
 }
 
+// Phase 21: the identical try / withTimeout / catch shape as
+// markAsPaidWithGuard above, wrapping markAsReturned instead. The caught
+// value is never read — same reasoning as checkInWithGuard's own comment.
+async function markAsReturnedWithGuard(
+  prevState: MarkAsReturnedState,
+  formData: FormData,
+): Promise<MarkAsReturnedState> {
+  try {
+    return await withTimeout(markAsReturned(prevState, formData), TIMEOUT_MS);
+  } catch {
+    return {
+      formError: MARK_AS_RETURNED_NETWORK_ERROR,
+      values: {
+        return_amount: String(formData.get("return_amount") ?? ""),
+      },
+    };
+  }
+}
+
 // Format an action-returned instant string to Belgrade HH:MM without a numeric
 // round-trip — the same guard shape the page uses for the status badge. Returns
 // null (caller falls back to a timeless "Checked in") when the value is absent
@@ -150,6 +184,18 @@ function isPositiveAmount(raw: string | null): boolean {
   return /[1-9]/.test(text);
 }
 
+// isPositiveAmount's sibling for the overpaid/Change case — a pure string
+// test, no Number()/parseFloat, matching this file's existing
+// money-never-through-a-float discipline. A well-formed negative two-decimal
+// amount (a leading minus, otherwise the same shape) with at least one
+// non-zero digit.
+function isNegativeAmount(raw: string | null): boolean {
+  if (typeof raw !== "string") return false;
+  const text = raw.trim();
+  if (!/^-\d+(?:\.\d{1,2})?$/.test(text)) return false;
+  return /[1-9]/.test(text);
+}
+
 export function CheckInPanel({
   qrToken,
   eventId,
@@ -178,6 +224,8 @@ export function CheckInPanel({
   // back. Kept on one line so the wrapper wiring is greppable as one token.
   const [checkInState, checkInAction, checkInPending] = useActionState(checkInWithGuard, initialCheckIn);
   const [markAsPaidState, markAsPaidAction, markAsPaidPending] = useActionState(markAsPaidWithGuard, initialMarkAsPaid);
+  const [markAsReturnedState, markAsReturnedAction, markAsReturnedPending] =
+    useActionState(markAsReturnedWithGuard, initialMarkAsReturned);
   const router = useRouter();
 
   // D-04 / D-06: router.refresh() re-runs the parent Server Component's data
@@ -191,8 +239,9 @@ export function CheckInPanel({
   // never unconditionally. Phase 20 extends this SAME effect (one
   // router.refresh() call site in the file) rather than adding a second one.
   useEffect(() => {
-    if (checkInState.ok || markAsPaidState.ok) router.refresh();
-  }, [checkInState.ok, markAsPaidState.ok, router]);
+    if (checkInState.ok || markAsPaidState.ok || markAsReturnedState.ok)
+      router.refresh();
+  }, [checkInState.ok, markAsPaidState.ok, markAsReturnedState.ok, router]);
 
   const statusIsCheckedIn = ticketStatus === "checked_in";
   // The collect-vs-plain branch keys on the leftAmount prop, which now carries
@@ -205,6 +254,15 @@ export function CheckInPanel({
   // for free — a "Collect …" button appears only for a strictly positive third
   // cell. Do not loosen that regex. owesAtDoor stays used in balanceDisplay.
   const leftPositive = isPositiveAmount(leftAmount);
+  // RETURN-01/02: a checked-in ticket whose signed third cell is strictly
+  // negative is overpaid ("Change" case) — isNegativeAmount's anchored
+  // decimal mirrors isPositiveAmount's, so the two conditions never overlap
+  // and never both fire for the same leftAmount.
+  const isOverpaid = statusIsCheckedIn && isNegativeAmount(leftAmount);
+  // Strips the leading "-" — leftAmount is already an exactly-two-decimal
+  // signed string per attendee-money.ts's sign-aware formatter, so a plain
+  // .slice(1) is exact and never a numeric round-trip.
+  const overpaidAmount = isOverpaid && leftAmount ? leftAmount.slice(1) : null;
 
   // Collect sub-form UI state (D-02 / handoff). collectOpen: the collapsed
   // `Collect <Left> +` button vs the expanded panel — expands in place, nothing
@@ -215,6 +273,29 @@ export function CheckInPanel({
   const [collectOpen, setCollectOpen] = useState(false);
   const [paymentCollected, setPaymentCollected] = useState(true);
   const [amountHint, setAmountHint] = useState<string | null>(null);
+
+  // WR-01: amountHint is one piece of state shared by three unrelated amount
+  // fields (collected_amount / settle_amount / return_amount) via their
+  // onBlur handlers. markAsPaid's addCollectedAmount is deliberately
+  // uncapped, so a normal overpay can flip the panel straight from the
+  // markAsPaid branch into the markAsReturned branch (isOverpaid flips true)
+  // without an intervening remount — which would otherwise let a leftover
+  // hint from the just-abandoned field render under the brand-new field the
+  // staff member hasn't touched yet. Reset it during render when the
+  // rendered branch changes — the React-documented "adjusting state when a
+  // prop changes" pattern (a conditional setState call during render that
+  // bails out immediately after), not an effect: an effect that
+  // unconditionally calls setState on every dependency change is a
+  // lint-flagged anti-pattern (cascading renders) this pattern avoids by only
+  // firing on an actual branch change.
+  const amountHintBranchKey = `${statusIsCheckedIn}:${isOverpaid}:${hasCurrencyMismatch}`;
+  const [prevAmountHintBranchKey, setPrevAmountHintBranchKey] = useState(
+    amountHintBranchKey,
+  );
+  if (amountHintBranchKey !== prevAmountHintBranchKey) {
+    setPrevAmountHintBranchKey(amountHintBranchKey);
+    setAmountHint(null);
+  }
 
   // Terminal state from the ACTION RETURN (D-04) — never the stale page-load
   // row. A successful manual check-in.
@@ -280,10 +361,17 @@ export function CheckInPanel({
     checkInState.values?.collected_currency || currency || "RSD";
   // Phase 20 (D-05): the checked-in branch's currency is read-only text, no
   // selector — resolved from the earlier door collection's own currency,
-  // falling back to the ticket currency, falling back to RSD.
+  // falling back to the ticket currency, falling back to RSD. Phase 21
+  // reuses this same const for the return branch's currency display too —
+  // RETURN-04 and Phase 20's D-05 both resolve to the same value
+  // (pay_at_door_collected_currency falling back to the ticket currency,
+  // falling back to "RSD").
   const settleCurrency = collectedCurrency || currency || "RSD";
   const settleAmountDefault =
     markAsPaidState.values?.settle_amount || balanceDisplay;
+  // D-05: prefills with the full outstanding overpaid amount, editable down.
+  const returnAmountDefault =
+    markAsReturnedState.values?.return_amount || overpaidAmount || "0.00";
 
   // The revealed amount + currency fields — identical markup whether the CTA is
   // the live "Mark as paid & check in" or the inert "Mark as paid" (C-2 / D-11).
@@ -412,6 +500,46 @@ export function CheckInPanel({
     </>
   );
 
+  // D-04: the return branch's own field set — own const, not a shared block
+  // with markAsPaidFields. "Amount returned" (not "Amount collected") is
+  // clearer copy for staff handing cash back. No <Select>, no disabled
+  // selector: same discipline as markAsPaidFields.
+  const markAsReturnedFields = (
+    <>
+      <div className="flex w-full flex-col gap-2">
+        <Label htmlFor="return_amount" className="text-[13px] font-semibold">
+          Amount returned
+        </Label>
+        <Input
+          id="return_amount"
+          name="return_amount"
+          inputMode="decimal"
+          defaultValue={returnAmountDefault}
+          onBlur={(event) => {
+            // Same non-blocking client-side pre-validation as the other
+            // amount fields — the real gate is markAsReturnedSchema's
+            // superRefine plus the server-side cap check in the action.
+            const result = amountSchema.safeParse(event.currentTarget.value);
+            setAmountHint(
+              result.success
+                ? null
+                : "Enter a non-negative amount with up to 2 decimal places.",
+            );
+          }}
+        />
+        {markAsReturnedState.errors?.return_amount?.[0] ? (
+          <FieldError message={markAsReturnedState.errors.return_amount[0]} />
+        ) : amountHint ? (
+          <p className="text-[13px] text-muted-foreground">{amountHint}</p>
+        ) : null}
+      </div>
+      <div className="flex w-full flex-col gap-2">
+        <Label className="text-[13px] font-semibold">Currency</Label>
+        <p className="text-[13px] font-semibold">{settleCurrency}</p>
+      </div>
+    </>
+  );
+
   // The expanded collect panel. C-3: NO "Balance due: X" bar — a subtle gray
   // divider carrying only a fold-up chevron that collapses back to the button.
   const collectPanel = (
@@ -427,7 +555,47 @@ export function CheckInPanel({
         </button>
       </div>
       {statusIsCheckedIn ? (
-        // C-2 / D-11 / PAID-V6-01..06: an already-checked-in attendee who
+        isOverpaid ? (
+          // RETURN-01..04: a checked-in, overpaid attendee gets a "Mark as
+          // returned" CTA. Live on a same-currency ticket — posts to
+          // markAsReturnedAction. On a cross-currency ticket it stays the
+          // inert, disabled button — no <form action>, no return submit
+          // (mirrors markAsPaid's existing hasCurrencyMismatch precedent).
+          hasCurrencyMismatch ? (
+            <div className="flex w-full flex-col gap-4">
+              <Button
+                type="button"
+                disabled
+                className="min-h-[44px] w-full justify-start text-left"
+              >
+                Mark as returned
+              </Button>
+              <p className="text-[12.5px] text-muted-foreground">
+                The earlier door payment was taken in a different currency, so
+                it can&apos;t be returned here.
+              </p>
+              {markAsReturnedFields}
+            </div>
+          ) : (
+            <form
+              action={markAsReturnedAction}
+              className="flex w-full flex-col gap-4"
+            >
+              <input type="hidden" name="ticket_id" defaultValue={ticketId} />
+              <input type="hidden" name="event_id" defaultValue={eventId} />
+              {markAsReturnedFields}
+              <Button
+                type="submit"
+                disabled={markAsReturnedPending}
+                className="min-h-[44px] w-full justify-start text-left"
+              >
+                {markAsReturnedPending
+                  ? "Marking as returned…"
+                  : "Mark as returned"}
+              </Button>
+            </form>
+          )
+        ) : // C-2 / D-11 / PAID-V6-01..06: an already-checked-in attendee who
         // still owes gets a "Mark as paid" CTA only (no "& check in"). Live
         // on a same-currency ticket — posts to markAsPaidAction. On a
         // cross-currency ticket (PAID-V6-05) it stays the inert, disabled
@@ -516,6 +684,21 @@ export function CheckInPanel({
       {markAsPaidState.errors?.event_id?.[0] ? (
         <FieldError message={markAsPaidState.errors.event_id[0]} />
       ) : null}
+      {markAsReturnedState.formError ? (
+        <p
+          role="alert"
+          className="flex items-center gap-1 text-[15px] leading-[1.55] text-destructive break-words"
+        >
+          <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+          {markAsReturnedState.formError}
+        </p>
+      ) : null}
+      {markAsReturnedState.errors?.ticket_id?.[0] ? (
+        <FieldError message={markAsReturnedState.errors.ticket_id[0]} />
+      ) : null}
+      {markAsReturnedState.errors?.event_id?.[0] ? (
+        <FieldError message={markAsReturnedState.errors.event_id[0]} />
+      ) : null}
 
       {statusIsCheckedIn || leftPositive ? (
         collectOpen ? (
@@ -526,9 +709,15 @@ export function CheckInPanel({
             onClick={() => setCollectOpen(true)}
             className="min-h-[44px] w-full justify-between text-left"
           >
-            <span>
-              Collect {balanceDisplay} {resolvedCurrency}
-            </span>
+            {isOverpaid ? (
+              <span>
+                Return {overpaidAmount ?? balanceDisplay} {resolvedCurrency}
+              </span>
+            ) : (
+              <span>
+                Collect {balanceDisplay} {resolvedCurrency}
+              </span>
+            )}
             <span aria-hidden="true" className="opacity-80">
               +
             </span>
