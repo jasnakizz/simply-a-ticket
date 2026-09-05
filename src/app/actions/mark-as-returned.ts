@@ -38,6 +38,8 @@ const MARK_AS_RETURNED_STALE =
   "Someone already recorded a return on this ticket. Reload the page to see the current balance.";
 const MARK_AS_RETURNED_UNREADABLE =
   "This ticket's recorded door payment can't be read. Check it in the database before returning more.";
+const MARK_AS_RETURNED_NOT_FOUND =
+  "Couldn't find this ticket. Reload the page and try again.";
 
 // Its OWN schema — never checkInSchema or markAsPaidSchema imported or
 // widened. The disabled submit button in the UI is convenience; this
@@ -144,7 +146,11 @@ export async function markAsReturned(
     return { formError: MARK_AS_RETURNED_NETWORK_ERROR };
   }
   if (!row) {
-    return { ok: false, notFound: true };
+    return {
+      ok: false,
+      notFound: true,
+      formError: MARK_AS_RETURNED_NOT_FOUND,
+    };
   }
 
   // Three guards, in order, mirroring markAsPaid's first three exactly.
@@ -305,5 +311,9 @@ export async function markAsReturned(
   }
 
   // Ticket state changed underneath in some other way — defensive.
-  return { ok: false, notFound: true };
+  return {
+    ok: false,
+    notFound: true,
+    formError: MARK_AS_RETURNED_NOT_FOUND,
+  };
 }
