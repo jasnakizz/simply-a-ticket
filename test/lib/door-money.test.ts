@@ -8,12 +8,14 @@ import {
   residualOwedForTicket,
   sumResidualOwedByCurrency,
   addCollectedAmount,
+  subtractCollectedAmount,
 } from "@/lib/door-money";
 import type {
   DoorMoneyRow,
   CollectedTicketRow,
   ResidualOwedRow,
   ResidualOwed,
+  SubtractCollectedAmountResult,
 } from "@/lib/door-money";
 
 /**
@@ -1043,5 +1045,182 @@ describe("addCollectedAmount — the settle-side exact adder (PAID-V6-03)", () =
     };
     expect(doorBalanceForTicket(row)!.minor).toBe(BigInt(-1));
     expect(residualOwedForTicket(row)).toBeNull();
+  });
+});
+
+/**
+ * subtractCollectedAmount (Phase 21, RETURN-01..04) — the return-side capped
+ * subtractor. This is the ONE genuinely new arithmetic primitive Phase 21
+ * introduces; it is the sole owner of the cap comparison (D-01/D-02/D-03 — a
+ * rejection, never a silent clamp). This describe block is the only place in
+ * the whole suite that calls subtractCollectedAmount directly — the
+ * schema-mirror battery in test/app/actions/mark-as-returned.schema.test.ts
+ * only source-greps mark-as-returned.ts, it never invokes this function.
+ * Comparisons here stay on the returned decimal strings and on BigInt values
+ * from doorBalanceForTicket, exactly like every other describe block in this
+ * file — no numeric coercion of a money string anywhere below.
+ */
+describe("subtractCollectedAmount — the return-side capped subtractor (RETURN-01..04)", () => {
+  // Owed "5.00" EUR, collected "20.00" EUR -> doorBalanceForTicket's minor is
+  // BigInt(-1500) — overpaid by exactly "15.00" EUR (21-01's own worked
+  // example, verbatim). Reused across the cap-boundary and
+  // unparseable-entered cases below rather than redeclared per test.
+  const OVERPAID_15_EUR: ResidualOwedRow = {
+    pay_at_door_amount: "5.00",
+    currency: "EUR",
+    pay_at_door_collected_amount: "20.00",
+    pay_at_door_collected_currency: "EUR",
+  };
+
+  it("subtractCollectedAmount not-overpaid, trigger 1: still owed, same currency", () => {
+    const ticket: ResidualOwedRow = {
+      pay_at_door_amount: "20.00",
+      currency: "EUR",
+      pay_at_door_collected_amount: "10.00",
+      pay_at_door_collected_currency: "EUR",
+    };
+    const result: SubtractCollectedAmountResult = subtractCollectedAmount(
+      ticket,
+      "5.00",
+    );
+    expect(result).toEqual({ ok: false, reason: "not-overpaid" });
+  });
+
+  it("subtractCollectedAmount not-overpaid, trigger 2: exact settle (minor exactly zero) is not overpaid", () => {
+    const ticket: ResidualOwedRow = {
+      pay_at_door_amount: "20.00",
+      currency: "EUR",
+      pay_at_door_collected_amount: "20.00",
+      pay_at_door_collected_currency: "EUR",
+    };
+    expect(subtractCollectedAmount(ticket, "5.00")).toEqual({
+      ok: false,
+      reason: "not-overpaid",
+    });
+  });
+
+  it("subtractCollectedAmount not-overpaid, trigger 3: doorBalanceForTicket returns null — absent ticket currency", () => {
+    const ticket: ResidualOwedRow = {
+      pay_at_door_amount: "20.00",
+      currency: null,
+      pay_at_door_collected_amount: "50.00",
+      pay_at_door_collected_currency: "EUR",
+    };
+    expect(subtractCollectedAmount(ticket, "5.00")).toEqual({
+      ok: false,
+      reason: "not-overpaid",
+    });
+  });
+
+  it("not-overpaid, trigger 4: a cross-currency collection is never credited (D-06's never-convert rule), even though it is a real recorded overpayment in the wrong currency", () => {
+    const ticket: ResidualOwedRow = {
+      pay_at_door_amount: "20.00",
+      currency: "EUR",
+      pay_at_door_collected_amount: "2400.00",
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(subtractCollectedAmount(ticket, "5.00")).toEqual({
+      ok: false,
+      reason: "not-overpaid",
+    });
+  });
+
+  it('exact cap: entering exactly "15.00" against OVERPAID_15_EUR lands at Settled, proven by re-feeding the result back through doorBalanceForTicket', () => {
+    const result = subtractCollectedAmount(OVERPAID_15_EUR, "15.00");
+    expect(result).toEqual({ ok: true, amount: "5.00" });
+
+    if (!result.ok) throw new Error("expected ok: true");
+    const settled: ResidualOwedRow = {
+      ...OVERPAID_15_EUR,
+      pay_at_door_collected_amount: result.amount,
+    };
+    expect(doorBalanceForTicket(settled)!.minor).toBe(BigInt(0));
+  });
+
+  it('one minor unit over the cap ("15.01") is REJECTED, not clamped', () => {
+    expect(subtractCollectedAmount(OVERPAID_15_EUR, "15.01")).toEqual({
+      ok: false,
+      reason: "cap",
+      capAmount: "15.00",
+      capCurrency: "EUR",
+    });
+  });
+
+  it('one minor unit under the cap ("14.99") writes exactly, leaving a smaller, still-negative Change balance', () => {
+    const result = subtractCollectedAmount(OVERPAID_15_EUR, "14.99");
+    expect(result).toEqual({ ok: true, amount: "5.01" });
+
+    if (!result.ok) throw new Error("expected ok: true");
+    const stillOverpaid: ResidualOwedRow = {
+      ...OVERPAID_15_EUR,
+      pay_at_door_collected_amount: result.amount,
+    };
+    expect(doorBalanceForTicket(stillOverpaid)!.minor).toBe(BigInt(-1));
+  });
+
+  it.each(["", "abc", "-1", "1.234"])(
+    'refuses an unparseable entered amount ("%s") against an overpaid ticket',
+    (entered) => {
+      expect(subtractCollectedAmount(OVERPAID_15_EUR, entered)).toEqual({
+        ok: false,
+        reason: "unparseable",
+      });
+    },
+  );
+
+  it('no binary-floating-point drift: owed "0.00" RSD, collected "0.30" RSD, entered "0.10" -> "0.20"', () => {
+    const ticket: ResidualOwedRow = {
+      pay_at_door_amount: "0.00",
+      currency: "RSD",
+      pay_at_door_collected_amount: "0.30",
+      pay_at_door_collected_currency: "RSD",
+    };
+    expect(subtractCollectedAmount(ticket, "0.10")).toEqual({
+      ok: true,
+      amount: "0.20",
+    });
+  });
+
+  // The malformed-but-present-existing INVARIANT — replaces a literal repro
+  // of the defensive `reason: "unparseable"`-on-existing branch, which is
+  // unreachable by construction: doorBalanceForTicket parses
+  // pay_at_door_collected_amount through this module's own private
+  // toMinorUnits FIRST, and treats ANY malformed-but-present value (or a
+  // cross-currency collection, per trigger 4 above) identically to "nothing
+  // collected" — so subtractCollectedAmount can only ever get past the
+  // not-overpaid guard when that same field parsed cleanly the first time.
+  // Its later re-derivation of minorExisting reads the EXACT SAME field
+  // through the EXACT SAME parser, so it cannot fail differently the second
+  // time. What IS testable is the invariant that makes the defensive branch
+  // dead code by construction, not untested: for every malformed-but-present
+  // stored collected amount, the ticket is never overpaid in the first
+  // place.
+  it.each(["abc", "", "-1", "1.234"])(
+    'the malformed-but-present-existing invariant: a stored collected amount of "%s" is treated as nothing collected, so the ticket is never overpaid — never "unparseable", never "cap", never ok: true',
+    (malformed) => {
+      const ticket: ResidualOwedRow = {
+        pay_at_door_amount: "10.00",
+        currency: "EUR",
+        pay_at_door_collected_amount: malformed,
+        pay_at_door_collected_currency: "EUR",
+      };
+      expect(subtractCollectedAmount(ticket, "5.00")).toEqual({
+        ok: false,
+        reason: "not-overpaid",
+      });
+    },
+  );
+
+  it("never flips Change into Owes (D-01), cross-checked against doorBalanceForTicket directly", () => {
+    for (const entered of ["1.00", "14.99", "15.00"]) {
+      const result = subtractCollectedAmount(OVERPAID_15_EUR, entered);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok: true");
+      const next: ResidualOwedRow = {
+        ...OVERPAID_15_EUR,
+        pay_at_door_collected_amount: result.amount,
+      };
+      expect(doorBalanceForTicket(next)!.minor <= BigInt(0)).toBe(true);
+    }
   });
 });
