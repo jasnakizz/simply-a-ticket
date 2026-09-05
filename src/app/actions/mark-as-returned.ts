@@ -171,11 +171,38 @@ export async function markAsReturned(
     };
   }
 
+  // The ONE call that replaces what would otherwise be a
+  // residualOwedForTicket-style guard plus an arithmetic call. This action
+  // performs no arithmetic and no cap comparison of its own — both live
+  // exclusively inside subtractCollectedAmount.
+  //
+  // WR-02: called BEFORE the cross-currency guard below (reordered from the
+  // original guard-then-subtract sequence) so a ticket that simply isn't
+  // overpaid gets the accurate "nothing to return" message rather than a
+  // currency-mismatch message that can misdescribe why the return was
+  // refused. A cross-currency collection never drives doorBalanceForTicket's
+  // signed balance negative in the first place (only a same-currency
+  // collection can), so checking "not overpaid" first is strictly more
+  // accurate and never masks a real cross-currency-and-overpaid case.
+  const result = subtractCollectedAmount(row, returnAmount);
+
+  if (!result.ok && result.reason === "not-overpaid") {
+    return {
+      ok: false,
+      notSettleable: true,
+      formError: MARK_AS_RETURNED_NOTHING_TO_RETURN,
+    };
+  }
+
   const storedCollectedCurrency = row.pay_at_door_collected_currency;
   // RETURN-04: computed directly from the two currency columns — a return
   // always reads and writes in pay_at_door_collected_currency, never the
   // ticket's original owed currency, so a cross-currency ticket cannot have
-  // its return misapplied.
+  // its return misapplied. Reached only once the ticket is confirmed
+  // overpaid (the not-overpaid short-circuit above already ran) — per the
+  // WR-02 comment above, a cross-currency collection can't have driven the
+  // ticket negative anyway, so this guard is now defensive rather than the
+  // primary refusal path, kept in case that invariant ever changes.
   if (
     typeof storedCollectedCurrency === "string" &&
     storedCollectedCurrency !== "" &&
@@ -188,20 +215,7 @@ export async function markAsReturned(
     };
   }
 
-  // The ONE call that replaces what would otherwise be a
-  // residualOwedForTicket-style guard plus an arithmetic call. This action
-  // performs no arithmetic and no cap comparison of its own — both live
-  // exclusively inside subtractCollectedAmount.
-  const result = subtractCollectedAmount(row, returnAmount);
-
   if (!result.ok) {
-    if (result.reason === "not-overpaid") {
-      return {
-        ok: false,
-        notSettleable: true,
-        formError: MARK_AS_RETURNED_NOTHING_TO_RETURN,
-      };
-    }
     if (result.reason === "cap") {
       // D-02: a field error naming the actual cap, computed via formatMoney
       // — never a hard-coded currency symbol, never a silent clamp.
