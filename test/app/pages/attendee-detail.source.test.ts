@@ -352,8 +352,11 @@ describe("ADETAIL-V5-03/05/06 — check-in is delegated to the CheckInPanel clie
     expect((detail.match(/<CheckInPanel\b/g) ?? []).length).toBe(1);
   });
 
-  it(`${DETAIL}: renders <CheckInPanel> behind the checked-in-and-settled read-out guard`, () => {
+  it(`${DETAIL}: renders <CheckInPanel> behind the checked-in-and-EXACTLY-settled read-out guard (D-06) — a checked-in ticket hides the panel only on a null/"0.00" signed balance, no longer wrongly hiding an overpaid/Change ticket too`, () => {
     expect(detail).toMatch(
+      /!\(\s*statusIsCheckedIn\s*&&\s*\(\s*strip\.balance\s*===\s*null\s*\|\|\s*strip\.balance\s*===\s*"0\.00"\s*\)\s*\)/,
+    );
+    expect(detail).not.toMatch(
       /!\(\s*statusIsCheckedIn\s*&&\s*!strip\.balanceIsPositive\s*\)/,
     );
   });

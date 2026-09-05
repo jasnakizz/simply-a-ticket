@@ -318,3 +318,81 @@ export function addCollectedAmount(
 
   return fromMinorUnits(minorExisting + minorEntered);
 }
+
+// ── The return-side subtractor, capped (Phase 21, RETURN-01..04) ──
+//
+// subtractCollectedAmount is markAsReturned's one arithmetic primitive — the
+// sibling of addCollectedAmount above, but for the opposite direction and
+// with a hard cap instead of no cap at all. It takes the WHOLE ticket row
+// (the same ResidualOwedRow shape doorBalanceForTicket already takes), not
+// an (existing, entered) pair: the cap bound (the outstanding overpayment)
+// has to be derived from doorBalanceForTicket's own signed balance, and
+// deriving it here — rather than handing the caller a bare minor-unit figure
+// to compare itself — keeps 100% of the bigint parsing and the cap
+// comparison inside this module, so the action performs zero arithmetic of
+// its own (see mark-as-returned.ts's own header comment).
+export type SubtractCollectedAmountResult =
+  | { ok: true; amount: string }
+  | { ok: false; reason: "not-overpaid" }
+  | { ok: false; reason: "cap"; capAmount: string; capCurrency: string }
+  | { ok: false; reason: "unparseable" };
+
+export function subtractCollectedAmount(
+  ticket: ResidualOwedRow,
+  entered: string,
+): SubtractCollectedAmountResult {
+  const balance = doorBalanceForTicket(ticket);
+  // A settled or still-owing ticket has nothing to return — only a strictly
+  // negative signed balance (the "Change" case) is overpaid.
+  if (balance === null || balance.minor >= ZERO) {
+    return { ok: false, reason: "not-overpaid" };
+  }
+
+  // balance.minor is strictly negative here, so negating it is safe and
+  // yields a positive BigInt — the outstanding overpayment, in minor units.
+  const capMinor = -balance.minor;
+  const capCurrency = balance.currency;
+
+  const minorEntered = toMinorUnits(entered);
+  if (minorEntered === null) return { ok: false, reason: "unparseable" };
+
+  // D-01/D-02: a rejection, never a silent clamp. An entered amount even one
+  // minor unit over the cap is refused, naming the actual cap so staff know
+  // what to type instead.
+  if (minorEntered > capMinor) {
+    return {
+      ok: false,
+      reason: "cap",
+      capAmount: fromMinorUnits(capMinor),
+      capCurrency,
+    };
+  }
+
+  // Re-derive the existing collected figure with the SAME absent-is-zero /
+  // present-but-unparseable-is-null rule addCollectedAmount uses above — an
+  // absent value contributes ZERO, a present-but-unparseable one is refused
+  // rather than silently treated as zero (which would erase recorded money).
+  const existingRaw = ticket.pay_at_door_collected_amount;
+  const existingIsAbsent =
+    existingRaw === null ||
+    existingRaw === undefined ||
+    (typeof existingRaw === "string" && existingRaw.trim() === "");
+
+  const minorExisting = existingIsAbsent ? ZERO : toMinorUnits(existingRaw);
+  // Unreachable in practice: doorBalanceForTicket has already subtracted a
+  // same-currency collected figure to produce a strictly-negative `.minor`,
+  // which means that figure was provably parseable. Kept as a defensive
+  // guard, in the same spirit as mark-as-paid.ts's own "unreachable in
+  // practice" comment on its settleAmount === undefined narrowing guard.
+  if (minorExisting === null) return { ok: false, reason: "unparseable" };
+
+  // Proof that the result can never go negative (D-01 — a return can never
+  // flip a ticket from Change into Owes): capMinor = minorExisting -
+  // minorOwed, and minorOwed >= 0 (doorBalanceForTicket never derives a
+  // negative owed figure), so capMinor <= minorExisting. The cap check above
+  // already guarantees minorEntered <= capMinor, therefore minorEntered <=
+  // minorExisting, therefore (minorExisting - minorEntered) >= 0. This is
+  // WHY fromMinorUnits — not sign-aware in this module — is safe to call
+  // here without a separate sign check.
+  return { ok: true, amount: fromMinorUnits(minorExisting - minorEntered) };
+}

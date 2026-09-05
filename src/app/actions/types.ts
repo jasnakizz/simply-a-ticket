@@ -94,3 +94,28 @@ export type MarkAsPaidState = {
     settle_amount: string;
   };
 };
+
+// Shared contract between the markAsReturned Server Action (src/app/actions/
+// mark-as-returned.ts) and the attendee detail page's check-in panel. Field-
+// for-field identical to MarkAsPaidState except `values` carries
+// `return_amount` instead of `settle_amount` — deliberately NOT a reuse or a
+// widening of MarkAsPaidState (own type, own field name), matching that
+// type's own "not a reuse" comment above.
+//
+// `staleBalance` here means "someone already recorded a RETURN on this
+// ticket" — a distinct fact from MarkAsPaidState's stale outcome ("someone
+// already recorded a payment"), even though both share the same shape and
+// the same guarded compare-and-swap mechanism underneath.
+export type MarkAsReturnedState = {
+  errors?: FieldErrors;
+  formError?: string;
+  ok?: boolean;
+  staleBalance?: boolean;
+  notSettleable?: boolean;
+  notFound?: boolean;
+  collectedAmount?: string;
+  collectedCurrency?: string | null;
+  values?: {
+    return_amount: string;
+  };
+};
