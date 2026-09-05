@@ -24,6 +24,10 @@ export type CreateTicketTypeState = {
 // currency dropdown, and pinning the contract here once means that plan
 // changes a form, not a type every consumer already depends on. The two
 // amounts and the currency echo back as empty strings until then.
+//
+// Phase 22 (NOTE-04) adds `phone_number` as a seventh field. Like the other
+// six, it echoes back on a rejected submit so the operator does not have to
+// retype it.
 export type OrderState = {
   errors?: FieldErrors;
   formError?: string;
@@ -34,6 +38,7 @@ export type OrderState = {
     paid_amount: string;
     pay_at_door_amount: string;
     currency: string;
+    phone_number: string;
   };
 };
 

@@ -322,6 +322,16 @@ describe("NOTE-02 / NOTE-03 — the note field is a persisted client island, the
     expect(ticketChain).toContain("note");
   });
 
+  it(`${DETAIL}: the single .from("tickets") select includes phone_number (NOTE-04)`, () => {
+    expect(ticketChain).toContain("phone_number");
+  });
+
+  it(`${DETAIL}: renders {ticket.phone_number ?? "—"} exactly once in the TICKET Phone row (NOTE-04)`, () => {
+    expect(
+      (detail.match(/\{ticket\.phone_number \?\? "—"\}/g) ?? []).length,
+    ).toBe(1);
+  });
+
   it(`${DETAIL}: imports NoteForm from ./note-form and renders it exactly once`, () => {
     expect(detail).toMatch(
       /import\s*\{\s*NoteForm\s*\}\s*from\s*"\.\/note-form"/,

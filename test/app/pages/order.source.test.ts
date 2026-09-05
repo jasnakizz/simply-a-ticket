@@ -37,6 +37,7 @@ describe("PAGE-07 — the order still posts every field createOrder reads (load-
     "paid_amount",
     "pay_at_door_amount",
     "currency",
+    "phone_number",
   ];
 
   for (const field of fields) {
@@ -69,6 +70,42 @@ describe("PAGE-07 — the order still posts every field createOrder reads (load-
 
   it("imports nothing from @/lib", () => {
     expect(form).not.toMatch(/from "@\/lib\//);
+  });
+});
+
+describe("NOTE-04 — the optional phone-number field sits below email, above the disclosure panel", () => {
+  it('carries type="tel" exactly once — a phone number is not a number input', () => {
+    expect((form.match(/type="tel"/g) ?? []).length).toBe(1);
+  });
+
+  it("carries maxLength={20} exactly once", () => {
+    expect((form.match(/maxLength=\{20\}/g) ?? []).length).toBe(1);
+  });
+
+  it('carries defaultValue={state.values?.phone_number ?? ""} exactly once — uncontrolled, no new useState', () => {
+    expect(
+      (form.match(/defaultValue=\{state\.values\?\.phone_number \?\? ""\}/g) ?? [])
+        .length,
+    ).toBe(1);
+  });
+
+  it("sits below the attendee-email field and above the disclosure trigger's aria-controls", () => {
+    const phoneIdx = form.indexOf('name="phone_number"');
+    const emailIdx = form.indexOf('name="attendee_email"');
+    const ariaControlsIdx = form.indexOf("aria-controls");
+    expect(phoneIdx).toBeGreaterThan(-1);
+    expect(emailIdx).toBeGreaterThan(-1);
+    expect(ariaControlsIdx).toBeGreaterThan(-1);
+    expect(phoneIdx).toBeGreaterThan(emailIdx);
+    expect(phoneIdx).toBeLessThan(ariaControlsIdx);
+  });
+
+  it("keeps the two amount inputs as the only type=number inputs (unaffected by the new tel input)", () => {
+    expect((form.match(/type="number"/g) ?? []).length).toBe(2);
+  });
+
+  it("adds no new useState (still exactly two)", () => {
+    expect((form.match(/useState\(/g) ?? []).length).toBe(2);
   });
 });
 

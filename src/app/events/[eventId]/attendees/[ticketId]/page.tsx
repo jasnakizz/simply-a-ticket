@@ -51,7 +51,7 @@ export default async function AttendeeDetailPage({
   const { data: ticket, error: ticketError } = await supabase
     .from("tickets")
     .select(
-      "id, event_id, ticket_type_id, attendee_name, attendee_email, status, checked_in_at, issued_at, qr_token, paid_amount::text, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency, pay_at_door_collected_at, note",
+      "id, event_id, ticket_type_id, attendee_name, attendee_email, status, checked_in_at, issued_at, qr_token, paid_amount::text, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency, pay_at_door_collected_at, note, phone_number",
     )
     .eq("id", ticketId)
     .eq("event_id", eventId)
@@ -330,7 +330,9 @@ export default async function AttendeeDetailPage({
           />
         </div>
 
-        {/* 6. TICKET — Issued (date only), Email, Phone (no data source, D-09). */}
+        {/* 6. TICKET — Issued (date only), Email, Phone (NOTE-04: renders the
+            stored phone_number when present; a ticket with none keeps the
+            em dash). */}
         <div className="flex flex-col border-t-2 border-border">
           <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground pt-3.5 pb-2">
             Ticket
@@ -347,7 +349,9 @@ export default async function AttendeeDetailPage({
           </div>
           <div className="flex items-center justify-between border-t border-border py-[10px] text-[13px]">
             <span className="text-muted-foreground">Phone</span>
-            <span className="font-semibold text-right">—</span>
+            <span className="font-semibold text-right">
+              {ticket.phone_number ?? "—"}
+            </span>
           </div>
         </div>
 
