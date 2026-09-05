@@ -103,5 +103,17 @@ export async function saveTicketNote(
     };
   }
 
-  return { ok: true };
+  // Echo the value actually written back on success too — not just on a
+  // rejected save. React resets an uncontrolled field to its CURRENT
+  // defaultValue prop once a <form action={...}> transition settles (this is
+  // documented React 19 form-action behaviour), and note-form.tsx's
+  // defaultValue is never re-derived from a fresh Server Component read (this
+  // file's own header comment: "no client-side refetch or navigation"). Without
+  // this echo, that reset would snap the field back to the STALE pre-edit
+  // initialNote prop even though the UPDATE above already wrote the new value
+  // — a stale-render bug, not a data-integrity bug (the write was always
+  // correct). "" here mirrors the field-error echo's convention of always
+  // returning a string, and matches what a cleared-and-saved note should show:
+  // empty with its placeholder, never the literal text "null".
+  return { ok: true, values: { note: note ?? "" } };
 }

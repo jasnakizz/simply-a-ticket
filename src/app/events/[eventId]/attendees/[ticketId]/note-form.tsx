@@ -79,6 +79,15 @@ export function NoteForm({
   // mirrors check-in-panel.tsx's useActionState call sites.
   const [state, action, pending] = useActionState(saveTicketNoteWithGuard, initialSaveTicketNote);
 
+  // The Textarea below prefers state.values.note over initialNote, on BOTH
+  // outcomes (success and rejection). This field is uncontrolled, and React
+  // resets an uncontrolled field to its CURRENT defaultValue prop right after
+  // a <form action={...}> transition settles — since initialNote never
+  // changes after a save (no client-side refetch, see header comment above),
+  // reading only initialNote would snap a just-saved value back to what was
+  // on the page before the edit, even though the write itself already
+  // succeeded. Reading state.values.note first means the reset lands on the
+  // freshly-saved text instead.
   return (
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="ticket_id" value={ticketId} />
@@ -87,7 +96,7 @@ export function NoteForm({
         name="note"
         className="min-h-[74px]"
         maxLength={500}
-        defaultValue={initialNote ?? ""}
+        defaultValue={state.values?.note ?? initialNote ?? ""}
         placeholder="Anything the door should know — plus one, guest of the band, still owes for a friend…"
       />
       {state.errors?.note?.[0] ? (

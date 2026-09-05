@@ -259,3 +259,34 @@ describe("NOTE-02 / T-22-01 / T-22-02 — the guarded-write wiring (source)", ()
     expect(source).not.toContain('from "@/lib/door-money"');
   });
 });
+
+/**
+ * Bug fix (post-Task-3 human-verify): a successful save left the on-screen
+ * Textarea showing the STALE pre-edit value until a manual reload, even
+ * though the write itself was always correct. Root cause: the Textarea is
+ * uncontrolled, and React resets an uncontrolled <form action={...}> field to
+ * its CURRENT defaultValue prop once the action's transition settles;
+ * initialNote never changes after a save (no client-side refetch, by
+ * design), so the reset snapped back to the stale prop. Fix: the success
+ * return now echoes the written value too (not just the failure path, which
+ * already echoed), so note-form.tsx's defaultValue can prefer it. This
+ * action has no live-DB unit test here (saveTicketNote's success branch
+ * requires a real Supabase round trip — see scripts/smoke-note-phone.mjs for
+ * the live proof), so this is a source-parity gate, not a behavioural one.
+ */
+describe("NOTE-02 — success path echoes the written value back (fixes the post-save stale-render bug)", () => {
+  it("the success return includes a values.note key, not just { ok: true }", () => {
+    expect(code).toContain("return { ok: true, values: { note: note ?? \"\" } };");
+  });
+
+  it("the success-path values.note falls back to the empty string, never the literal null, when the note was cleared", () => {
+    // Guards against a regression like `values: { note: note }` (no `?? ""`),
+    // which would echo `undefined`/`null` back into React state instead of
+    // the empty string a cleared-and-saved note must show.
+    const successReturnMatch = code.match(
+      /return \{ ok: true, values: \{ note: ([^}]+) \} \};/,
+    );
+    expect(successReturnMatch).not.toBeNull();
+    expect(successReturnMatch?.[1].trim()).toBe('note ?? ""');
+  });
+});

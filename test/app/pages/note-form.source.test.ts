@@ -45,8 +45,16 @@ describe("NOTE-02/-03 — note-form.tsx is a client island wired to saveTicketNo
     expect((code.match(/name="note"/g) ?? []).length).toBe(1);
     expect((code.match(/name="ticket_id"/g) ?? []).length).toBe(1);
     expect((code.match(/name="event_id"/g) ?? []).length).toBe(1);
-    expect(code).toContain('defaultValue={initialNote ?? ""}');
+    expect(code).toContain('defaultValue={state.values?.note ?? initialNote ?? ""}');
     expect(code).toContain("maxLength={500}");
+  });
+
+  it("prefers the action's echoed state.values.note over initialNote so a save's post-reset defaultValue is never stale — the bug this gate protects against: without this, React resets the uncontrolled Textarea to a stale initialNote after every successful save (see ticket-note.ts's own comment on the success return)", () => {
+    // A regression to defaultValue={initialNote ?? ""} (dropping the
+    // state.values?.note ?? prefix) would make this fail while the OLDER
+    // "renders the note textarea..." gate above would ALSO fail — both gates
+    // together pin the exact final expression, not just its presence.
+    expect(code).not.toContain('defaultValue={initialNote ?? ""}');
   });
 
   it("does not use dangerouslySetInnerHTML anywhere — the note is rendered only via defaultValue", () => {
