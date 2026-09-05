@@ -205,8 +205,15 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
   // retired the two "no live data" assertions at the top of this file. Each
   // read's own shape is pinned by the DASH-V3-01 / DASH-V3-03 describes at the
   // foot of this file.
-  it("issues four tickets reads — the two count reads, the door list and the owed subtotals", () => {
-    expect(ticketChains.length).toBe(4);
+  //
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds the dedicated event-scoped COLLECTED read (backs the new 3-cell
+  // door-money strip via sumCollectedByCurrency), so the tickets-read count
+  // goes 4 -> 5. The old "issues four" assertion went false the moment that
+  // fifth `.from("tickets")` chain landed; the count is raised and the title
+  // renamed to name all five reads so a future regression fails BY NAME.
+  it("issues five tickets reads — the two count reads, the door list, the owed subtotals and the collected total", () => {
+    expect(ticketChains.length).toBe(5);
   });
 
   it('scopes every tickets read to this event via .eq("event_id", eventId)', () => {
@@ -244,11 +251,18 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
     expect(withStatus.length).toBe(2);
   });
 
-  it("leaves the sold figure and the residual owed read carrying no status filter", () => {
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): the new
+  // COLLECTED read is event-scoped and carries NO status filter — decision P1
+  // does the checked-in / not-checked-in split in memory, never as a query
+  // filter, so the DASH-V6-02 equivalence gate keeps binding. The "no status
+  // filter" chain count therefore goes 2 -> 3 (sold, residual-owed, collected).
+  // The old "exactly 2" went false when the collected chain landed; count and
+  // title updated so a re-added status filter fails BY NAME.
+  it("leaves the sold figure, the residual owed read and the collected total carrying no status filter", () => {
     const withoutStatus = ticketChains.filter(
       (c) => !c.includes('.eq("status"'),
     );
-    expect(withoutStatus.length).toBe(2);
+    expect(withoutStatus.length).toBe(3);
   });
 
   it("guards the zero denominator before any division", () => {
@@ -444,18 +458,41 @@ describe("DASH-V3-03 — the per-currency still-owed subtotal, one shared helper
     );
   });
 
-  it("renders the subtotals by mapping the helper result — no hardcoded EUR/RSD branch", () => {
-    expect(dash).toMatch(/owedSubtotals\.map\(/);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // deletes the single `owedSubtotals` list and the paragraph that mapped it,
+  // replacing them with the module-local <DoorMoneyCell> component (which maps
+  // its OWN `subtotals` prop) fed by three named subtotal lists. The
+  // `owedSubtotals.map(` anchor went false when that identifier was removed;
+  // the surviving property — "every cell maps a helper result, never a
+  // hardcoded currency branch" — is proven via the component's own map plus
+  // the three wired prop lists. Both currency-literal negatives kept.
+  it("renders every cell by mapping the helper result — no hardcoded EUR/RSD branch", () => {
+    expect(dash).toMatch(/subtotals\.map\(/);
+    expect(dash).toContain("subtotals={collectedSubtotals}");
+    expect(dash).toContain("subtotals={owedCheckedInSubtotals}");
+    expect(dash).toContain("subtotals={owedNotCheckedInSubtotals}");
     expect(dash).not.toMatch(/"EUR"/);
     expect(dash).not.toMatch(/"RSD"/);
   });
 
-  it("carries the explicit zero state exactly once", () => {
-    expect((dash.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): D-05 — the
+  // compact 3-cell strip drops the wide-block "Nothing owed at the door."
+  // sentence entirely and falls back to a bare `0.00` literal in an empty
+  // cell. The "exactly once" count went false the moment the sentence was
+  // deleted; the surviving property is its ABSENCE plus the presence of the
+  // bare fallback.
+  it("uses the bare 0.00 fallback for an empty cell, not the retired wide-block sentence (D-05)", () => {
+    expect(dash).not.toContain("Nothing owed at the door.");
+    expect(dash).toContain('"0.00"');
   });
 
-  it("throws on the owed read too — at least five throws in the file", () => {
-    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(5);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds the COLLECTED read with its own `if (collectedTicketsError) throw`
+  // guard, so the file's throw count goes 5 -> 6. Bound raised in lockstep and
+  // the title renamed to name the collected read; a dropped throw-on-error on
+  // any read still fails this BY NAME.
+  it("throws on the collected read too — at least six throws in the file", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(6);
   });
 });
 

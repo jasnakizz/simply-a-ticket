@@ -390,11 +390,21 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     );
   });
 
-  it(`${DASHBOARD}: the residual owed chain is structurally identical to the attendees owed chain — same columns, same filters (DASH-V6-02)`, () => {
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds exactly one column — `status` — to the DASHBOARD's residual owed
+  // select so it can partition the residual into checked-in / not-checked-in
+  // IN MEMORY (decision P1) without a second query. The strict
+  // `d.columns === a.columns` half of the DASH-V6-02 proof went false on that
+  // one extra column. The gate keeps its teeth by proving a SUPERSET instead:
+  // the dashboard chain is the attendees chain plus the Phase 23 partition key
+  // (`status` present as a COLUMN, never as a `.eq("status"` FILTER), identical
+  // filter set). Both length sanity checks and the filter-equality check are
+  // kept exactly as they were.
+  it(`${DASHBOARD}: the residual owed chain is the attendees owed chain plus the Phase 23 partition key — identical filters, one extra "status" column (DASH-V6-02, retargeted by plan 23-01)`, () => {
     expect(dashboardOwedChain).toBeDefined();
     expect(attendeesOwedChain).toBeDefined();
 
-    // The dashboard chain on its own: event-scoped, NO status filter, keeps the
+    // The dashboard chain on its own: event-scoped, NO status FILTER, keeps the
     // not-null guard, and selects the owed amount cast to text plus both
     // collected columns.
     expect(dashboardOwedChain).toContain('.eq("event_id", eventId)');
@@ -426,7 +436,10 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
 
     const d = norm(dashboardOwedChain as string);
     const a = norm(attendeesOwedChain as string);
-    expect(d.columns).toEqual(a.columns);
+    // Superset, not identity: the dashboard chain's columns are the attendees
+    // chain's columns plus exactly the `status` partition key.
+    expect(d.columns.filter((c) => c !== "status")).toEqual(a.columns);
+    expect(d.columns).toContain("status");
     expect(d.filters).toEqual(a.filters);
     expect(d.columns.length).toBeGreaterThan(0);
     expect(d.filters.length).toBeGreaterThan(0);
@@ -448,15 +461,18 @@ describe("Gate 11 — the honest empty states (ATTENDEE-V3-04)", () => {
     expect(new Set(emptyStateStrings).size).toBe(4);
   });
 
-  it(`${ATTENDEES}: the still-to-collect empty sentence is byte-identical to the one ${DASHBOARD} ships`, () => {
-    const marker = "owedSubtotals.length === 0 ? (";
-    const seg = dashboard.slice(dashboard.indexOf(marker));
-    const m = seg.match(/text-muted-foreground">\s*([^<]+?)\s*<\/p>/);
-    const dashboardOwedEmptySentence = m ? m[1].trim() : null;
-    expect(dashboardOwedEmptySentence).toBeTruthy();
-    expect(
-      attendees.split(dashboardOwedEmptySentence as string).length - 1,
-    ).toBe(1);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // deletes the DASHBOARD's `owedSubtotals.length === 0 ? (` marker and the
+  // wide-block "Nothing owed at the door." sentence it anchored — the compact
+  // 3-cell strip uses a bare `0.00` fallback (D-05) instead. The byte-identity
+  // assertion had nothing left to anchor on. The property that survives until
+  // Phase 24 removes the attendees-list boxes: the attendees page still
+  // carries that wide-block sentence exactly once, and the dashboard carries
+  // it nowhere.
+  it(`${ATTENDEES}: keeps its own wide-block still-to-collect empty sentence exactly once, and ${DASHBOARD} no longer ships that sentence at all`, () => {
+    const sentence = "Nothing owed at the door.";
+    expect(attendees.split(sentence).length - 1).toBe(1);
+    expect(dashboard).not.toContain(sentence);
   });
 });
 

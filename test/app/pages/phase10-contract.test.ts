@@ -78,8 +78,13 @@ describe("Gate 1 — no placeholder survives on the dashboard (ROADMAP criterion
 });
 
 describe("Gate 2 — every figure is query-backed and event-scoped (ROADMAP criterion 1 / security spine)", () => {
-  it(`${PAGE}: issues exactly four .from("tickets") reads`, () => {
-    expect(ticketChains.length).toBe(4);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds the dedicated event-scoped COLLECTED read backing the new dashboard
+  // door-money strip, taking the tickets-read count 4 -> 5. The "exactly four"
+  // assertion went false when that fifth `.from("tickets")` chain landed; the
+  // event-scoping half below is unchanged and still binds every chain.
+  it(`${PAGE}: issues exactly five .from("tickets") reads`, () => {
+    expect(ticketChains.length).toBe(5);
   });
 
   it(`${PAGE}: every .from("tickets") chain carries .eq("event_id", eventId)`, () => {
@@ -204,7 +209,14 @@ describe("Gate 8 — the honest empty states are byte-identical (ROADMAP criteri
     );
   });
 
-  it(`${PAGE}: keeps the explicit zero-owed sentence verbatim, exactly once`, () => {
-    expect((page.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): DASH-01 /
+  // D-05 — plan 23-01 deletes the "N tickets still owe … at the door"
+  // paragraph and its "Nothing owed at the door." empty sentence entirely,
+  // replacing them with the compact 3-cell strip and its bare `0.00` fallback.
+  // The "exactly once" count went false on the deletion; the surviving
+  // property is the sentence's ABSENCE. The byte-identical door-list empty
+  // sentence assertion above it is untouched.
+  it(`${PAGE}: no longer carries the retired zero-owed sentence (DASH-01 / D-05)`, () => {
+    expect(page).not.toContain("Nothing owed at the door.");
   });
 });
