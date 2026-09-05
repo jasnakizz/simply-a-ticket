@@ -33,6 +33,12 @@ const orderSchema = z.object({
   paid_amount: amountSchema,
   pay_at_door_amount: amountSchema,
   currency: z.enum(["EUR", "RSD"]).default("RSD"),
+  phone_number: z
+    .string()
+    .trim()
+    .max(20, "Phone number must be 20 characters or fewer.")
+    .transform((value) => (value === "" ? undefined : value))
+    .optional(),
 });
 
 describe("ORDER-02: orderSchema validation", () => {
@@ -244,6 +250,92 @@ describe("ORDER-02: orderSchema validation", () => {
   });
 });
 
+describe("NOTE-04: orderSchema.phone_number validation", () => {
+  const baseData = {
+    event_id: "6f261a6c-3bcc-4dc4-8b00-ab00e325e5e7",
+    ticket_type_id: "9f261a6c-3bcc-4dc4-8b00-ab00e325e5e8",
+    attendee_name: "John Doe",
+    attendee_email: "john@example.com",
+    paid_amount: "",
+    pay_at_door_amount: "",
+    currency: undefined,
+  };
+
+  it("accepts a well-formed phone number and stores it unchanged", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      phone_number: "+381 64 123 4567",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.phone_number).toBe("+381 64 123 4567");
+    }
+  });
+
+  it("transforms a blank phone_number to undefined (stored as SQL NULL)", () => {
+    const result = orderSchema.safeParse({ ...baseData, phone_number: "" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.phone_number).toBeUndefined();
+    }
+  });
+
+  it("transforms a whitespace-only phone_number to undefined — same outcome as blank", () => {
+    const result = orderSchema.safeParse({ ...baseData, phone_number: "   " });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.phone_number).toBeUndefined();
+    }
+  });
+
+  it("parses successfully when phone_number is omitted from the payload entirely", () => {
+    // baseData itself carries no phone_number key at all.
+    const result = orderSchema.safeParse(baseData);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a phone number of exactly 20 characters (boundary, accept at N)", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      phone_number: "A".repeat(20),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a phone number of 21 characters with the max-length message (boundary, reject at N+1)", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      phone_number: "A".repeat(21),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      expect(errors.phone_number).toContain(
+        "Phone number must be 20 characters or fewer.",
+      );
+    }
+  });
+
+  it("trims surrounding whitespace before storing", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      phone_number: "  +381 64 123 4567  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.phone_number).toBe("+381 64 123 4567");
+    }
+  });
+
+  it("accepts non-numeric-looking text — deliberately no format validation", () => {
+    const result = orderSchema.safeParse({
+      ...baseData,
+      phone_number: "not a phone at all",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("ORDER-04/ORDER-05: amountSchema validation", () => {
   it("transforms blank string to undefined", () => {
     const result = amountSchema.safeParse("");
@@ -350,6 +442,18 @@ describe("LIMIT-V5-03/-04 source parity — the shipped schema and inputs carry 
     const code = readCode("src/app/events/[eventId]/order/order-form.tsx");
     expect(code).toContain("maxLength={100}");
   });
+
+  it("src/app/actions/orders.ts carries the exact .max(20, ...) call for phone_number (NOTE-04)", () => {
+    const code = readCode("src/app/actions/orders.ts");
+    expect(code).toContain(
+      '.max(20, "Phone number must be 20 characters or fewer.")',
+    );
+  });
+
+  it("src/app/events/[eventId]/order/order-form.tsx carries maxLength={20} on the phone-number Input (NOTE-04)", () => {
+    const code = readCode("src/app/events/[eventId]/order/order-form.tsx");
+    expect(code).toContain("maxLength={20}");
+  });
 });
 
 describe("LIMIT-V5-04/-05 — reject, never truncate; no migration, no DB CHECK", () => {
@@ -383,5 +487,44 @@ describe("LIMIT-V5-04/-05 — reject, never truncate; no migration, no DB CHECK"
     // address is never shortened to fit.
     expect(safeParseIdx).toBeLessThan(sendEmailIdx);
     expect(safeParseIdx).toBeLessThan(serviceClientIdx);
+  });
+});
+
+describe("T-22-11 — the phone number never reaches the attendee's inbox", () => {
+  // Extract the sendTicketEmail(...) argument object by slicing from the call
+  // site to its closing `})`, then pull the top-level keys out of it. A
+  // positive equality gate — an eleventh key added later fails by name,
+  // unlike a `not.toContain("phone_number")` blocklist which a differently
+  // named leak would silently evade.
+  it("src/app/actions/orders.ts: the sendTicketEmail argument object's top-level key list is exactly the ten pre-Phase-22 keys", () => {
+    const src = readSrc("src/app/actions/orders.ts");
+    const start = src.indexOf("sendTicketEmail({");
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf("});", start);
+    expect(end).toBeGreaterThan(start);
+    const argSlice = src.slice(start, end);
+    // Matches both `key: value,` and shorthand `key,` property lines (e.g.
+    // `qrBase64,` and `currency,` in the shipped source), while a `//`
+    // comment line never matches since it starts with neither.
+    const keys = [
+      ...argSlice.matchAll(/^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*[,:]/gm),
+    ].map((m) => m[1]);
+    expect(keys).toEqual([
+      "to",
+      "attendeeName",
+      "eventName",
+      "eventDate",
+      "eventLocation",
+      "ticketTypeName",
+      "ticketTypeDescription",
+      "qrBase64",
+      "payAtDoorAmount",
+      "currency",
+    ]);
+  });
+
+  it("src/app/actions/orders.ts: the tickets insert writes phone_number ?? null", () => {
+    const code = readCode("src/app/actions/orders.ts");
+    expect(code).toContain("phone_number: phone_number ?? null");
   });
 });

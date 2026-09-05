@@ -24,6 +24,10 @@ export type CreateTicketTypeState = {
 // currency dropdown, and pinning the contract here once means that plan
 // changes a form, not a type every consumer already depends on. The two
 // amounts and the currency echo back as empty strings until then.
+//
+// Phase 22 (NOTE-04) adds `phone_number` as a seventh field. Like the other
+// six, it echoes back on a rejected submit so the operator does not have to
+// retype it.
 export type OrderState = {
   errors?: FieldErrors;
   formError?: string;
@@ -34,6 +38,7 @@ export type OrderState = {
     paid_amount: string;
     pay_at_door_amount: string;
     currency: string;
+    phone_number: string;
   };
 };
 
@@ -117,5 +122,23 @@ export type MarkAsReturnedState = {
   collectedCurrency?: string | null;
   values?: {
     return_amount: string;
+  };
+};
+
+// Shared contract between the saveTicketNote Server Action (src/app/actions/
+// ticket-note.ts) and the attendee detail page's NoteForm client island.
+// Deliberately its own type, not a widening of MarkAsReturnedState or
+// MarkAsPaidState even though the shape overlaps: this action has no
+// stale-snapshot outcome at all, because it is not a compare-and-swap.
+// `saveTicketNote` is a plain last-write-wins UPDATE — a note carries no
+// arithmetic a lost update could corrupt and no exactly-once promise, unlike
+// the checked-in-attendee door-money actions this type sits beside.
+export type SaveTicketNoteState = {
+  errors?: FieldErrors;
+  formError?: string;
+  ok?: boolean;
+  notFound?: boolean;
+  values?: {
+    note: string;
   };
 };

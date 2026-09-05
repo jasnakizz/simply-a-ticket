@@ -50,6 +50,19 @@ const orderSchema = z.object({
   paid_amount: amountSchema,
   pay_at_door_amount: amountSchema,
   currency: z.enum(["EUR", "RSD"]).default("RSD"),
+  // Optional staff bookkeeping (NOTE-04), free text — never parsed as a
+  // number. The cap runs BEFORE the empty-to-undefined transform so an
+  // over-length value is reported as over-length, not silently accepted as
+  // "not blank" (LIMIT-V5-04/-05 house rule). Deliberately no format check:
+  // staff enter local Serbian and international numbers in whatever shape
+  // they were given (leading plus sign, spaces, punctuation), and a format
+  // rule would reject legitimate input for no security or correctness gain.
+  phone_number: z
+    .string()
+    .trim()
+    .max(20, "Phone number must be 20 characters or fewer.")
+    .transform((value) => (value === "" ? undefined : value))
+    .optional(),
 });
 
 export async function createOrder(
@@ -66,6 +79,7 @@ export async function createOrder(
   const rawPaidAmount = formData.get("paid_amount");
   const rawPayAtDoorAmount = formData.get("pay_at_door_amount");
   const rawCurrency = formData.get("currency");
+  const rawPhoneNumber = formData.get("phone_number");
 
   // Echoed back on every early return. React resets an uncontrolled form to
   // its defaultValue after an action settles, so without echoing the retry
@@ -80,6 +94,7 @@ export async function createOrder(
     paid_amount: String(rawPaidAmount ?? ""),
     pay_at_door_amount: String(rawPayAtDoorAmount ?? ""),
     currency: String(rawCurrency ?? ""),
+    phone_number: String(rawPhoneNumber ?? ""),
   };
 
   const parsed = orderSchema.safeParse({
@@ -90,6 +105,7 @@ export async function createOrder(
     paid_amount: rawPaidAmount ?? "",
     pay_at_door_amount: rawPayAtDoorAmount ?? "",
     currency: rawCurrency ?? undefined,
+    phone_number: rawPhoneNumber ?? "",
   });
 
   if (!parsed.success) {
@@ -106,6 +122,7 @@ export async function createOrder(
     paid_amount,
     pay_at_door_amount,
     currency,
+    phone_number,
   } = parsed.data;
 
   const supabase = createServiceClient();
@@ -213,6 +230,7 @@ export async function createOrder(
         paid_amount: paid_amount ?? null,
         pay_at_door_amount: pay_at_door_amount ?? null,
         currency,
+        phone_number: phone_number ?? null,
       })
       .select("id")
       .single();

@@ -156,6 +156,25 @@ export function OrderForm({
         )}
       </div>
 
+      {/* Phone number (NOTE-04) — optional staff bookkeeping, never sent to
+          the attendee's email. Uncontrolled like every other field on this
+          form: no new useState, an existing gate counts exactly two. */}
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="phone_number" className={labelClassName}>
+          Phone number (optional)
+        </Label>
+        <Input
+          id="phone_number"
+          name="phone_number"
+          type="tel"
+          maxLength={20}
+          defaultValue={state.values?.phone_number ?? ""}
+        />
+        {state.errors?.phone_number?.[0] && (
+          <FieldError message={state.errors.phone_number[0]} />
+        )}
+      </div>
+
       {/* Disclosure trigger — the explicit button type is critical: a bare
           submit-type button inside a form submits it. */}
       <button

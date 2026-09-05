@@ -317,16 +317,43 @@ describe("ADETAIL-V5-07 / T-17-01 — qr_token is select-only and never leaked",
   });
 });
 
-describe("D-08 / D-09 — inert NOTE and data-less Phone", () => {
-  it(`${DETAIL}: renders a Textarea with no name an action reads and no persistence wiring`, () => {
-    expect(detail).toMatch(/<Textarea\b/);
-    expect(detail).not.toMatch(/<Textarea[^>]*\sname=/);
-    expect(detail).not.toContain("updateTicketNote");
-    expect(detail).not.toContain("defaultValue");
+describe("NOTE-02 / NOTE-03 — the note field is a persisted client island, the page stays a Server Component", () => {
+  it(`${DETAIL}: the single .from("tickets") select includes note`, () => {
+    expect(ticketChain).toContain("note");
   });
 
-  it(`${DETAIL}: the TICKET read fetches no phone column — there is none`, () => {
-    expect(ticketChain).not.toMatch(/phone/i);
+  it(`${DETAIL}: the single .from("tickets") select includes phone_number (NOTE-04)`, () => {
+    expect(ticketChain).toContain("phone_number");
+  });
+
+  it(`${DETAIL}: renders {ticket.phone_number ?? "—"} exactly once in the TICKET Phone row (NOTE-04)`, () => {
+    expect(
+      (detail.match(/\{ticket\.phone_number \?\? "—"\}/g) ?? []).length,
+    ).toBe(1);
+  });
+
+  it(`${DETAIL}: imports NoteForm from ./note-form and renders it exactly once`, () => {
+    expect(detail).toMatch(
+      /import\s*\{\s*NoteForm\s*\}\s*from\s*"\.\/note-form"/,
+    );
+    expect((detail.match(/<NoteForm\b/g) ?? []).length).toBe(1);
+  });
+
+  it(`${DETAIL}: passes initialNote={ticket.note} exactly once — the stored value threads into the island`, () => {
+    expect((detail.match(/initialNote=\{ticket\.note\}/g) ?? []).length).toBe(
+      1,
+    );
+  });
+
+  it(`${DETAIL}: the page still wires no client directive, hook, or <form> of its own — all note interactivity lives in NoteForm`, () => {
+    expect(detail).not.toContain("use client");
+    expect(detail).not.toMatch(/\buseActionState\b/);
+    expect(detail).not.toMatch(/<form\b/);
+    expect(detail).not.toContain("saveTicketNote");
+  });
+
+  it(`${DETAIL}: still issues exactly one .from("tickets") read`, () => {
+    expect(ticketChains.length).toBe(1);
   });
 });
 
