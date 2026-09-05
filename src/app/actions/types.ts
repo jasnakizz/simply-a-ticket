@@ -119,3 +119,21 @@ export type MarkAsReturnedState = {
     return_amount: string;
   };
 };
+
+// Shared contract between the saveTicketNote Server Action (src/app/actions/
+// ticket-note.ts) and the attendee detail page's NoteForm client island.
+// Deliberately its own type, not a widening of MarkAsReturnedState or
+// MarkAsPaidState even though the shape overlaps: this action has no
+// stale-snapshot outcome at all, because it is not a compare-and-swap.
+// `saveTicketNote` is a plain last-write-wins UPDATE — a note carries no
+// arithmetic a lost update could corrupt and no exactly-once promise, unlike
+// the checked-in-attendee door-money actions this type sits beside.
+export type SaveTicketNoteState = {
+  errors?: FieldErrors;
+  formError?: string;
+  ok?: boolean;
+  notFound?: boolean;
+  values?: {
+    note: string;
+  };
+};

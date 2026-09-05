@@ -12,8 +12,8 @@ import {
 } from "@/lib/attendee-money";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { CheckInPanel } from "./check-in-panel";
+import { NoteForm } from "./note-form";
 
 // Same reasoning as every other /events page reading live Supabase data: staff
 // need the current ticket row, not a build-time snapshot. Living inside the
@@ -51,7 +51,7 @@ export default async function AttendeeDetailPage({
   const { data: ticket, error: ticketError } = await supabase
     .from("tickets")
     .select(
-      "id, event_id, ticket_type_id, attendee_name, attendee_email, status, checked_in_at, issued_at, qr_token, paid_amount::text, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency, pay_at_door_collected_at",
+      "id, event_id, ticket_type_id, attendee_name, attendee_email, status, checked_in_at, issued_at, qr_token, paid_amount::text, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency, pay_at_door_collected_at, note",
     )
     .eq("id", ticketId)
     .eq("event_id", eventId)
@@ -314,16 +314,19 @@ export default async function AttendeeDetailPage({
           ) : null}
         </div>
 
-        {/* 5. NOTE — renders per the handoff but persists nothing this phase
-            (D-08): not wired to persistence, no client handler. The note
-            column arrives in Phase 18. */}
+        {/* 5. NOTE — the second client island on the page (NOTE-02/-03). The
+            page itself stays a Server Component: the wrapper div, its 2px
+            top rule and the uppercase "Note" label live here unchanged; all
+            note interactivity (the form, the save action, the field error /
+            confirmation copy) lives inside NoteForm. */}
         <div className="flex flex-col gap-2 border-t-2 border-border pt-3.5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
             Note
           </p>
-          <Textarea
-            className="min-h-[74px]"
-            placeholder="Anything the door should know — plus one, guest of the band, still owes for a friend…"
+          <NoteForm
+            ticketId={ticket.id}
+            eventId={eventId}
+            initialNote={ticket.note}
           />
         </div>
 
