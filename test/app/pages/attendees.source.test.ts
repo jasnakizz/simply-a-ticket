@@ -783,3 +783,75 @@ describe("SEARCH-01 — the attendees list carries no event-wide door-money surf
     expect((doorMoney.match(/export function /g) ?? []).length).toBe(7);
   });
 });
+
+/**
+ * SEARCH-02 (plan 24-03 Task 2) — the PAGE side of the delegation.
+ *
+ * The island's own source contract lives in attendee-search.source.test.ts;
+ * this describe pins what the attendees PAGE must still be after the rewire:
+ * the list region is handed to ONE client island and nothing else moved — the
+ * per-row <li> markup is still authored here, the page is still a Server
+ * Component, and the chip verdict is still what decides the default view.
+ */
+describe("SEARCH-02 — the list region is delegated to one client island and nothing else moved", () => {
+  const island = readCode(
+    "src/app/events/[eventId]/attendees/attendee-search.tsx",
+  );
+
+  it("imports AttendeeSearch as a value and AttendeeSearchItem with import type — the D-02 match rule and D-04 chip suspension live in the island, not the page", () => {
+    expect(attendees).toContain(
+      'import { AttendeeSearch } from "./attendee-search";',
+    );
+    expect(attendees).toContain(
+      'import type { AttendeeSearchItem } from "./attendee-search";',
+    );
+    expect(island).toMatch(/item\.name\.toLowerCase\(\)\.includes\(term\)/);
+  });
+
+  it("renders the AttendeeSearch island exactly once, with exactly the five declared props — items, hasActiveFilter, filterSummary, emptyState, clearFilters — and no sixth", () => {
+    expect((attendees.match(/<AttendeeSearch\b/g) ?? []).length).toBe(1);
+    const tagStart = attendees.indexOf("<AttendeeSearch");
+    const tag = attendees.slice(
+      tagStart,
+      attendees.indexOf("\n          />", tagStart),
+    );
+    const ownProps = (tag.match(/\n {12}(\w+)=\{/g) ?? [])
+      .map((m) => m.trim().replace(/=\{$/, ""))
+      .sort();
+    expect(ownProps).toEqual([
+      "clearFilters",
+      "emptyState",
+      "filterSummary",
+      "hasActiveFilter",
+      "items",
+    ]);
+  });
+
+  it("builds one search item per FETCHED attendee — the item map runs over the raw fetched array, not the chip-filtered subset (D-04's other half)", () => {
+    expect(attendees).toMatch(
+      /const searchItems: AttendeeSearchItem\[\] = \(attendees \?\? \[\]\)\.map\(\(attendee\) => \{/,
+    );
+    expect(attendees).not.toMatch(/visibleAttendees\.map\(\(attendee\) => \{/);
+  });
+
+  it("computes the chip verdict from visibleAttendees and passes it as a per-item chipVisible flag", () => {
+    expect(attendees).toContain("const chipVisibleIds = new Set(");
+    expect(attendees).toContain(
+      "visibleAttendees.map((attendee) => attendee.id),",
+    );
+    expect(attendees).toMatch(/chipVisible: chipVisibleIds\.has\(attendee\.id\)/);
+  });
+
+  it("keeps the page a Server Component — no client directive, no hook, no input element, no event-handler prop", () => {
+    expect(attendees).not.toContain("use client");
+    expect(attendees).not.toMatch(/\buseState\b|\buseEffect\b|\buseActionState\b/);
+    expect(attendees).not.toMatch(/<Input\b/);
+    expect(attendees).not.toMatch(/\son[A-Z][a-zA-Z]*=\{/);
+  });
+
+  it("keys the row separator on the first-child CSS pseudo-class, not a render-index comparison", () => {
+    expect(attendees).toContain("border-t border-border first:border-t-0");
+    expect(attendees).not.toContain("index === 0");
+    expect(attendees).not.toMatch(/\.map\(\(attendee, index\)/);
+  });
+});
