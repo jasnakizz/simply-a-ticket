@@ -149,9 +149,37 @@ describe("Gate 4 — the money modules are untouched and still shaped as seven e
   });
 });
 
-describe("Gate 5 — the attendees surfaces are untouched (removing the redundant money boxes is Phase 24's work)", () => {
-  it(`git diff ${PHASE_23_BASE}..working-tree over src/app/events/[eventId]/attendees/ is empty`, () => {
-    expect(diffNameOnly(["src/app/events/[eventId]/attendees/"])).toBe("");
+// RETARGET (plan 24-01 Task 1, SAME commit as the source rewire, 2026-09-06):
+// Phase 24 (SEARCH-03 / SEARCH-04) edits the attendees tree BY DESIGN — plan
+// 24-01 adds [ticketId]/resend-email-button.tsx and rewires [ticketId]/page.tsx
+// — so the original whole-directory `git diff` over
+// src/app/events/[eventId]/attendees/ goes red the moment Phase 24 lands, and
+// this describe's own text already said the box removal "is Phase 24's work".
+// The retarget keeps the gate's teeth without blocking Phase 24: it narrows the
+// live diff to [ticketId]/check-in-panel.tsx — the one attendees-tree source
+// file neither Phase 23 nor Phase 24 touches — and adds a static assertion that
+// no attendees-tree source path was ever smuggled into PHASE_23_MODIFIED_FILES.
+// Same style as the plan-23-01 retarget comments elsewhere in this file.
+describe("Gate 5 — Phase 23 left the attendees tree untouched (the check-in panel is byte-identical; no attendee path entered the phase-23 file list)", () => {
+  const ATTENDEE_PATHS = [
+    "src/app/events/[eventId]/attendees/page.tsx",
+    "src/app/events/[eventId]/attendees/[ticketId]/page.tsx",
+    "src/app/events/[eventId]/attendees/[ticketId]/check-in-panel.tsx",
+    "src/app/events/[eventId]/attendees/[ticketId]/note-form.tsx",
+  ];
+
+  it(`git diff ${PHASE_23_BASE}..working-tree over src/app/events/[eventId]/attendees/[ticketId]/check-in-panel.tsx is empty`, () => {
+    expect(
+      diffNameOnly([
+        "src/app/events/[eventId]/attendees/[ticketId]/check-in-panel.tsx",
+      ]),
+    ).toBe("");
+  });
+
+  it("no attendees-tree source path is present in PHASE_23_MODIFIED_FILES", () => {
+    for (const p of ATTENDEE_PATHS) {
+      expect(PHASE_23_MODIFIED_FILES as readonly string[]).not.toContain(p);
+    }
   });
 });
 

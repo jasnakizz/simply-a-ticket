@@ -395,15 +395,32 @@ describe("ADETAIL-V5-03/05/06 — check-in is delegated to the CheckInPanel clie
     expect(detail).not.toMatch(/\saction=\{/);
   });
 
-  it(`${DETAIL}: renders exactly one <button> — the inert, disabled "Resend ticket email" control wired to nothing (C-1 / D-10)`, () => {
+  // RETARGET (plan 24-01 Task 1, SAME commit as the source rewire, 2026-09-06):
+  // plan 24-01 (SEARCH-03 / SEARCH-04) replaces the inert, disabled "Resend
+  // ticket email" <button> in the footer with the live <ResendEmailButton>
+  // client island. The old gate asserted exactly one disabled <button> wired to
+  // nothing and pinned its literal `<button …>Resend ticket email</button>`
+  // markup — that shape is gone. The retarget keeps the gate's teeth (the page
+  // still wires no Server Action of its own) by proving the page now delegates
+  // the resend entirely to the island: no <button> tag survives on the page,
+  // ResendEmailButton is imported from "./resend-email-button" and rendered
+  // exactly once, with both ids, inside the same !statusIsCheckedIn guard. The
+  // `expect(detail).not.toContain("resendTicketEmail")` line is kept verbatim —
+  // it still holds and is now the proof the page wires no Server Action
+  // directly (resendTicketEmail is imported only by the island).
+  it(`${DETAIL}: delegates the resend to the <ResendEmailButton> island — no <button> tag on the page, rendered once with both ids inside the !statusIsCheckedIn guard (24-01)`, () => {
     expect(detail).not.toContain("resendTicketEmail");
-    const buttonTags = detail.match(/<button\b[\s\S]*?>/g) ?? [];
-    expect(buttonTags.length).toBe(1);
-    expect(buttonTags[0]).toMatch(/\sdisabled\b/);
-    expect(buttonTags[0]).not.toMatch(/\son[A-Z]/);
+    expect(detail).not.toMatch(/<button\b/);
     expect(detail).toMatch(
-      /<button\b[\s\S]*?>\s*Resend ticket email\s*<\/button>/,
+      /import\s*\{\s*ResendEmailButton\s*\}\s*from\s*"\.\/resend-email-button"/,
     );
+    expect((detail.match(/<ResendEmailButton\b/g) ?? []).length).toBe(1);
+    expect(detail).toContain("ticketId={ticket.id}");
+    expect(detail).toContain("eventId={eventId}");
+    const guardIdx = detail.indexOf("{!statusIsCheckedIn ? (");
+    const islandIdx = detail.indexOf("<ResendEmailButton");
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(islandIdx).toBeGreaterThan(guardIdx);
   });
 
   it(`${DETAIL}: adds no "Mark as paid" control — deferred to 17-03`, () => {
