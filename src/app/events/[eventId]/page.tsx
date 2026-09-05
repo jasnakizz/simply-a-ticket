@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { createServiceClient } from "@/lib/supabase/server";
 import { formatEventDateRange, formatRelativeTime } from "@/lib/date";
 import { eventStatus } from "@/lib/event-status";
-import { sumResidualOwedByCurrency } from "@/lib/door-money";
+import { sumCollectedByCurrency, sumResidualOwedByCurrency, type DoorMoneySubtotal } from "@/lib/door-money";
 import { formatMoney } from "@/lib/amount";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,98 @@ import { CountsStrip } from "@/components/ui/counts-strip";
 // Same reasoning as /events: staff need the current data, not a build-time
 // snapshot frozen at whatever existed when Vercel built the app.
 export const dynamic = "force-dynamic";
+
+// One cell of the 3-cell door-money strip (COLLECTED / TO COLLECT - IN / TO
+// COLLECT - OUT). A plain module-local function component — never exported, so
+// nothing outside this file can see it — structurally copied from the
+// attendee-detail money strip (src/app/events/[eventId]/attendees/[ticketId]/
+// page.tsx). It renders NO arithmetic: it is handed a DoorMoneySubtotal[]
+// already summed by src/lib/door-money.ts and only formats + lays out.
+//
+// `tone` and `divider` are string unions rather than booleans so each call
+// site reads as its own design decision (D-02: both TO COLLECT cells use the
+// same accent-700, no positive/negative switch).
+//
+// The amounts list is built once so the empty case and the populated case
+// share ONE render path: an empty subtotal list becomes a single bare `0.00`
+// with no currency code; otherwise one amount line per currency. Beneath the
+// amounts, a non-empty cell renders EXACTLY ONE cell-level ticket-count line
+// summing DoorMoneySubtotal.ticketCount across the cell's currencies
+// (singular-aware on that total); the empty cell renders no count line. Per
+// UAT gap G-23-1 this replaces 23-01's per-currency count lines — a recorded
+// reversal of decision P2. The EUR and RSD money amounts are still never
+// summed or combined; only the integer ticket tally is.
+function DoorMoneyCell({
+  label,
+  subtotals,
+  tone,
+  divider,
+}: {
+  label: string;
+  subtotals: DoorMoneySubtotal[];
+  tone: "ink" | "accent";
+  divider: "none" | "left";
+}) {
+  const accentClass = tone === "accent" ? "text-[var(--color-accent-700)]" : "";
+
+  const amounts: { key: string; amount: string }[] =
+    subtotals.length === 0
+      ? [{ key: "zero", amount: "0.00" }]
+      : subtotals.map((subtotal) => ({
+          key: subtotal.currency,
+          amount: formatMoney(subtotal.amount, subtotal.currency),
+        }));
+
+  // A cell holds at most two subtotals (CURRENCY_ORDER is EUR then RSD), so the
+  // cell-level ticket total is summed BY INDEX — never `.reduce(` and never a
+  // `+=` compound assignment, the tokens the dashboard money-integrity gates
+  // forbid. A ticket count is an integer tally, not a money figure, so those
+  // gates do not govern it; authority for aggregating the count across
+  // currencies (never the amounts) is UAT gap G-23-1, a recorded reversal of
+  // 23-01 decision P2.
+  const totalTickets =
+    (subtotals[0]?.ticketCount ?? 0) + (subtotals[1]?.ticketCount ?? 0);
+  const countLabel =
+    subtotals.length === 0
+      ? null
+      : `${totalTickets} ${totalTickets !== 1 ? "tickets" : "ticket"}`;
+
+  return (
+    <div
+      className={[
+        "flex flex-col gap-1 px-3.5 py-3",
+        divider === "left" ? "border-l border-border" : "",
+      ].join(" ")}
+    >
+      <p
+        className={[
+          "text-[9.5px] font-semibold uppercase tracking-[0.09em]",
+          tone === "accent"
+            ? "text-[var(--color-accent-700)]"
+            : "text-muted-foreground",
+        ].join(" ")}
+      >
+        {label}
+      </p>
+      {amounts.map((line) => (
+        <p
+          key={line.key}
+          className={[
+            "text-[17px] font-extrabold leading-none tracking-[-0.02em]",
+            accentClass,
+          ].join(" ")}
+        >
+          {line.amount}
+        </p>
+      ))}
+      {countLabel !== null && (
+        <p className="text-[11px] font-semibold text-muted-foreground">
+          {countLabel}
+        </p>
+      )}
+    </div>
+  );
+}
 
 // In Next.js 16, `params` is a Promise, not a plain object — reading it
 // synchronously (the shape every older Next.js tutorial shows) is a build
@@ -157,31 +249,29 @@ export default async function EventDetailPage({
     throw lastThroughTheDoorError;
   }
 
-  // "Still owed at the door" — the per-currency RESIDUAL door balance across
-  // every ticket that owes at the door, issued or checked-in. Phase 17
-  // introduced partial and cross-currency door collections, so status =
-  // 'checked_in' no longer implies "door balance resolved": a checked-in ticket
-  // can still carry a residual after a partial (6000 of 7000) or a
-  // cross-currency collection. The read therefore carries NO status filter — a
-  // subtotal's ticket count is now "tickets with a positive residual", the
-  // accepted semantic under D-10, and "at the door" reads as where the debt is
-  // settled. Both money columns are cast to text inside the select string
-  // (PostgREST column-cast form) so a decimal string — never a JavaScript
-  // double — crosses the wire; that is the whole reason src/lib/amount.ts
-  // exists. .not("pay_at_door_amount", "is", null) keeps tickets that owe
-  // nothing off the wire entirely.
+  // "To collect" — the per-currency RESIDUAL door balance across every ticket
+  // that owes at the door, issued or checked-in. Phase 17 introduced partial
+  // and cross-currency door collections, so status = 'checked_in' no longer
+  // implies "door balance resolved": a checked-in ticket can still carry a
+  // residual after a partial (6000 of 7000) or a cross-currency collection.
   //
-  // This read is byte-identical to the attendees page's owed read — same
-  // select, same filters — so the two surfaces provably see the same rows and
-  // sum them through the same residual adapter (DASH-V6-02). .eq("event_id",
-  // eventId) is what keeps another event's money off this dashboard. As with
-  // every read above, the error is thrown into src/app/events/error.tsx and
-  // never coalesced to [] — a failed read must not be able to render as
-  // "everyone has paid".
+  // The read carries NO status FILTER. Phase 23 (decision P1) adds `status` as
+  // a selected COLUMN and partitions the rows in memory into checked-in vs not
+  // — one round-trip, one row shape, and the two "TO COLLECT" cells are
+  // provably a partition of one read rather than two drifting populations. It
+  // keeps the DASH-V6-02 equivalence with the attendees page's owed read: the
+  // column set here is that read's column set plus exactly `status`, the filter
+  // set is identical. Both money columns are cast to text inside the select
+  // string so a decimal string — never a JavaScript double — crosses the wire.
+  // .not("pay_at_door_amount", "is", null) keeps tickets that owe nothing off
+  // the wire; .eq("event_id", eventId) keeps another event's money off this
+  // dashboard. As with every read above, a read failure is thrown into
+  // src/app/events/error.tsx and never coalesced to [] — a failed read must not
+  // be able to render as "everyone has paid".
   const { data: owedTickets, error: owedTicketsError } = await supabase
     .from("tickets")
     .select(
-      "pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
+      "status, pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
     )
     .eq("event_id", eventId)
     .not("pay_at_door_amount", "is", null);
@@ -190,13 +280,34 @@ export default async function EventDetailPage({
     throw owedTicketsError;
   }
 
-  // Every bit of the summation lives in the shared residual adapter — this page
-  // does not sum, group by currency or format a money value itself. The
-  // attendees page reads the same rows through that same adapter for its
-  // "STILL TO COLLECT" line; one residual rule, both surfaces, is the milestone
-  // invariant that keeps the two screens from quietly disagreeing about how
-  // much money is outstanding.
-  const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);
+  // One read, two complementary in-memory partitions (P1). `===` and `!==` on
+  // the same key are a partition by construction — no ticket falls in both or
+  // neither — so the two "TO COLLECT" cells can never double-count a ticket or
+  // disagree with each other. Every figure still goes through the shared
+  // residual adapter; this page sums nothing itself.
+  const owedRows = owedTickets ?? [];
+  const owedCheckedIn = owedRows.filter((ticket) => ticket.status === "checked_in");
+  const owedNotCheckedIn = owedRows.filter((ticket) => ticket.status !== "checked_in");
+  const owedCheckedInSubtotals = sumResidualOwedByCurrency(owedCheckedIn);
+  const owedNotCheckedInSubtotals = sumResidualOwedByCurrency(owedNotCheckedIn);
+
+  // "Collected at the door" — event-wide, no status filter and no .not(): the
+  // shared helper already skips null, zero, malformed and unknown-currency
+  // rows, and the collected side carries its OWN currency column
+  // (pay_at_door_collected_currency), never `currency`. Copied verbatim from
+  // src/app/events/[eventId]/attendees/page.tsx. The `?? []` runs only after
+  // the throw — a failed read must reach src/app/events/error.tsx, never smooth
+  // into a zero that would read as "everything collected".
+  const { data: collectedTickets, error: collectedTicketsError } = await supabase
+    .from("tickets")
+    .select("pay_at_door_collected_amount::text, pay_at_door_collected_currency")
+    .eq("event_id", eventId);
+
+  if (collectedTicketsError) {
+    throw collectedTicketsError;
+  }
+
+  const collectedSubtotals = sumCollectedByCurrency(collectedTickets ?? []);
 
   return (
     <div className="flex flex-col flex-1 items-center">
@@ -247,30 +358,26 @@ export default async function EventDetailPage({
               style={{ width: `${checkedInPercent}%` }}
             />
           </div>
-          {owedSubtotals.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">
-              Nothing owed at the door.
-            </p>
-          ) : (
-            owedSubtotals.map((subtotal) => {
-              // Singular/plural for a single outstanding ticket — a screen
-              // staff trust should not read as a grammar error.
-              const many = subtotal.ticketCount !== 1;
-              return (
-                <p
-                  key={subtotal.currency}
-                  className="text-[12px] text-muted-foreground"
-                >
-                  {subtotal.ticketCount} {many ? "tickets" : "ticket"} still{" "}
-                  {many ? "owe" : "owes"}{" "}
-                  <span className="font-extrabold">
-                    {formatMoney(subtotal.amount, subtotal.currency)}
-                  </span>{" "}
-                  at the door.
-                </p>
-              );
-            })
-          )}
+          <div className="grid grid-cols-3 border-y-2 border-border bg-[var(--color-surface)]">
+            <DoorMoneyCell
+              label="COLLECTED"
+              subtotals={collectedSubtotals}
+              tone="ink"
+              divider="none"
+            />
+            <DoorMoneyCell
+              label="TO COLLECT - IN"
+              subtotals={owedCheckedInSubtotals}
+              tone="accent"
+              divider="left"
+            />
+            <DoorMoneyCell
+              label="TO COLLECT - OUT"
+              subtotals={owedNotCheckedInSubtotals}
+              tone="accent"
+              divider="left"
+            />
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">

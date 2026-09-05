@@ -205,8 +205,15 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
   // retired the two "no live data" assertions at the top of this file. Each
   // read's own shape is pinned by the DASH-V3-01 / DASH-V3-03 describes at the
   // foot of this file.
-  it("issues four tickets reads — the two count reads, the door list and the owed subtotals", () => {
-    expect(ticketChains.length).toBe(4);
+  //
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds the dedicated event-scoped COLLECTED read (backs the new 3-cell
+  // door-money strip via sumCollectedByCurrency), so the tickets-read count
+  // goes 4 -> 5. The old "issues four" assertion went false the moment that
+  // fifth `.from("tickets")` chain landed; the count is raised and the title
+  // renamed to name all five reads so a future regression fails BY NAME.
+  it("issues five tickets reads — the two count reads, the door list, the owed subtotals and the collected total", () => {
+    expect(ticketChains.length).toBe(5);
   });
 
   it('scopes every tickets read to this event via .eq("event_id", eventId)', () => {
@@ -244,11 +251,18 @@ describe("DASH-V3-02 — live event-scoped count reads back the dashboard figure
     expect(withStatus.length).toBe(2);
   });
 
-  it("leaves the sold figure and the residual owed read carrying no status filter", () => {
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): the new
+  // COLLECTED read is event-scoped and carries NO status filter — decision P1
+  // does the checked-in / not-checked-in split in memory, never as a query
+  // filter, so the DASH-V6-02 equivalence gate keeps binding. The "no status
+  // filter" chain count therefore goes 2 -> 3 (sold, residual-owed, collected).
+  // The old "exactly 2" went false when the collected chain landed; count and
+  // title updated so a re-added status filter fails BY NAME.
+  it("leaves the sold figure, the residual owed read and the collected total carrying no status filter", () => {
     const withoutStatus = ticketChains.filter(
       (c) => !c.includes('.eq("status"'),
     );
-    expect(withoutStatus.length).toBe(2);
+    expect(withoutStatus.length).toBe(3);
   });
 
   it("guards the zero denominator before any division", () => {
@@ -444,18 +458,41 @@ describe("DASH-V3-03 — the per-currency still-owed subtotal, one shared helper
     );
   });
 
-  it("renders the subtotals by mapping the helper result — no hardcoded EUR/RSD branch", () => {
-    expect(dash).toMatch(/owedSubtotals\.map\(/);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // deletes the single `owedSubtotals` list and the paragraph that mapped it,
+  // replacing them with the module-local <DoorMoneyCell> component (which maps
+  // its OWN `subtotals` prop) fed by three named subtotal lists. The
+  // `owedSubtotals.map(` anchor went false when that identifier was removed;
+  // the surviving property — "every cell maps a helper result, never a
+  // hardcoded currency branch" — is proven via the component's own map plus
+  // the three wired prop lists. Both currency-literal negatives kept.
+  it("renders every cell by mapping the helper result — no hardcoded EUR/RSD branch", () => {
+    expect(dash).toMatch(/subtotals\.map\(/);
+    expect(dash).toContain("subtotals={collectedSubtotals}");
+    expect(dash).toContain("subtotals={owedCheckedInSubtotals}");
+    expect(dash).toContain("subtotals={owedNotCheckedInSubtotals}");
     expect(dash).not.toMatch(/"EUR"/);
     expect(dash).not.toMatch(/"RSD"/);
   });
 
-  it("carries the explicit zero state exactly once", () => {
-    expect((dash.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): D-05 — the
+  // compact 3-cell strip drops the wide-block "Nothing owed at the door."
+  // sentence entirely and falls back to a bare `0.00` literal in an empty
+  // cell. The "exactly once" count went false the moment the sentence was
+  // deleted; the surviving property is its ABSENCE plus the presence of the
+  // bare fallback.
+  it("uses the bare 0.00 fallback for an empty cell, not the retired wide-block sentence (D-05)", () => {
+    expect(dash).not.toContain("Nothing owed at the door.");
+    expect(dash).toContain('"0.00"');
   });
 
-  it("throws on the owed read too — at least five throws in the file", () => {
-    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(5);
+  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
+  // adds the COLLECTED read with its own `if (collectedTicketsError) throw`
+  // guard, so the file's throw count goes 5 -> 6. Bound raised in lockstep and
+  // the title renamed to name the collected read; a dropped throw-on-error on
+  // any read still fails this BY NAME.
+  it("throws on the collected read too — at least six throws in the file", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(6);
   });
 });
 
@@ -562,5 +599,190 @@ describe("TYPES-V4-01 / D-04 — the inline ticket-types block is replaced by on
     expect(ttChain[0]).toContain('count: "exact"');
     expect(ttChain[0]).toContain("head: true");
     expect(ttChain[0]).toContain('.eq("event_id"');
+  });
+});
+
+/**
+ * DASH-01..04 (plan 23-01) — the Phase 23 3-cell door-money strip source
+ * contract: COLLECTED / TO COLLECT - IN / TO COLLECT - OUT.
+ *
+ * `dash` is the comment-stripped source (helpers.readCode), so the design
+ * notes in page.tsx can neither satisfy nor break a gate. Every `it` is named
+ * for the ONE property it protects, so a future regression fails BY NAME.
+ * These gates POSITIVELY pin what plan 23-01's lockstep retargets (R1-R9,
+ * above and in phase10/11-contract) only flipped to an absence assertion.
+ *
+ * Break-check list (one-line regression in src/app/events/[eventId]/page.tsx,
+ * run this file, observe the named `it` fail, revert) — recorded here and in
+ * 23-01-SUMMARY.md, this repo's standing substitute for a red-green cycle:
+ *
+ *  Gate 1  drop `.eq("event_id", eventId)` from the collected read
+ *          -> "backs the COLLECTED cell with a dedicated, event-scoped ..."
+ *  Gate 2  change the second partition filter predicate to `=== "checked_in"`
+ *          -> "partitions the owed rows in memory with a complementary ..."
+ *  Gate 3  add `const drift = [].reduce((a) => a, 0);` to the page body
+ *          -> "adds no fourth copy of the door-money arithmetic ..."
+ *  Gate 4  change the amount <p> class to `text-[16px] font-extrabold ...`
+ *          -> "mirrors the attendee-detail money-strip skeleton ..."
+ *  Gate 5  change the third DoorMoneyCell's prop to `tone="ink"`
+ *          -> "renders exactly three DoorMoneyCells with the D-04 headers ..."
+ *  Gate 6  re-add a `Nothing owed at the door.` node inside the strip
+ *          -> "falls back to a single bare 0.00 for an empty cell ..."
+ *  Gate 7  swap `subtotal.ticketCount` for `owedRows.length` in the count line
+ *          -> "takes each ticket count from the shared DoorMoneySubtotal ..."
+ *  Gate 8  delete the `if (collectedTicketsError) { throw ... }` block
+ *          -> "throws on both new reads — at least six throws total ..."
+ *  Gate 9  move the `<div className="grid grid-cols-3 ...">` strip below the
+ *          LAST THROUGH THE DOOR section
+ *          -> "places the strip in the D-03 slot ..."
+ *  Gate 10 add `"use client";` to the top of page.tsx
+ *          -> "adds no client surface ..."
+ *
+ * Do NOT add a component-test harness to satisfy this file, and do NOT
+ * re-implement readCode.
+ */
+describe("DASH-01..04 — the Phase 23 3-cell door-money strip (COLLECTED / TO COLLECT - IN / TO COLLECT - OUT)", () => {
+  const stripCount = (s: string): number => dash.split(s).length - 1;
+
+  const ticketChains = dash
+    .split('.from("tickets")')
+    .slice(1)
+    .map((seg) => {
+      const end = seg.indexOf(";");
+      return end === -1 ? seg : seg.slice(0, end);
+    });
+
+  it("backs the COLLECTED cell with a dedicated, event-scoped, status-and-filter-free tickets read through sumCollectedByCurrency (DASH-01)", () => {
+    const collectedChain = ticketChains.find(
+      (c) =>
+        c.includes("pay_at_door_collected_amount") &&
+        !c.includes("pay_at_door_amount::text"),
+    );
+    expect(collectedChain).toBeDefined();
+    expect(collectedChain).toContain('.eq("event_id", eventId)');
+    expect(collectedChain).not.toContain('.eq("status"');
+    expect(collectedChain).not.toContain(".not(");
+    expect(dash).toMatch(
+      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(dash).toContain("sumCollectedByCurrency(collectedTickets ?? [])");
+  });
+
+  it("partitions the owed rows in memory with a complementary === / !== filter pair — never a second status-filtered query (DASH-02/03, P1)", () => {
+    expect((dash.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(2);
+    const nullFilterChains = ticketChains.filter((c) =>
+      c.includes('.not("pay_at_door_amount", "is", null)'),
+    );
+    expect(nullFilterChains.length).toBe(1);
+    expect(
+      stripCount('.filter((ticket) => ticket.status === "checked_in")'),
+    ).toBe(1);
+    expect(
+      stripCount('.filter((ticket) => ticket.status !== "checked_in")'),
+    ).toBe(1);
+  });
+
+  it("adds no fourth copy of the door-money arithmetic and imports door-money exactly once (DASH-04)", () => {
+    expect(dash).not.toMatch(/\.reduce\(/);
+    expect(dash).not.toMatch(/\+=/);
+    expect(dash).not.toMatch(/\bNumber\(/);
+    expect(dash).not.toMatch(/parseFloat/);
+    expect(dash).not.toMatch(/parseInt/);
+    expect(dash).not.toMatch(/toFixed/);
+    expect(dash).not.toMatch(/toLocaleString/);
+    expect((dash.match(/from "@\/lib\/door-money"/g) ?? []).length).toBe(1);
+  });
+
+  it("mirrors the attendee-detail money-strip skeleton — the container and every cell class string verbatim and exactly once (D-01)", () => {
+    expect(
+      stripCount(
+        "grid grid-cols-3 border-y-2 border-border bg-[var(--color-surface)]",
+      ),
+    ).toBe(1);
+    expect(stripCount("flex flex-col gap-1 px-3.5 py-3")).toBe(1);
+    expect(stripCount("border-l border-border")).toBe(1);
+    expect(
+      stripCount("text-[17px] font-extrabold leading-none tracking-[-0.02em]"),
+    ).toBe(1);
+    expect(
+      stripCount("text-[9.5px] font-semibold uppercase tracking-[0.09em]"),
+    ).toBe(1);
+    expect(
+      stripCount("text-[11px] font-semibold text-muted-foreground"),
+    ).toBe(1);
+  });
+
+  it("renders exactly three DoorMoneyCells with the D-04 headers and the D-02 tone split (accent x2, ink x1)", () => {
+    expect(stripCount("<DoorMoneyCell")).toBe(3);
+    expect(stripCount('tone="accent"')).toBe(2);
+    expect(stripCount('tone="ink"')).toBe(1);
+    expect(stripCount('divider="left"')).toBe(2);
+    expect(stripCount('divider="none"')).toBe(1);
+    expect(stripCount("COLLECTED")).toBe(1);
+    expect(stripCount("TO COLLECT - IN")).toBe(1);
+    expect(stripCount("TO COLLECT - OUT")).toBe(1);
+    expect(dash).toContain("text-[var(--color-accent-700)]");
+  });
+
+  it("falls back to a single bare 0.00 for an empty cell and ships neither the retired wide-block sentence nor the word Nothing (D-05)", () => {
+    expect((dash.match(/0\.00/g) ?? []).length).toBe(1);
+    expect(dash).not.toContain("Nothing owed at the door.");
+    expect(dash).not.toContain("Nothing");
+  });
+
+  // RETARGET (plan 23-02 Task 1, SAME commit as the source change): UAT gap
+  // G-23-1 reverses decision P2 — the per-currency count lines ("1 ticket"
+  // under EUR, "1 ticket" under RSD) are replaced by ONE cell-level count line
+  // beneath the stacked amounts, summing DoorMoneySubtotal.ticketCount across
+  // the cell's currencies ("2 tickets"). The old title's "each ticket count"
+  // framing and its per-line `const many = subtotal.ticketCount !== 1` flag
+  // both went false the moment that per-line flag was deleted; this `it` is
+  // renamed and re-asserted for the single cell-level sum, in the SAME commit
+  // as the DoorMoneyCell reshape (the repo's lockstep discipline).
+  it("renders ONE cell-level ticket-count line per non-empty cell — the sum of DoorMoneySubtotal.ticketCount across the cell's currencies, singular-aware on that total, never a per-currency count and never a .length re-count (P2 reversed by UAT gap G-23-1)", () => {
+    expect(dash).toContain(
+      "(subtotals[0]?.ticketCount ?? 0) + (subtotals[1]?.ticketCount ?? 0)",
+    );
+    expect(dash).toContain("totalTickets !== 1");
+    expect(dash).toContain('"tickets"');
+    expect(dash).toContain('"ticket"');
+    expect(stripCount("text-[11px] font-semibold text-muted-foreground")).toBe(1);
+    expect(dash).not.toContain("const many =");
+    expect(dash).not.toContain("owedRows.length");
+    expect(dash).not.toContain("collectedTickets.length");
+  });
+
+  it("throws on both new reads — at least six throws total — with the collected throw before its ?? [] coalesce (U5 / T-23-03)", () => {
+    expect((dash.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(6);
+    const throwIdx = dash.indexOf("throw collectedTicketsError");
+    const coalesceIdx = dash.indexOf(
+      "sumCollectedByCurrency(collectedTickets ?? [])",
+    );
+    expect(throwIdx).toBeGreaterThan(-1);
+    expect(coalesceIdx).toBeGreaterThan(-1);
+    expect(throwIdx).toBeLessThan(coalesceIdx);
+  });
+
+  it("places the strip in the D-03 slot: after the progress rule, before LAST THROUGH THE DOOR", () => {
+    const progressIdx = dash.indexOf("bg-[var(--color-neutral-300)]");
+    const stripIdx = dash.indexOf("grid grid-cols-3 border-y-2");
+    const doorListIdx = dash.indexOf("LAST THROUGH THE DOOR");
+    expect(progressIdx).toBeGreaterThan(-1);
+    expect(stripIdx).toBeGreaterThan(-1);
+    expect(doorListIdx).toBeGreaterThan(-1);
+    expect(progressIdx).toBeLessThan(stripIdx);
+    expect(stripIdx).toBeLessThan(doorListIdx);
+  });
+
+  it("adds no client surface — no use client, no hook, no handler, no input, no timer, no realtime channel", () => {
+    expect(dash).not.toContain("use client");
+    expect(dash).not.toMatch(/\buseState\b/);
+    expect(dash).not.toMatch(/\buseEffect\b/);
+    expect(dash).not.toMatch(/\buseRef\b/);
+    expect(dash).not.toContain("onChange=");
+    expect(dash).not.toMatch(/<Input\b/);
+    expect(dash).not.toMatch(/\bsetInterval\b/);
+    expect(dash).not.toMatch(/\bsetTimeout\b/);
+    expect(dash).not.toMatch(/\.channel\(/);
   });
 });
