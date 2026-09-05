@@ -274,6 +274,29 @@ export function CheckInPanel({
   const [paymentCollected, setPaymentCollected] = useState(true);
   const [amountHint, setAmountHint] = useState<string | null>(null);
 
+  // WR-01: amountHint is one piece of state shared by three unrelated amount
+  // fields (collected_amount / settle_amount / return_amount) via their
+  // onBlur handlers. markAsPaid's addCollectedAmount is deliberately
+  // uncapped, so a normal overpay can flip the panel straight from the
+  // markAsPaid branch into the markAsReturned branch (isOverpaid flips true)
+  // without an intervening remount — which would otherwise let a leftover
+  // hint from the just-abandoned field render under the brand-new field the
+  // staff member hasn't touched yet. Reset it during render when the
+  // rendered branch changes — the React-documented "adjusting state when a
+  // prop changes" pattern (a conditional setState call during render that
+  // bails out immediately after), not an effect: an effect that
+  // unconditionally calls setState on every dependency change is a
+  // lint-flagged anti-pattern (cascading renders) this pattern avoids by only
+  // firing on an actual branch change.
+  const amountHintBranchKey = `${statusIsCheckedIn}:${isOverpaid}:${hasCurrencyMismatch}`;
+  const [prevAmountHintBranchKey, setPrevAmountHintBranchKey] = useState(
+    amountHintBranchKey,
+  );
+  if (amountHintBranchKey !== prevAmountHintBranchKey) {
+    setPrevAmountHintBranchKey(amountHintBranchKey);
+    setAmountHint(null);
+  }
+
   // Terminal state from the ACTION RETURN (D-04) — never the stale page-load
   // row. A successful manual check-in.
   //
