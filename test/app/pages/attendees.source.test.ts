@@ -1,3 +1,5 @@
+import { execSync } from "child_process";
+
 import { describe, it, expect } from "vitest";
 
 import { readCode } from "./helpers";
@@ -620,5 +622,125 @@ describe("G-17-4 / G-17-8 — the RESERVATION chip, the row badge and the row to
     expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
     expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(0);
     expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(0);
+  });
+});
+
+/**
+ * SEARCH-01 (plan 24-02 Task 2) — the positive REMOVAL contract.
+ *
+ * Phase 23 moved the event-wide COLLECTED / STILL-TO-COLLECT door-money totals
+ * onto the event dashboard; plan 24-02 Task 1 then removed the attendees-list
+ * copy (the two boxes, their two orphaned reads, the two throw guards, the
+ * @/lib/door-money import and the two subtotal locals). This describe's job is
+ * to keep that removal removed WITHOUT letting a later cleanup take the per-row
+ * money surface (attendeeMoneyStrip / rowOwesAtDoor / formatMoney / the three
+ * row token classNames) with it. Most assertions are negatives over the
+ * attendees page, paired with positives over the dashboard and over the per-row
+ * surface so a "fix" that deletes too much also fails BY NAME.
+ *
+ * `attendees` / `dashboard` are the comment-stripped sources (helpers.readCode);
+ * `ticketChains` / `listChain` are reused from this file's module scope. Three
+ * load-bearing gates were proven to fail by name via a one-line break-check
+ * (re-add the door-money import; re-add a second tickets read; delete a
+ * strip-helper call site), recorded in 24-02-SUMMARY.md.
+ */
+const dashboardPage = readCode("src/app/events/[eventId]/page.tsx");
+
+// The commit HEAD pointed at when Phase 24 was planned (tip of the merged
+// Phase 23 branch). diffNameOnly diffs a path set against it — an empty string
+// means this phase did not touch that path. Same execSync git-diff shape as
+// phase23-contract.test.ts.
+const PHASE_24_BASE = "801a7f8ac77ad9c3406cfdf28a7391bc5c45106f";
+
+function diffNameOnly(paths: string[]): string {
+  return execSync(
+    `git diff --name-only ${PHASE_24_BASE} -- ${paths.join(" ")}`,
+    { encoding: "utf8", cwd: process.cwd() },
+  ).trim();
+}
+
+describe("SEARCH-01 — the attendees list carries no event-wide door-money surface", () => {
+  it("imports nothing from the shared door-money module and names neither event-wide adapter", () => {
+    expect(attendees).not.toMatch(/from\s*["']@\/lib\/door-money["']/);
+    expect(attendees).not.toMatch(/\bsumResidualOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bsumCollectedByCurrency\b/);
+  });
+
+  it("carries none of the six identifiers the removed reads and subtotals used — each occurs zero times", () => {
+    for (const id of [
+      "owedTickets",
+      "collectedTickets",
+      "owedTicketsError",
+      "collectedTicketsError",
+      "owedSubtotals",
+      "collectedSubtotals",
+    ]) {
+      expect((attendees.match(new RegExp(`\\b${id}\\b`, "g")) ?? []).length).toBe(
+        0,
+      );
+    }
+  });
+
+  it("carries neither box label, neither box empty-state sentence, nor the two-up grid container class", () => {
+    expect((attendees.match(/COLLECTED AT DOOR/g) ?? []).length).toBe(0);
+    expect((attendees.match(/STILL TO COLLECT/g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/grid grid-cols-2/g) ?? []).length).toBe(0);
+  });
+
+  it("opens exactly one tickets chain and exactly three table reads in total, and that one tickets chain is the list read", () => {
+    expect(ticketChains.length).toBe(1);
+    expect((attendees.match(/\.from\("/g) ?? []).length).toBe(3);
+    expect(listChain).toBeDefined();
+    expect(ticketChains[0]).toContain("attendee_email");
+  });
+
+  it("keeps the surviving tickets chain event-scoped and un-widened — no token column, no pre-paid money column (T-24-10 / T-24-11)", () => {
+    expect(listChain).toContain('.eq("event_id", eventId)');
+    expect(listChain).not.toContain("qr_token");
+    expect(listChain).not.toMatch(/paid_amount[^_]/);
+  });
+
+  it("still throws on both surviving non-404 reads — exactly two throw statements, naming the ticket-types error and the attendees error", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
+    expect(attendees).toContain("throw ticketTypesError;");
+    expect(attendees).toContain("throw attendeesError;");
+  });
+
+  it("leaves the per-row money surface intact — two attendeeMoneyStrip( call sites, one rowOwesAtDoor declaration, the amount-module formatter still imported, all three row token classNames present", () => {
+    expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
+    expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bformatMoney\b[^}]*\}\s*from\s*["']@\/lib\/amount["']/,
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]",
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]",
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[12px] text-muted-foreground",
+    );
+  });
+
+  it("proves the totals moved rather than vanished — the dashboard still carries all three Phase 23 cell labels and this phase did not touch that file", () => {
+    expect(dashboardPage).toContain("COLLECTED");
+    expect(dashboardPage).toContain("TO COLLECT - IN");
+    expect(dashboardPage).toContain("TO COLLECT - OUT");
+    expect(diffNameOnly(["src/app/events/[eventId]/page.tsx"])).toBe("");
+  });
+
+  it("leaves the shared money modules untouched — door-money / amount / attendee-money unchanged this phase, and door-money still declares exactly seven export function symbols", () => {
+    expect(
+      diffNameOnly([
+        "src/lib/door-money.ts",
+        "src/lib/amount.ts",
+        "src/lib/attendee-money.ts",
+      ]),
+    ).toBe("");
+    const doorMoney = readCode("src/lib/door-money.ts");
+    expect((doorMoney.match(/export function /g) ?? []).length).toBe(7);
   });
 });
