@@ -730,11 +730,24 @@ describe("DASH-01..04 — the Phase 23 3-cell door-money strip (COLLECTED / TO C
     expect(dash).not.toContain("Nothing");
   });
 
-  it("takes each ticket count from the shared DoorMoneySubtotal.ticketCount, singular-aware, never a .length re-count (P2)", () => {
-    expect(dash).toContain("ticketCount");
+  // RETARGET (plan 23-02 Task 1, SAME commit as the source change): UAT gap
+  // G-23-1 reverses decision P2 — the per-currency count lines ("1 ticket"
+  // under EUR, "1 ticket" under RSD) are replaced by ONE cell-level count line
+  // beneath the stacked amounts, summing DoorMoneySubtotal.ticketCount across
+  // the cell's currencies ("2 tickets"). The old title's "each ticket count"
+  // framing and its per-line `const many = subtotal.ticketCount !== 1` flag
+  // both went false the moment that per-line flag was deleted; this `it` is
+  // renamed and re-asserted for the single cell-level sum, in the SAME commit
+  // as the DoorMoneyCell reshape (the repo's lockstep discipline).
+  it("renders ONE cell-level ticket-count line per non-empty cell — the sum of DoorMoneySubtotal.ticketCount across the cell's currencies, singular-aware on that total, never a per-currency count and never a .length re-count (P2 reversed by UAT gap G-23-1)", () => {
+    expect(dash).toContain(
+      "(subtotals[0]?.ticketCount ?? 0) + (subtotals[1]?.ticketCount ?? 0)",
+    );
+    expect(dash).toContain("totalTickets !== 1");
     expect(dash).toContain('"tickets"');
     expect(dash).toContain('"ticket"');
-    expect(dash).toContain("!== 1");
+    expect(stripCount("text-[11px] font-semibold text-muted-foreground")).toBe(1);
+    expect(dash).not.toContain("const many =");
     expect(dash).not.toContain("owedRows.length");
     expect(dash).not.toContain("collectedTickets.length");
   });

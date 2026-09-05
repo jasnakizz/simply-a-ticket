@@ -27,11 +27,15 @@ export const dynamic = "force-dynamic";
 // site reads as its own design decision (D-02: both TO COLLECT cells use the
 // same accent-700, no positive/negative switch).
 //
-// The line list is built once so the empty case and the populated case share
-// ONE render path: an empty subtotal list becomes a single bare `0.00` with no
-// currency code and no count line (D-05 / P2); otherwise one line per
-// currency, each with its own singular-aware ticket count so an EUR count and
-// an RSD count are never added together.
+// The amounts list is built once so the empty case and the populated case
+// share ONE render path: an empty subtotal list becomes a single bare `0.00`
+// with no currency code; otherwise one amount line per currency. Beneath the
+// amounts, a non-empty cell renders EXACTLY ONE cell-level ticket-count line
+// summing DoorMoneySubtotal.ticketCount across the cell's currencies
+// (singular-aware on that total); the empty cell renders no count line. Per
+// UAT gap G-23-1 this replaces 23-01's per-currency count lines — a recorded
+// reversal of decision P2. The EUR and RSD money amounts are still never
+// summed or combined; only the integer ticket tally is.
 function DoorMoneyCell({
   label,
   subtotals,
@@ -45,17 +49,27 @@ function DoorMoneyCell({
 }) {
   const accentClass = tone === "accent" ? "text-[var(--color-accent-700)]" : "";
 
-  const lines: { key: string; amount: string; count: string | null }[] =
+  const amounts: { key: string; amount: string }[] =
     subtotals.length === 0
-      ? [{ key: "zero", amount: "0.00", count: null }]
-      : subtotals.map((subtotal) => {
-          const many = subtotal.ticketCount !== 1;
-          return {
-            key: subtotal.currency,
-            amount: formatMoney(subtotal.amount, subtotal.currency),
-            count: `${subtotal.ticketCount} ${many ? "tickets" : "ticket"}`,
-          };
-        });
+      ? [{ key: "zero", amount: "0.00" }]
+      : subtotals.map((subtotal) => ({
+          key: subtotal.currency,
+          amount: formatMoney(subtotal.amount, subtotal.currency),
+        }));
+
+  // A cell holds at most two subtotals (CURRENCY_ORDER is EUR then RSD), so the
+  // cell-level ticket total is summed BY INDEX — never `.reduce(` and never a
+  // `+=` compound assignment, the tokens the dashboard money-integrity gates
+  // forbid. A ticket count is an integer tally, not a money figure, so those
+  // gates do not govern it; authority for aggregating the count across
+  // currencies (never the amounts) is UAT gap G-23-1, a recorded reversal of
+  // 23-01 decision P2.
+  const totalTickets =
+    (subtotals[0]?.ticketCount ?? 0) + (subtotals[1]?.ticketCount ?? 0);
+  const countLabel =
+    subtotals.length === 0
+      ? null
+      : `${totalTickets} ${totalTickets !== 1 ? "tickets" : "ticket"}`;
 
   return (
     <div
@@ -74,23 +88,22 @@ function DoorMoneyCell({
       >
         {label}
       </p>
-      {lines.map((line) => (
-        <div key={line.key} className="flex flex-col">
-          <p
-            className={[
-              "text-[17px] font-extrabold leading-none tracking-[-0.02em]",
-              accentClass,
-            ].join(" ")}
-          >
-            {line.amount}
-          </p>
-          {line.count !== null && (
-            <p className="text-[11px] font-semibold text-muted-foreground">
-              {line.count}
-            </p>
-          )}
-        </div>
+      {amounts.map((line) => (
+        <p
+          key={line.key}
+          className={[
+            "text-[17px] font-extrabold leading-none tracking-[-0.02em]",
+            accentClass,
+          ].join(" ")}
+        >
+          {line.amount}
+        </p>
       ))}
+      {countLabel !== null && (
+        <p className="text-[11px] font-semibold text-muted-foreground">
+          {countLabel}
+        </p>
+      )}
     </div>
   );
 }

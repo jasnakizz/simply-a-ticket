@@ -31,6 +31,11 @@ import { readCode } from "./helpers";
  * Break-checks (one-line regression, run, observe the named failure, revert)
  * for the DASH-04 load-bearing gates 4, 7 and 8 are recorded in
  * 23-01-SUMMARY.md.
+ *
+ * Plan 23-02 (UAT gap G-23-1) appends Gate 11, sealing the reshape of the
+ * per-currency count lines into ONE presentation-only cell-level ticketCount
+ * sum per cell; PHASE_23_BASE, PHASE_23_MODIFIED_FILES and Gates 1-10 are
+ * byte-unchanged.
  */
 
 const DASHBOARD = "src/app/events/[eventId]/page.tsx";
@@ -216,5 +221,32 @@ describe("Gate 10 — correct as of load, nothing more", () => {
     expect(dashboard).not.toMatch(/\.channel\(/);
     expect(dashboard).not.toMatch(/\bsubscribe\(/);
     expect(dashboard).not.toContain("use client");
+  });
+});
+
+describe("Gate 11 — the cell-level ticket count is one presentation-only integer sum, never per-currency, never money (UAT gap G-23-1)", () => {
+  it(`${DASHBOARD}: DoorMoneyCell renders exactly one text-[11px] count-line class and sums ticketCount across currencies by index — no per-currency count, no .reduce( / +=`, () => {
+    expect(
+      (
+        dashboard.match(
+          /text-\[11px\] font-semibold text-muted-foreground/g,
+        ) ?? []
+      ).length,
+    ).toBe(1);
+    expect(dashboard).toContain(
+      "(subtotals[0]?.ticketCount ?? 0) + (subtotals[1]?.ticketCount ?? 0)",
+    );
+    expect(dashboard).not.toMatch(/\.reduce\(/);
+    expect(dashboard).not.toMatch(/\+=/);
+    expect(dashboard).not.toContain("const many =");
+  });
+
+  it(`${DASHBOARD}: the count sum never combines the money amounts — no "EUR"/"RSD" literal, door-money imported once, sumResidualOwedByCurrency still twice`, () => {
+    expect(dashboard).not.toContain('"EUR"');
+    expect(dashboard).not.toContain('"RSD"');
+    expect((dashboard.match(/from "@\/lib\/door-money"/g) ?? []).length).toBe(1);
+    expect(
+      (dashboard.match(/sumResidualOwedByCurrency\(/g) ?? []).length,
+    ).toBe(2);
   });
 });
