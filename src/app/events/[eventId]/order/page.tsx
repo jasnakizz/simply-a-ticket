@@ -67,7 +67,7 @@ export default async function OrderPage({
             {event.name}
           </p>
           <h1 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-            Add a sold ticket
+            Issue a ticket reservation
           </h1>
           <p className="text-[12px] text-muted-foreground">
             The QR arrives in their inbox the moment you save.

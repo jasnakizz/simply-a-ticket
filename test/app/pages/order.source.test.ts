@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync, statSync } from "fs";
+import { join } from "path";
 
 import { readCode, readSrc } from "./helpers";
 
@@ -294,12 +296,43 @@ describe("PAGE-07 / D-11 — handoff copy adopted verbatim", () => {
     expect(form).toContain("Ticket type, payment");
   });
 
-  it("order shell carries the D-11 heading, sub, and E3 empty-state copy", () => {
-    expect(shell).toContain("Add a sold ticket");
+  it("order shell carries the NOTE-05 heading, sub, and E3 empty-state copy", () => {
+    expect(shell).toContain("Issue a ticket reservation");
     expect(shell).toContain("The QR arrives in their inbox the moment you save.");
     expect(shell).toContain(
       "No ticket types yet — add one on the event page before selling a ticket.",
     );
+  });
+
+  // NOTE-05: a repo-source sweep, not just a single-file assertion — a
+  // copy-paste of the retired heading string into a NEW surface later would
+  // otherwise go unnoticed. Walked recursively so a future nested route still
+  // gets caught. Scoped to src/ on purpose: the untracked design_handoff_*
+  // directories legitimately still carry the old text (design artifacts, not
+  // source) and are out of scope.
+  it("the previous heading string 'Add a sold ticket' is absent from every .ts/.tsx file under src/", () => {
+    const SRC_ROOT = join(__dirname, "../../../src");
+    const offenders: string[] = [];
+
+    function walk(dir: string) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (/\.(ts|tsx)$/.test(entry.name)) {
+          const contents = readFileSync(full, "utf8");
+          if (contents.includes("Add a sold ticket")) {
+            offenders.push(full);
+          }
+        }
+      }
+    }
+
+    // statSync guard: fail loudly (not silently pass) if src/ ever moved.
+    expect(statSync(SRC_ROOT).isDirectory()).toBe(true);
+    walk(SRC_ROOT);
+
+    expect(offenders).toEqual([]);
   });
 });
 
