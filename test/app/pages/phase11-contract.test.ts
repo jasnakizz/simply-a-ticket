@@ -104,6 +104,23 @@ const routeFiles: Array<[string, string]> = [
   [CHIP, chip],
 ];
 
+// RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+// SEARCH-02 ships a third file under the attendees list route — a client island
+// that owns the "Search" input. It is legitimately a client component with a
+// change handler, so it stays OUT of Gate 1's and Gate 6's `routeFiles` list
+// (those pin the page and the chip as server-only). Gate 12 alone gets a wider
+// list — the two route files plus the island — so the deferred-capability
+// negatives that still apply (export/download, CSV, blob, preset, storage,
+// auth, and crucially `placeholder=`) are checked on all three.
+const SEARCH = "src/app/events/[eventId]/attendees/attendee-search.tsx";
+const search = readCode(SEARCH);
+
+const gate12Files: Array<[string, string]> = [
+  [ATTENDEES, attendees],
+  [CHIP, chip],
+  [SEARCH, search],
+];
+
 describe("Gate 1 — the new route is a Server Component (ATTENDEE-V3-01, D-01)", () => {
   for (const [label, code] of routeFiles) {
     it(`${label}: carries no "use client" directive`, () => {
@@ -128,6 +145,17 @@ describe("Gate 1 — the new route is a Server Component (ATTENDEE-V3-01, D-01)"
   it(`${ATTENDEES}: keeps the force-dynamic marker and await params`, () => {
     expect(attendees).toContain('export const dynamic = "force-dynamic"');
     expect(attendees).toContain("await params");
+  });
+
+  // EXTENSION (plan 24-03 Task 1, SAME commit as the source change,
+  // 2026-09-06): SEARCH-02 introduces exactly one client boundary under the
+  // attendees list route — the AttendeeSearch island. This `it` pins that:
+  // the island carries the client directive and the page and the chip do not,
+  // so a second client boundary cannot appear on this route unnoticed (T-24-16).
+  it(`${SEARCH} is the only file under the attendees list route with a "use client" directive — ${ATTENDEES} and ${CHIP} carry none`, () => {
+    expect(search).toContain("use client");
+    expect(attendees).not.toContain("use client");
+    expect(chip).not.toContain("use client");
   });
 });
 
@@ -530,16 +558,23 @@ describe("Gate 11 — the honest empty states (ATTENDEE-V3-04)", () => {
 });
 
 describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md Out of Scope)", () => {
-  for (const [label, code] of routeFiles) {
-    it(`${label}: no export/download control, no search input, no saved-preset vocabulary, no auth construct`, () => {
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // this gate stayed GREEN while its title ("no search input") became false
+  // about the route — the search input SEARCH-02 ships lives in a third file
+  // (attendee-search.tsx) this gate's list did not name. Retargeted
+  // deliberately: the loop now runs over `gate12Files` (page + chip + island),
+  // the three search-shaped negatives (`type="search"`, `<Input`, `onChange=`)
+  // are DELETED from the deferred set because SEARCH-02 ships them by decision,
+  // and every other negative — including `placeholder=`, which keeps "labeled
+  // only Search" mechanically true — is kept and now applies to all three
+  // files. A companion `it` below asserts the shipped capability positively.
+  for (const [label, code] of gate12Files) {
+    it(`${label}: no export/download control, no saved-preset vocabulary, no browser storage, no auth construct, and no placeholder attribute (the search box is labeled only "Search")`, () => {
       expect(code).not.toMatch(/download/i);
       expect(code).not.toMatch(/\.csv/i);
       expect(code).not.toMatch(/createObjectURL/);
       expect(code).not.toMatch(/new Blob\(/);
-      expect(code).not.toMatch(/type="search"/);
-      expect(code).not.toMatch(/<[Ii]nput\b/);
       expect(code).not.toMatch(/placeholder=/);
-      expect(code).not.toMatch(/onChange=/);
       expect(code).not.toMatch(/preset/i);
       expect(code).not.toMatch(/localStorage/);
       expect(code).not.toMatch(/sessionStorage/);
@@ -549,6 +584,14 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
       expect(code).not.toMatch(/createServerClient/);
     });
   }
+
+  it(`the search input is shipped by exactly one file under the attendees list route — ${SEARCH} — and its <Label>'s only text is the word Search`, () => {
+    const withInput = gate12Files.filter(([, code]) => /<Input\b/.test(code));
+    expect(withInput.map(([label]) => label)).toEqual([SEARCH]);
+    expect((search.match(/type="search"/g) ?? []).length).toBe(1);
+    expect((search.match(/<Label\b[^>]*>Search<\/Label>/g) ?? []).length).toBe(1);
+    expect(search).not.toMatch(/placeholder=/);
+  });
 
   it(`${BADGE}: still declares exactly three variants (accent / neutral / outline)`, () => {
     expect(badge).toMatch(

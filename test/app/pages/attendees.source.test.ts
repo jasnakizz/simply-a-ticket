@@ -118,15 +118,22 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
     expect(attendees).not.toMatch(/\.normalize\(/);
   });
 
-  it("renders the populated list only behind a positive length check — never an unconditional <ul>", () => {
-    // SUPERSEDED by 11-03: the <ul> gate moved from the raw fetched array
-    // (`attendees.length > 0`) to the VISIBLE row count after the URL filter is
-    // applied (`visibleAttendees.length > 0`) — ATTENDEE-V3-04 requires the
-    // populated list to sit behind a positive check on the visible rows, never
-    // on the unfiltered fetch. Still "a positive length check, never an
-    // unconditional <ul>"; only the counted array changed. The ATTENDEE-V3-04
-    // describe below pins the three-way branch and the raw-array negative.
-    expect(attendees).toMatch(/visibleAttendees(?:\?\.|\.)length\s*>\s*0/);
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 delegates the populated list to the new AttendeeSearch client
+  // island. The <ul> container moved OUT of this page into the island; the page
+  // now renders <AttendeeSearch exactly once behind `hasAnyAttendee` and
+  // carries no <ul> of its own. The property — a populated list never renders
+  // unconditionally — is preserved, just across two files: the island's <ul>
+  // is gated on a positive shown-row count.
+  it("delegates the populated list to the AttendeeSearch island — the page renders <AttendeeSearch once behind hasAnyAttendee and carries no <ul of its own, and the island's one <ul is gated on a positive shown-row count", () => {
+    expect((attendees.match(/<AttendeeSearch\b/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(/\{hasAnyAttendee \? \(/);
+    expect(attendees).not.toMatch(/<ul\b/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect((island.match(/<ul\b/g) ?? []).length).toBe(1);
+    expect(island).toMatch(/shown\.length > 0 \? \(/);
   });
 
   it("carries the no-attendees empty-state heading and body verbatim, exactly once each", () => {
@@ -495,23 +502,40 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect(new Set(emptyStateStrings).size).toBe(4);
   });
 
-  it("gates the populated <ul> on the visible row count, never on the raw fetched array", () => {
-    expect(attendees).toMatch(/\{visibleAttendees\.length > 0 \? \(/);
-    // the raw fetched array is never itself the <ul> gate
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 moved the <ul> gate into the AttendeeSearch island. The page
+  // still must not gate anything on the raw fetched array, and the chip verdict
+  // now reaches the island as a per-item `chipVisible` flag derived from
+  // `visibleAttendees` — so the URL filter is still what decides the default,
+  // unsearched view (D-04).
+  it("gates nothing on the raw fetched array and carries no <ul; the chip verdict reaches the island as a per-item chipVisible flag derived from visibleAttendees", () => {
     expect(attendees).not.toMatch(/\battendees\.length\s*>\s*0/);
+    expect(attendees).not.toMatch(/<ul\b/);
+    expect(attendees).toContain(
+      "const chipVisibleIds = new Set(",
+    );
+    expect(attendees).toContain(
+      "visibleAttendees.map((attendee) => attendee.id),",
+    );
+    expect(attendees).toMatch(/chipVisible: chipVisibleIds\.has\(attendee\.id\)/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toMatch(/shown\.length > 0/);
   });
 
-  it("reaches the filter-matches-nobody branch only when a facet is active and the no-attendees branch only when none is", () => {
-    // three-way: <ul> when visible rows exist; else the facet-active branch
-    // (filter matches nobody); else the no-facet branch (no attendees at all)
-    const ulGateIdx = attendees.indexOf("{visibleAttendees.length > 0 ? (");
-    const guardIdx = attendees.indexOf(") : hasActiveFilter ? (");
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // the page's three-way branch became a two-way with the third case delegated
+  // to the island. The shipped order: the `hasAnyAttendee` gate precedes the
+  // "No attendees match this filter" copy (passed INTO the island), which
+  // precedes the "No attendees yet" copy (kept on the page's own else branch).
+  it("splits the empty states across the island boundary — hasAnyAttendee gates the island that receives the filter-empty copy, and the page's own else branch keeps the no-attendees copy, in that source order", () => {
+    const hasAnyIdx = attendees.indexOf("{hasAnyAttendee ? (");
     const filterEmptyIdx = attendees.indexOf("No attendees match this filter");
     const noAttendeesIdx = attendees.indexOf("No attendees yet");
-    expect(ulGateIdx).toBeGreaterThan(-1);
-    expect(guardIdx).toBeGreaterThan(ulGateIdx);
-    expect(guardIdx).toBeLessThan(filterEmptyIdx);
-    expect(filterEmptyIdx).toBeLessThan(noAttendeesIdx);
+    expect(hasAnyIdx).toBeGreaterThan(-1);
+    expect(filterEmptyIdx).toBeGreaterThan(hasAnyIdx);
+    expect(noAttendeesIdx).toBeGreaterThan(filterEmptyIdx);
   });
 
   it("shows the clear-filters link targeting the bare route path in both the chip row and the empty state", () => {
@@ -522,16 +546,31 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect((attendees.match(/href=\{basePath\}/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("gates the footer summary on both a positive visible count and an active facet", () => {
-    expect(attendees).toContain(
-      "{hasActiveFilter && visibleAttendees.length > 0 ? (",
-    );
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 moved the footer-summary expression into the AttendeeSearch
+  // island. The page no longer carries it; the island gates its footer on a
+  // positive shown-row count AND (searching OR an active facet). The "0
+  // attendees" negative is kept and applied to BOTH files.
+  it("moves the footer summary into the island — the page carries no footer expression, the island gates its footer on a positive shown-row count AND (searching OR an active facet), and neither file ever emits \"0 attendees\"", () => {
+    expect(attendees).not.toContain("visibleAttendees.length > 0 ? (");
     expect(attendees).not.toMatch(/0 attendees/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toContain(
+      "shown.length > 0 && (searching || hasActiveFilter) ? (",
+    );
+    expect(island).not.toMatch(/0 attendees/);
   });
 
-  it("chooses the footer noun by an exactly-one test and carries both the singular and plural forms", () => {
-    expect(attendees).toContain(
-      'visibleAttendees.length === 1 ? "attendee" : "attendees"',
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // the exactly-one noun test moved to the island, now over `shown.length`.
+  it("chooses the footer noun by an exactly-one test and carries both the singular and plural forms — now in the island", () => {
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toContain(
+      'shown.length === 1 ? "attendee" : "attendees"',
     );
   });
 
