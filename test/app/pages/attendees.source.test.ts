@@ -37,25 +37,13 @@ const ticketChains = attendees
   });
 
 const listChain = ticketChains.find((c) => c.includes("attendee_email"));
-// SUPERSEDED AGAIN by 17-05 (G-17-4 / G-17-8): the owed read dropped its
-// status filter — a checked-in ticket can still carry a residual after a
-// partial or cross-currency collection — so it can no longer be located by
-// `.eq("status", "issued")`. And now that the list read also carries
-// `pay_at_door_collected_currency` for the residual row badge, the collected
-// total can no longer be located by that column alone. New unique locators:
-// the owed/residual read is the only tickets chain carrying
-// `.not("pay_at_door_amount", "is", null)`; the collected read is the only
-// one that fetches `pay_at_door_collected_currency` WITHOUT also selecting
-// `pay_at_door_amount` (the substring `pay_at_door_amount` does not occur
-// inside `pay_at_door_collected_amount`).
-const owedChain = ticketChains.find((c) =>
-  c.includes('.not("pay_at_door_amount", "is", null)'),
-);
-const collectedChain = ticketChains.find(
-  (c) =>
-    c.includes("pay_at_door_collected_currency") &&
-    !c.includes("pay_at_door_amount"),
-);
+// RETARGET (plan 24-02 Task 1, SAME commit as the source deletion, 2026-09-06):
+// SEARCH-01 removes the two event-wide door-money boxes and their two orphaned
+// reads (`owedTickets` / `collectedTickets`) from this page. Both the
+// `owedChain` and `collectedChain` locators found over `ticketChains` for a
+// chain that no longer exists, and every consumer of both is removed or
+// retargeted below. `listChain` and `ticketChains` stay — the one surviving
+// tickets read (the attendee list read) is still located structurally.
 
 describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list", () => {
   it("exists and exports the force-dynamic marker", () => {
@@ -151,46 +139,27 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
   });
 });
 
-describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one shared helper", () => {
-  it("imports the still-owed subtotal adapter and the collected adapter from door-money, plus attendeeMoneyStrip from attendee-money — never the gross sumOwedByCurrency (that adapter is the dashboard's) and never the retired residualOwedForTicket", () => {
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
+// RETARGET (plan 24-02 Task 1, SAME commit as the source deletion, 2026-09-06):
+// SEARCH-01 removes the two event-wide "COLLECTED AT DOOR" / "STILL TO COLLECT"
+// boxes and their two orphaned reads. The event-wide per-currency door-money
+// line is no longer this page's surface — as of SEARCH-01 the page's only money
+// surface is per row. This describe is retitled and reframed: its first `it`
+// flips the two door-money-adapter expectations from positive to negative, three
+// `it`s whose whole subject was a deleted read are gone, the box-sentence `it`
+// becomes a removal negative, and the throw-count `it` retargets from "at least
+// four" to exactly two. The no-arithmetic and formatMoney/no-currency-literal
+// `it`s are byte-unchanged — both still hold, and both now protect the per-row
+// surface alone.
+describe("SEARCH-01 — the attendees list carries no event-wide per-currency door-money line; its only money surface is per row", () => {
+  it("imports nothing from the door-money module and names neither event-wide adapter — the per-row attendeeMoneyStrip import stays, and neither the gross sumOwedByCurrency nor the retired residualOwedForTicket appears", () => {
+    expect(attendees).not.toMatch(/from\s*"@\/lib\/door-money"/);
+    expect(attendees).not.toMatch(/\bsumResidualOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bsumCollectedByCurrency\b/);
     expect(attendees).toMatch(
       /import\s*\{[^}]*\battendeeMoneyStrip\b[^}]*\}\s*from\s*"@\/lib\/attendee-money"/,
     );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
     expect(attendees).not.toMatch(/\bresidualOwedForTicket\b/);
-  });
-
-  it("has a dedicated residual read scoped to this event, NOT narrowed by status, selecting both the owed and the collected money columns (G-17-4)", () => {
-    expect(owedChain).toBeDefined();
-    expect(owedChain).toContain('.eq("event_id", eventId)');
-    expect(owedChain).not.toContain('.eq("status"');
-    expect(owedChain).toContain("pay_at_door_amount::text");
-    expect(owedChain).toContain("pay_at_door_collected_amount::text");
-    expect(owedChain).toContain("pay_at_door_collected_currency");
-  });
-
-  it("has a dedicated collected read scoped to this event, with the text cast on the collected amount column and the collected currency column", () => {
-    expect(collectedChain).toBeDefined();
-    expect(collectedChain).toContain('.eq("event_id", eventId)');
-    expect(collectedChain).toContain("pay_at_door_collected_amount::text");
-    expect(collectedChain).toContain("pay_at_door_collected_currency");
-  });
-
-  it("keeps both totals reads event-wide — neither chain carries any token derived from a request query", () => {
-    for (const chain of [owedChain, collectedChain]) {
-      expect(chain).toBeDefined();
-      expect(chain).not.toContain("searchParams");
-      expect(chain).not.toContain("sp.");
-      expect(chain).not.toContain("typeFilter");
-      expect(chain).not.toContain("owes");
-      expect(chain).not.toContain(".in(");
-    }
   });
 
   it("does no money arithmetic of its own — no reduce / += / Number( / parseFloat / parseInt / toFixed / toLocaleString", () => {
@@ -209,13 +178,17 @@ describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one sh
     expect(attendees).not.toMatch(/"RSD"/);
   });
 
-  it("carries each box's empty-state sentence verbatim, exactly once, and they are two different sentences", () => {
-    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(1);
-    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  it("no longer carries either door-money box label or either box empty-state sentence — each occurs zero times", () => {
+    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/COLLECTED AT DOOR/g) ?? []).length).toBe(0);
+    expect((attendees.match(/STILL TO COLLECT/g) ?? []).length).toBe(0);
   });
 
-  it("throws on every read except the event-id 404 read — at least four throws in the file", () => {
-    expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
+  it("throws on exactly its two surviving non-404 reads — the ticket_types read guard and the attendees-list read guard", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
+    expect(attendees).toContain("throw ticketTypesError;");
+    expect(attendees).toContain("throw attendeesError;");
   });
 });
 
@@ -476,18 +449,13 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(norm).toContain("const strip = attendeeMoneyStrip(attendee);");
   });
 
-  it("keeps both totals chains free of any query-derived token", () => {
-    for (const chain of [owedChain, collectedChain]) {
-      expect(chain).toBeDefined();
-      expect(chain).not.toContain("searchParams");
-      expect(chain).not.toContain("sp.");
-      expect(chain).not.toContain("activeTypeId");
-      expect(chain).not.toContain("owesActive");
-      expect(chain).not.toContain("rowOwesAtDoor");
-      expect(chain).not.toContain("requestedTypeIds");
-      expect(chain).not.toMatch(/\.in\(/);
-    }
-  });
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deleted both event-wide totals reads, so the
+  // "keeps both totals chains free of any query-derived token" gate that stood
+  // here has no subject left — removed for the same reason as the
+  // both-totals-reads-are-event-wide gate in the SEARCH-01 describe above. The
+  // one surviving tickets chain (the attendee list read) is already proven
+  // query-free by ATTENDEE-V3-01's ordering/scoping gates.
 
   it("carries the wrapping chip-row class and defers the 44px tap target to the chip component", () => {
     expect(attendees).toContain('<div className="flex flex-wrap gap-2">');
@@ -572,8 +540,13 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect(attendees).toContain("{activeFilterLabels.join(\", \")}");
   });
 
-  it("keeps the throw count at least the read count so a failed read never becomes an empty state", () => {
-    expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deletes the two orphaned totals reads and their two
+  // throw guards. The property is unchanged — a failed read never degrades into
+  // an empty state — but the count now equals the two remaining non-404 reads
+  // (ticket_types, attendees list), not "at least four".
+  it("keeps the throw count equal to its two remaining non-404 reads so a failed read never becomes an empty state", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
   });
 });
 
@@ -627,34 +600,25 @@ describe("ADETAIL-V5-01 — every row links to the per-ticket detail page carryi
 });
 
 /**
- * G-17-4 / G-17-8 (plan 17-05) — the list page reads the RESIDUAL door balance,
- * not the pre-Phase-17 gross "status = 'issued' AND collected IS NULL" model.
- * Phase 17 introduced partial and cross-currency door collections; a checked-in
- * ticket can still owe. The event-wide "STILL TO COLLECT" box, the per-row
- * badge and the RESERVATION chip filter all resolve through the one residual
- * helper in src/lib/door-money.ts.
+ * G-17-4 / G-17-8 (plan 17-05, RETARGETED by plan 24-02 Task 1 in the SAME
+ * commit as the source deletion, 2026-09-06) — Phase 17 introduced partial and
+ * cross-currency door collections; a checked-in ticket can still owe. SEARCH-01
+ * then deleted the event-wide "STILL TO COLLECT" box and its residual read from
+ * this page (the same totals now live on the event dashboard). What survives on
+ * the attendees list, and what this describe now protects, is that the
+ * RESERVATION chip filter, the per-row badge and the per-row money token still
+ * resolve through ONE shared residual predicate — they cannot drift onto two.
+ * The still-to-collect-subtotal `it` and the residual-read-not-narrowed-by-status
+ * `it` are gone with the read they named.
  *
  * `attendees` is the comment-stripped source. Every `it` is named for the one
- * property it protects; the key retargets carry recorded break-checks in
- * 17-05-SUMMARY.md.
+ * property it protects.
  */
-describe("G-17-4 / G-17-8 — the list page reflects the residual door balance, not the gross owes", () => {
-  it("computes the still-to-collect subtotal from sumResidualOwedByCurrency over the residual read", () => {
-    expect(attendees).toContain(
-      "const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);",
-    );
-  });
-
-  it("does not narrow the residual read by status — a checked-in ticket with an outstanding balance still reaches the total (G-17-4)", () => {
-    expect(owedChain).toBeDefined();
-    expect(owedChain).not.toContain('.eq("status"');
-    expect(owedChain).toContain('.not("pay_at_door_amount", "is", null)');
-  });
-
-  it("resolves the chip filter, the row badge and the row token through one strip helper and the event-wide total through the residual adapter — one rowOwesAtDoor, two attendeeMoneyStrip( call sites, zero residualOwedForTicket(, one sumResidualOwedByCurrency( call site", () => {
+describe("G-17-4 / G-17-8 — the RESERVATION chip, the row badge and the row token share one residual predicate", () => {
+  it("resolves the chip filter, the row badge and the row token through one strip helper — one rowOwesAtDoor, two attendeeMoneyStrip( call sites, zero residualOwedForTicket(, and no event-wide sumResidualOwedByCurrency( call site", () => {
     expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
     expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
     expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(0);
-    expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(1);
+    expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(0);
   });
 });

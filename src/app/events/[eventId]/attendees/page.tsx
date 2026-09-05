@@ -2,10 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import {
-  sumResidualOwedByCurrency,
-  sumCollectedByCurrency,
-} from "@/lib/door-money";
 import { attendeeMoneyStrip } from "@/lib/attendee-money";
 import type { AttendeeMoneyRow } from "@/lib/attendee-money";
 import { formatMoney } from "@/lib/amount";
@@ -81,47 +77,6 @@ export default async function AttendeesPage({
   if (attendeesError) {
     throw attendeesError;
   }
-
-  // "Still to collect" — the RESIDUAL door balance across every ticket, not
-  // just the issued ones. Phase 17 introduced partial and cross-currency door
-  // collections, so status = 'checked_in' no longer implies "door balance
-  // resolved": a checked-in ticket can still carry a residual after a partial
-  // (6000 of 7000) or a cross-currency collection (G-17-4 / G-17-8). The read
-  // therefore carries NO status filter; it keeps .not("pay_at_door_amount",
-  // "is", null) because a ticket with no pay-at-door amount has no residual by
-  // definition. Every money column is cast to text so a decimal string —
-  // never a JS double — crosses the wire. Event-wide: nothing derived from
-  // the URL.
-  const { data: owedTickets, error: owedTicketsError } = await supabase
-    .from("tickets")
-    .select(
-      "pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
-    )
-    .eq("event_id", eventId)
-    .not("pay_at_door_amount", "is", null);
-
-  if (owedTicketsError) {
-    throw owedTicketsError;
-  }
-
-  // "Collected at the door" — event-wide, no status filter and no .not(): the
-  // shared helper already skips null, zero, malformed and unknown-currency
-  // rows. The collected side carries its OWN currency column. Event-wide: it
-  // carries nothing derived from the URL.
-  const { data: collectedTickets, error: collectedTicketsError } = await supabase
-    .from("tickets")
-    .select("pay_at_door_collected_amount::text, pay_at_door_collected_currency")
-    .eq("event_id", eventId);
-
-  if (collectedTicketsError) {
-    throw collectedTicketsError;
-  }
-
-  // Every money figure comes from the shared helper — this page sums nothing,
-  // groups nothing by currency and formats nothing itself. The `?? []` runs
-  // only after the throws above, on a successful null.
-  const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);
-  const collectedSubtotals = sumCollectedByCurrency(collectedTickets ?? []);
 
   // Real ticket-type name per row (D-05). A row whose type id matches nothing
   // renders no badge rather than a fabricated one.
@@ -263,47 +218,6 @@ export default async function AttendeesPage({
         <h1 className="text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] break-words">
           Attendees
         </h1>
-
-        <div className="grid grid-cols-2">
-          <div className="flex flex-col gap-1 pr-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              COLLECTED AT DOOR
-            </p>
-            {collectedSubtotals.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">
-                Nothing collected yet.
-              </p>
-            ) : (
-              collectedSubtotals.map((subtotal) => (
-                <p
-                  key={subtotal.currency}
-                  className="text-[13px] font-extrabold leading-[1.3]"
-                >
-                  {formatMoney(subtotal.amount, subtotal.currency)}
-                </p>
-              ))
-            )}
-          </div>
-          <div className="flex flex-col gap-1 border-l-2 border-border pl-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent-700)]">
-              STILL TO COLLECT
-            </p>
-            {owedSubtotals.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">
-                Nothing owed at the door.
-              </p>
-            ) : (
-              owedSubtotals.map((subtotal) => (
-                <p
-                  key={subtotal.currency}
-                  className="text-[13px] font-extrabold leading-[1.3] text-[var(--color-accent-700)]"
-                >
-                  {formatMoney(subtotal.amount, subtotal.currency)}
-                </p>
-              ))
-            )}
-          </div>
-        </div>
 
         <div className="flex flex-wrap gap-2">
           {(ticketTypes ?? []).map((type) => (
