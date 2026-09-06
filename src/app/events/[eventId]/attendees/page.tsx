@@ -107,6 +107,9 @@ export default async function AttendeesPage({
   // facet inactive — never a 404, never a throw. No method is ever called on the
   // raw query value.
   const checkedInActive = sp[CHECK_IN_PARAM] === "yes";
+  // One key, exactly two recognised values: "yes" and "no" can never both be
+  // true, so the two chips are mutually exclusive by construction (FILT-02).
+  const notCheckedInActive = sp[CHECK_IN_PARAM] === "no";
 
   // Intersect the requested type ids against the event's OWN ticket types. A
   // requested id that matches nothing is silently dropped; an unrecognised
@@ -115,7 +118,10 @@ export default async function AttendeesPage({
   const activeTypeIds = requestedTypeIds.filter((id) => validTypeIds.has(id));
   const activeTypeIdSet = new Set(activeTypeIds);
   const hasActiveFilter =
-    activeTypeIds.length > 0 || owesActive || checkedInActive;
+    activeTypeIds.length > 0 ||
+    owesActive ||
+    checkedInActive ||
+    notCheckedInActive;
 
   const basePath = `/events/${eventId}/attendees`;
 
@@ -133,6 +139,8 @@ export default async function AttendeesPage({
     }
     if (checkedInActive) {
       seeded.set(CHECK_IN_PARAM, "yes");
+    } else if (notCheckedInActive) {
+      seeded.set(CHECK_IN_PARAM, "no");
     }
     return seeded;
   };
@@ -189,6 +197,7 @@ export default async function AttendeesPage({
 
   const RESERVATION_LABEL = "RESERVATION";
   const IN_LABEL = "IN";
+  const NOT_IN_LABEL = "NOT IN";
 
   // The one and only "is this row checked in" fact. The exact
   // string-and-parseable-instant guard the row builder used to inline, lifted
@@ -228,7 +237,8 @@ export default async function AttendeesPage({
       activeTypeIdSet.size === 0 || activeTypeIdSet.has(attendee.ticket_type_id);
     const owesFacetPass = !owesActive || rowOwesAtDoor(attendee);
     const rowCheckedIn = checkedInInstant(attendee) !== null;
-    const checkInFacetPass = !checkedInActive || rowCheckedIn;
+    const checkInFacetPass =
+      (!checkedInActive || rowCheckedIn) && (!notCheckedInActive || !rowCheckedIn);
     return typeFacetPass && owesFacetPass && checkInFacetPass;
   });
 
@@ -240,6 +250,7 @@ export default async function AttendeesPage({
       .map((type) => type.name.toUpperCase()),
     ...(owesActive ? [RESERVATION_LABEL] : []),
     ...(checkedInActive ? [IN_LABEL] : []),
+    ...(notCheckedInActive ? [NOT_IN_LABEL] : []),
   ];
 
   // ── The rows: still authored HERE, on the server ─────────────────────────
@@ -414,6 +425,11 @@ export default async function AttendeesPage({
             label={IN_LABEL}
             active={checkedInActive}
           />
+          <FilterChip
+            href={hrefForCheckIn("no")}
+            label={NOT_IN_LABEL}
+            active={notCheckedInActive}
+          />
           {hasActiveFilter ? (
             <Link
               href={basePath}
@@ -431,14 +447,38 @@ export default async function AttendeesPage({
             hasActiveFilter={hasActiveFilter}
             filterSummary={activeFilterLabels.join(", ")}
             emptyState={
-              <>
-                <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-                  No attendees match this filter
-                </h2>
-                <p className="text-[15px] leading-[1.55] text-muted-foreground">
-                  {"No one for this event matches the filters you've selected."}
-                </p>
-              </>
+              checkedInActive ? (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No checked-in attendees match
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {
+                      "No one for this event is checked in and matches the filters you've selected."
+                    }
+                  </p>
+                </>
+              ) : notCheckedInActive ? (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No not-checked-in attendees match
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {
+                      "No one for this event is still to arrive and matches the filters you've selected."
+                    }
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No attendees match this filter
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {"No one for this event matches the filters you've selected."}
+                  </p>
+                </>
+              )
             }
             clearFilters={
               <Link

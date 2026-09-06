@@ -606,6 +606,104 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
       '{(ticketTypes ?? []).length > 0 ? ( <div className="flex flex-wrap gap-2">',
     );
   });
+
+  // ── FILT-02 / FILT-04 / FILT-06 (plan 26-01 Task 2) — the NOT IN sibling,
+  //    mutual exclusion, the fixed row-2 order, and the check-in empty states.
+  it("declares notCheckedInActive by strict equality once, and NOT_IN_LABEL once beside IN_LABEL used as a label prop once", () => {
+    expect((attendees.match(/sp\[CHECK_IN_PARAM\] === "no"/g) ?? []).length).toBe(
+      1,
+    );
+    expect(attendees).toContain(
+      'const notCheckedInActive = sp[CHECK_IN_PARAM] === "no";',
+    );
+    expect((attendees.match(/const NOT_IN_LABEL = "NOT IN";/g) ?? []).length).toBe(
+      1,
+    );
+    expect((attendees.match(/label=\{NOT_IN_LABEL\}/g) ?? []).length).toBe(1);
+  });
+
+  it("hasActiveFilter is a four-term disjunction naming activeTypeIds.length, owesActive, checkedInActive and notCheckedInActive", () => {
+    expect(norm).toContain(
+      "const hasActiveFilter = activeTypeIds.length > 0 || owesActive || checkedInActive || notCheckedInActive;",
+    );
+  });
+
+  it("carries the check-in key forward with one if / else-if pair — never two independent ifs, never an append", () => {
+    const seeded = norm.slice(
+      norm.indexOf("const seededParams ="),
+      norm.indexOf("const withQuery ="),
+    );
+    expect(seeded).toContain(
+      'if (checkedInActive) { seeded.set(CHECK_IN_PARAM, "yes"); } else if (notCheckedInActive) { seeded.set(CHECK_IN_PARAM, "no"); }',
+    );
+    expect(seeded).not.toContain("seeded.append(CHECK_IN_PARAM");
+  });
+
+  it("hrefForCheckIn does exactly one set and one delete on the key, and the page never appends it (FILT-02 mutual exclusion)", () => {
+    const href = norm.slice(
+      norm.indexOf("const hrefForCheckIn ="),
+      norm.indexOf("const detailHref ="),
+    );
+    expect((href.match(/params\.set\(CHECK_IN_PARAM/g) ?? []).length).toBe(1);
+    expect((href.match(/params\.delete\(CHECK_IN_PARAM\)/g) ?? []).length).toBe(
+      1,
+    );
+    expect(attendees).not.toMatch(/\.append\(CHECK_IN_PARAM/);
+  });
+
+  it("checkInFacetPass is a two-clause conjunction, one per chip state, and the filter returns the three-term conjunction", () => {
+    const block = filterBlock.replace(/\s+/g, " ");
+    expect(block).toContain(
+      "const owesFacetPass = !owesActive || rowOwesAtDoor(attendee);",
+    );
+    expect(block).toContain(
+      "const checkInFacetPass = (!checkedInActive || rowCheckedIn) && (!notCheckedInActive || !rowCheckedIn);",
+    );
+    expect(block).toContain(
+      "return typeFacetPass && owesFacetPass && checkInFacetPass;",
+    );
+  });
+
+  it("appends NOT_IN_LABEL to activeFilterLabels immediately after the IN_LABEL spread", () => {
+    expect(norm).toContain(
+      "...(checkedInActive ? [IN_LABEL] : []), ...(notCheckedInActive ? [NOT_IN_LABEL] : []), ];",
+    );
+  });
+
+  it("orders row 2 as RESERVATION, then IN, then NOT IN, then the Clear filters link (D-02)", () => {
+    const r = attendees.indexOf("label={RESERVATION_LABEL}");
+    const i = attendees.indexOf("label={IN_LABEL}");
+    const n = attendees.indexOf("label={NOT_IN_LABEL}");
+    const c = attendees.lastIndexOf("Clear filters");
+    expect(r).toBeGreaterThan(-1);
+    expect(r).toBeLessThan(i);
+    expect(i).toBeLessThan(n);
+    expect(n).toBeLessThan(c);
+  });
+
+  it("gives the NOT IN chip its three props verbatim — href from hrefForCheckIn(\"no\"), label={NOT_IN_LABEL}, active={notCheckedInActive}", () => {
+    expect(norm).toMatch(
+      /href=\{hrefForCheckIn\("no"\)\} label=\{NOT_IN_LABEL\} active=\{notCheckedInActive\}/,
+    );
+  });
+
+  it("selects the empty-state copy with a checkedInActive-then-notCheckedInActive ternary, generic copy last (FILT-06)", () => {
+    const block = norm.slice(
+      norm.indexOf("emptyState={"),
+      norm.indexOf("clearFilters={"),
+    );
+    expect(block).toContain("emptyState={ checkedInActive ? (");
+    expect(block).toMatch(/\) : notCheckedInActive \? \(/);
+    expect(block).toContain("No checked-in attendees match");
+    expect(block).toContain("No not-checked-in attendees match");
+    expect(block).toContain("No attendees match this filter");
+    expect(block.indexOf("No checked-in attendees match")).toBeLessThan(
+      block.indexOf("No not-checked-in attendees match"),
+    );
+    expect(block.indexOf("No not-checked-in attendees match")).toBeLessThan(
+      block.indexOf("No attendees match this filter"),
+    );
+  });
 });
 
 /**
@@ -617,18 +715,27 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
  * break-check recorded in 11-03-SUMMARY.md.
  */
 describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer summary", () => {
+  // RETARGET (plan 26-01 Task 2, SAME commit as the source change, 2026-09-06):
+  // FILT-06 adds two own-words check-in empty states (one for IN, one for NOT
+  // IN), each a heading + a sentence, distinct from the generic filter-empty
+  // copy and from the no-attendees-yet copy. The set grows 4 -> 8; the "each
+  // exactly once" and "no two are equal" properties are byte-unchanged.
   const emptyStateStrings = [
     "No attendees yet",
     "Attendees appear here once an order is placed or a sold ticket is added for this event.",
     "No attendees match this filter",
     "No one for this event matches the filters you've selected.",
+    "No checked-in attendees match",
+    "No one for this event is checked in and matches the filters you've selected.",
+    "No not-checked-in attendees match",
+    "No one for this event is still to arrive and matches the filters you've selected.",
   ];
 
-  it("carries all four empty-state strings verbatim, exactly once each, and no two are equal", () => {
+  it("carries all eight empty-state strings verbatim, exactly once each, and no two are equal", () => {
     for (const s of emptyStateStrings) {
       expect(attendees.split(s).length - 1).toBe(1);
     }
-    expect(new Set(emptyStateStrings).size).toBe(4);
+    expect(new Set(emptyStateStrings).size).toBe(8);
   });
 
   // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
