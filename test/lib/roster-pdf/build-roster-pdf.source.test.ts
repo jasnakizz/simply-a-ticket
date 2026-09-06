@@ -93,3 +93,20 @@ describe("D-04 decoupling — the PDF owns its money and time rendering", () => 
     expect(route).not.toMatch(/\/\s*100\b/);
   });
 });
+
+describe("PDF-05 / D-03 — the page-1 summary is the door-money array verbatim", () => {
+  it("build-roster-pdf.ts iterates summary.owed directly and never sorts / filters / reduces / maps it", () => {
+    expect(builder).toMatch(/of\s+summary\.owed\b/);
+    expect(builder).not.toMatch(
+      /summary\.owed\s*\.\s*(sort|filter|reduce|map)\b/,
+    );
+  });
+
+  it("build-roster-pdf.ts does no arithmetic combining two owed amounts", () => {
+    expect(builder).not.toMatch(/\.amount\s*[+\-]\s*\w+\.amount/);
+  });
+
+  it("the route handler passes the sumResidualOwedByCurrency result through unchanged", () => {
+    expect(route).toMatch(/owed:\s*sumResidualOwedByCurrency\(/);
+  });
+});

@@ -300,3 +300,100 @@ describe("buildRosterPdf — pagination, wrapping names, per-page chrome (PDF-04
     expect(cmap(latText)).not.toMatch(/<0411>/i);
   });
 });
+
+/**
+ * Task 3 battery: the page-1 per-currency owed summary (PDF-05, D-03) and the
+ * zero-attendee roster (D-12).
+ *
+ * The summary's content (the money strings, the EUR-then-RSD order, the absence
+ * of a combined line) is enforced STRUCTURALLY in build-roster-pdf.source.test.ts
+ * — the builder is asserted to iterate `summary.owed` directly with no sort /
+ * filter / reduce / map and no arithmetic on two amounts. Here the observable
+ * check is the count of currency lines the draw loop actually emitted, reported
+ * through `opts.onMeta` as `summaryOwedLines`, plus `columnHeaderDrawn` for the
+ * "no four-column band on an empty roster" property.
+ */
+
+type LayoutMeta = {
+  pageCount: number;
+  columnHeaderDrawn: boolean;
+  summaryOwedLines: number;
+};
+
+async function buildMeta(
+  rows: RosterRow[],
+  summary?: RosterSummary,
+): Promise<LayoutMeta> {
+  let meta: LayoutMeta | null = null;
+  await buildRosterPdf(
+    rows,
+    summary ?? { count: rows.length, owed: [] },
+    META,
+    {
+      compress: false,
+      onMeta: (m) => {
+        meta = m as LayoutMeta;
+      },
+    },
+  );
+  if (!meta) throw new Error("onMeta was not called");
+  return meta;
+}
+
+describe("buildRosterPdf — page-1 per-currency summary + zero-attendee roster (PDF-05, D-03, D-12)", () => {
+  const mixedSummary: RosterSummary = {
+    count: 2,
+    owed: [
+      { currency: "EUR", amount: "10.00", ticketCount: 1 },
+      { currency: "RSD", amount: "500.00", ticketCount: 1 },
+    ],
+  };
+  const mixedRows: RosterRow[] = [
+    latinRow("Ana Anic", { owed: { amount: "10.00", currency: "EUR" } }),
+    latinRow("Bojan Boskovic", {
+      owed: { amount: "500.00", currency: "RSD" },
+    }),
+  ];
+
+  it("draws exactly one summary line per currency entry — no merge, no combined line", async () => {
+    const meta = await buildMeta(mixedRows, mixedSummary);
+    expect(meta.summaryOwedLines).toBe(mixedSummary.owed.length);
+    expect(meta.summaryOwedLines).toBe(2);
+    expect(meta.pageCount).toBe(1);
+  });
+
+  it("an empty summary.owed draws the count line and no currency lines", async () => {
+    const meta = await buildMeta(mixedRows, { count: 2, owed: [] });
+    expect(meta.summaryOwedLines).toBe(0);
+  });
+
+  it("EUR and RSD stay separate — a two-entry summary never yields a third combined entry", async () => {
+    const meta = await buildMeta(mixedRows, mixedSummary);
+    expect(meta.summaryOwedLines).not.toBe(3);
+    expect(meta.summaryOwedLines).toBe(2);
+  });
+
+  it("a mixed EUR + RSD roster renders without throwing", async () => {
+    await expect(
+      buildRosterPdf(mixedRows, mixedSummary, META, { compress: false }),
+    ).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it("D-12: buildRosterPdf([], { count: 0, owed: [] }, meta) resolves to a valid one-page PDF", async () => {
+    const buf = await buildRosterPdf([], { count: 0, owed: [] }, META, {
+      compress: false,
+    });
+    expect(buf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(countPageObjects(buf)).toBe(1);
+  });
+
+  it("the zero-attendee document draws no four-column header band", async () => {
+    const empty = await buildMeta([], { count: 0, owed: [] });
+    const oneRow = await buildMeta([latinRow("Solo Attendee")], {
+      count: 1,
+      owed: [],
+    });
+    expect(empty.columnHeaderDrawn).toBe(false);
+    expect(oneRow.columnHeaderDrawn).toBe(true);
+  });
+});
