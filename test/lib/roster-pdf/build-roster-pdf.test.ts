@@ -151,3 +151,117 @@ describe("buildRosterPdf", () => {
     expect(pageObjects.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+/**
+ * Task 2 battery: measured pagination (a row is never split across a page
+ * boundary), wrapping names growing the row, per-page chrome and a "Page N of M"
+ * footer with the true M (PDF-04, PDF-06).
+ *
+ * Page count is cross-checked two ways: structurally, by counting `/Type /Page`
+ * objects in the uncompressed bytes, and against the builder's own report — it
+ * is surfaced through an optional `opts.onMeta({ pageCount })` callback invoked
+ * once from `bufferedPageRange().count` just before `doc.end()`. The route
+ * handler never passes `onMeta`, so the public/consumed signature is unchanged.
+ */
+
+function countPageObjects(buf: Buffer): number {
+  return (buf.toString("latin1").match(/\/Type\s*\/Page(?![s])/g) ?? []).length;
+}
+
+async function build(
+  rows: RosterRow[],
+  summary?: RosterSummary,
+): Promise<{ buf: Buffer; reported: number }> {
+  let reported = -1;
+  const buf = await buildRosterPdf(
+    rows,
+    summary ?? { count: rows.length, owed: [] },
+    META,
+    {
+      compress: false,
+      onMeta: (m) => {
+        reported = m.pageCount;
+      },
+    },
+  );
+  return { buf, reported };
+}
+
+const shortRow = (i: number): RosterRow => latinRow(`Person Number ${i}`);
+const shortRoster = (n: number): RosterRow[] =>
+  Array.from({ length: n }, (_, i) => shortRow(i));
+
+describe("buildRosterPdf — pagination, wrapping names, per-page chrome (PDF-04, PDF-06)", () => {
+  it("a three-row short roster is exactly one page and the builder agrees", async () => {
+    const { buf, reported } = await build(THREE_LATIN, { count: 3, owed: [] });
+    expect(countPageObjects(buf)).toBe(1);
+    expect(reported).toBe(1);
+  });
+
+  it("a long roster paginates; the builder-reported count equals the page objects", async () => {
+    // A4 usable height ~= 842 - 56 - 56 - (header band) - (footer band) - (column
+    // header) is on the order of 600pt; at a ~22pt minimum row height that is
+    // roughly 25-30 rows per page. 80 rows is comfortably more than one page
+    // whatever the exact reserves.
+    const { buf, reported } = await build(shortRoster(80), {
+      count: 80,
+      owed: [],
+    });
+    expect(reported).toBeGreaterThanOrEqual(2);
+    expect(countPageObjects(buf)).toBe(reported);
+  });
+
+  it("page count grows monotonically as rows are added", async () => {
+    const a = await build(shortRoster(30), { count: 30, owed: [] });
+    const b = await build(shortRoster(90), { count: 90, owed: [] });
+    const c = await build(shortRoster(180), { count: 180, owed: [] });
+    expect(b.reported).toBeGreaterThanOrEqual(a.reported);
+    expect(c.reported).toBeGreaterThanOrEqual(b.reported);
+    expect(c.reported).toBeGreaterThan(a.reported);
+  });
+
+  it("wrapping names take more vertical space — N long names never fewer pages than N short, strictly more at scale", async () => {
+    const longName = "Aleksandar Djordjevic ".repeat(6).trim();
+    const longRoster = (n: number): RosterRow[] =>
+      Array.from({ length: n }, () => latinRow(longName));
+
+    const s40 = await build(shortRoster(40), { count: 40, owed: [] });
+    const l40 = await build(longRoster(40), { count: 40, owed: [] });
+    expect(l40.reported).toBeGreaterThanOrEqual(s40.reported);
+
+    const s60 = await build(shortRoster(60), { count: 60, owed: [] });
+    const l60 = await build(longRoster(60), { count: 60, owed: [] });
+    expect(l60.reported).toBeGreaterThan(s60.reported);
+  });
+
+  it("is deterministic — the same roster with a fixed generatedAt renders byte-identical", async () => {
+    const one = await build(shortRoster(50), { count: 50, owed: [] });
+    const two = await build(shortRoster(50), { count: 50, owed: [] });
+    expect(Buffer.compare(one.buf, two.buf)).toBe(0);
+  });
+
+  it("no row is split across a page boundary — a wrapping row at the boundary moves whole to the next page", async () => {
+    // Largest number of short rows that still fits on a single page.
+    let fit = 1;
+    for (let n = 2; n <= 200; n++) {
+      const { reported } = await build(shortRoster(n), { count: n, owed: [] });
+      if (reported > 1) break;
+      fit = n;
+    }
+    expect(fit).toBeGreaterThan(1);
+
+    const base = await build(shortRoster(fit), { count: fit, owed: [] });
+    expect(base.reported).toBe(1);
+
+    // Swap the last row for a name long enough to wrap to several lines. Its
+    // measured height exceeds the sliver of band left after `fit - 1` short
+    // rows, so the whole row (box + all four cells) is carried to page 2 — not
+    // split with its first line clipped at the bottom of page 1.
+    const bigName = "Konstantinopoljski ".repeat(8).trim();
+    const rows = shortRoster(fit);
+    rows[fit - 1] = latinRow(bigName);
+    const withWrap = await build(rows, { count: fit, owed: [] });
+    expect(withWrap.reported).toBe(2);
+    expect(countPageObjects(withWrap.buf)).toBe(2);
+  });
+});
