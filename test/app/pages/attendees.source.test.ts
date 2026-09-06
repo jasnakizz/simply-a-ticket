@@ -432,14 +432,22 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(attendees).toContain("label={RESERVATION_LABEL}");
   });
 
-  it("combines the type facet as a union and the two facets as an intersection", () => {
+  // RETARGET (plan 26-01 Task 1, SAME commit as the source change, 2026-09-06):
+  // FILT-01/03 adds the check-in facet as a THIRD && term in the
+  // visibleAttendees callback. The two-term return became three-term; the union
+  // (type) and the existing intersection (owes) assertions are byte-unchanged, a
+  // new assertion pins the third term.
+  it("combines the type facet as a union and the reservation and check-in facets as an intersection", () => {
     expect(filterBlock).toContain(
       "activeTypeIdSet.size === 0 || activeTypeIdSet.has(attendee.ticket_type_id)",
     );
     expect(filterBlock).toContain(
       "const owesFacetPass = !owesActive || rowOwesAtDoor(attendee);",
     );
-    expect(filterBlock).toContain("return typeFacetPass && owesFacetPass;");
+    expect(filterBlock).toContain("const checkInFacetPass =");
+    expect(filterBlock).toContain(
+      "return typeFacetPass && owesFacetPass && checkInFacetPass;",
+    );
   });
 
   it("keeps one module-local owes predicate whose whole body delegates to attendeeMoneyStrip, and the row badge reads the SAME helper — chip filter and badge can never drift onto two predicates", () => {
@@ -466,8 +474,12 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
   // one surviving tickets chain (the attendee list read) is already proven
   // query-free by ATTENDEE-V3-01's ordering/scoping gates.
 
-  it("carries the wrapping chip-row class and defers the 44px tap target to the chip component", () => {
-    expect(attendees).toContain('<div className="flex flex-wrap gap-2">');
+  // RETARGET (plan 26-01 Task 1, SAME commit as the source change, 2026-09-06):
+  // D-02 splits the single chip container into TWO flex-wrap rows (ticket-type
+  // chips on row 1, RESERVATION + IN [+ NOT IN] on row 2), so the wrapping class
+  // now appears exactly twice. The 44px-tap-target delegation is unmoved.
+  it("carries the wrapping chip-row class on both chip rows and defers the 44px tap target to the chip component", () => {
+    expect((attendees.match(/flex flex-wrap gap-2/g) ?? []).length).toBe(2);
     expect(chip).toContain("min-h-[44px]");
     expect(chip).not.toMatch(/\brounded/);
   });
@@ -476,6 +488,123 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(chip).not.toContain("use client");
     expect(chip).not.toMatch(/\son[A-Z][a-zA-Z]*=\{/);
     expect(chip).toContain("aria-pressed={active}");
+  });
+
+  // ── FILT-01..05 (plan 26-01 Task 1) — the IN check-in facet, wired end to
+  //    end: URL key -> normalisation -> carry-forward -> href -> chip ->
+  //    in-memory filter -> footer label. Each `it` names the single property it
+  //    protects so a later edit fails BY NAME.
+  it("declares the check-in query key once as a const, before its first use, and it is the only check-in query key", () => {
+    expect(
+      (attendees.match(/const CHECK_IN_PARAM = "checkedin";/g) ?? []).length,
+    ).toBe(1);
+    expect((attendees.match(/"checkedin"/g) ?? []).length).toBe(1);
+    expect(attendees).not.toMatch(/sp\.checkedin\b/);
+    expect(attendees.indexOf("const CHECK_IN_PARAM =")).toBeLessThan(
+      attendees.indexOf("const sp = await searchParams;"),
+    );
+  });
+
+  it("recognises the checked-in value by strict equality against the lowercase literal, exactly once, calling no method on the raw value", () => {
+    expect(
+      (attendees.match(/sp\[CHECK_IN_PARAM\] === "yes"/g) ?? []).length,
+    ).toBe(1);
+    expect(attendees).toContain(
+      'const checkedInActive = sp[CHECK_IN_PARAM] === "yes";',
+    );
+    expect(attendees).not.toMatch(/sp\[CHECK_IN_PARAM\]\s*\.\s*\w/);
+    expect(attendees).not.toMatch(/Array\.isArray\(sp\[CHECK_IN_PARAM\]\)/);
+  });
+
+  it("adds checkedInActive to hasActiveFilter", () => {
+    expect(norm).toMatch(
+      /const hasActiveFilter = activeTypeIds\.length > 0 \|\| owesActive \|\| checkedInActive/,
+    );
+  });
+
+  it("carries the check-in key forward in seededParams with the single-value setter, not the multi-value appender", () => {
+    const seeded = norm.slice(
+      norm.indexOf("const seededParams ="),
+      norm.indexOf("const withQuery ="),
+    );
+    expect(seeded).toContain(
+      'if (checkedInActive) { seeded.set(CHECK_IN_PARAM, "yes"); }',
+    );
+    expect(seeded).not.toContain("seeded.append(CHECK_IN_PARAM");
+  });
+
+  it("toggles the check-in facet through one parameterised hrefForCheckIn, declared once right after hrefForOwes and before detailHref", () => {
+    expect((attendees.match(/const hrefForCheckIn = /g) ?? []).length).toBe(1);
+    expect(attendees.indexOf("const hrefForOwes =")).toBeLessThan(
+      attendees.indexOf("const hrefForCheckIn ="),
+    );
+    expect(attendees.indexOf("const hrefForCheckIn =")).toBeLessThan(
+      attendees.indexOf("const detailHref ="),
+    );
+    const href = norm.slice(
+      norm.indexOf("const hrefForCheckIn ="),
+      norm.indexOf("const detailHref ="),
+    );
+    expect(href).toContain("params.delete(CHECK_IN_PARAM)");
+    expect(href).toContain("params.set(CHECK_IN_PARAM, value)");
+  });
+
+  it("extracts the check-in instant into one checkedInInstant function, declared before rowOwesAtDoor, whose guard is byte-identical to the checkInClock shape and lives exactly once", () => {
+    expect((attendees.match(/function checkedInInstant/g) ?? []).length).toBe(1);
+    expect(attendees.indexOf("function checkedInInstant")).toBeLessThan(
+      attendees.indexOf("function rowOwesAtDoor"),
+    );
+    expect(
+      (attendees.match(/typeof checkedInAt === "string"/g) ?? []).length,
+    ).toBe(1);
+    expect((attendees.match(/checkedInAt !== ""/g) ?? []).length).toBe(1);
+    expect(
+      (
+        attendees.match(
+          /!Number\.isNaN\(new Date\(checkedInAt\)\.getTime\(\)\)/g,
+        ) ?? []
+      ).length,
+    ).toBe(1);
+  });
+
+  it("gives checkedInInstant exactly two call sites — the in-memory filter and the row builder", () => {
+    expect((attendees.match(/checkedInInstant\(attendee\)/g) ?? []).length).toBe(
+      2,
+    );
+    expect(attendees).toContain(
+      "const checkedInAt = checkedInInstant(attendee);",
+    );
+  });
+
+  it("keeps the row builder on one formatCheckInClock call, on the true side of the null check, isCheckedIn unchanged", () => {
+    expect((attendees.match(/formatCheckInClock\(/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(
+      /checkedInAt !== null \? formatCheckInClock\(checkedInAt\) : null/,
+    );
+    expect(attendees).toContain("const isCheckedIn = checkInClock !== null;");
+  });
+
+  it("declares IN_LABEL once as the literal \"IN\" beside RESERVATION_LABEL and uses it as a label prop exactly once", () => {
+    expect((attendees.match(/const IN_LABEL = "IN";/g) ?? []).length).toBe(1);
+    expect((attendees.match(/label=\{IN_LABEL\}/g) ?? []).length).toBe(1);
+    expect(attendees).toContain('const RESERVATION_LABEL = "RESERVATION";');
+    expect((attendees.match(/label=\{RESERVATION_LABEL\}/g) ?? []).length).toBe(
+      1,
+    );
+    expect((attendees.match(/"RESERVATION"/g) ?? []).length).toBe(1);
+  });
+
+  it("gives the IN chip its three props verbatim — href from hrefForCheckIn(\"yes\"), label={IN_LABEL}, active={checkedInActive}", () => {
+    expect(norm).toMatch(
+      /href=\{hrefForCheckIn\("yes"\)\} label=\{IN_LABEL\} active=\{checkedInActive\}/,
+    );
+  });
+
+  it("splits the chip area into two flex-wrap rows — row 1 (ticket types) renders only when the event has types", () => {
+    expect((attendees.match(/flex flex-wrap gap-2/g) ?? []).length).toBe(2);
+    expect(norm).toContain(
+      '{(ticketTypes ?? []).length > 0 ? ( <div className="flex flex-wrap gap-2">',
+    );
   });
 });
 
@@ -574,9 +703,15 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     );
   });
 
-  it("orders the footer labels in chip order — active ticket types in creation order, then the reservation label last", () => {
+  // RETARGET (plan 26-01 Task 1, SAME commit as the source change, 2026-09-06):
+  // FILT-07 appends `...(checkedInActive ? [IN_LABEL] : [])` to
+  // activeFilterLabels after the RESERVATION_LABEL spread (plan 26-01 Task 2
+  // appends the NOT_IN_LABEL spread after that). Expected normalised literal is
+  // re-derived from the shipped source, stopped before the closing `];` so the
+  // Task 2 append does not re-break it; the join assertion is byte-unchanged.
+  it("orders the footer labels in chip order — active ticket types in creation order, then RESERVATION, then IN", () => {
     expect(norm).toContain(
-      "const activeFilterLabels = [ ...(ticketTypes ?? []) .filter((type) => activeTypeIdSet.has(type.id)) .map((type) => type.name.toUpperCase()), ...(owesActive ? [RESERVATION_LABEL] : []), ];",
+      "const activeFilterLabels = [ ...(ticketTypes ?? []) .filter((type) => activeTypeIdSet.has(type.id)) .map((type) => type.name.toUpperCase()), ...(owesActive ? [RESERVATION_LABEL] : []), ...(checkedInActive ? [IN_LABEL] : []),",
     );
     expect(attendees).toContain("{activeFilterLabels.join(\", \")}");
   });
