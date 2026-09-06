@@ -221,7 +221,7 @@ describe("buildRosterPdf — pagination, wrapping names, per-page chrome (PDF-04
   });
 
   it("wrapping names take more vertical space — N long names never fewer pages than N short, strictly more at scale", async () => {
-    const longName = "Aleksandar Djordjevic ".repeat(6).trim();
+    const longName = "Aleksandar Djordjevic ".repeat(9).trim();
     const longRoster = (n: number): RosterRow[] =>
       Array.from({ length: n }, () => latinRow(longName));
 
@@ -257,11 +257,46 @@ describe("buildRosterPdf — pagination, wrapping names, per-page chrome (PDF-04
     // measured height exceeds the sliver of band left after `fit - 1` short
     // rows, so the whole row (box + all four cells) is carried to page 2 — not
     // split with its first line clipped at the bottom of page 1.
-    const bigName = "Konstantinopoljski ".repeat(8).trim();
+    const bigName = "Konstantinopoljski Aleksandrovic ".repeat(9).trim();
     const rows = shortRoster(fit);
     rows[fit - 1] = latinRow(bigName);
     const withWrap = await build(rows, { count: fit, owed: [] });
     expect(withWrap.reported).toBe(2);
     expect(countPageObjects(withWrap.buf)).toBe(2);
+  });
+
+  // Coverage probe (plan assumption 1): with `compress: false` pdfkit writes a
+  // /ToUnicode CMap whose bfrange/bfchar entries carry the SOURCE code points of
+  // the embedded subset. A stable assertion is therefore possible: a roster
+  // with a Cyrillic name puts U+0411 (Б) into that CMap; an all-Latin roster
+  // does not. This proves the Cyrillic characters reached the embedded font's
+  // subset — it is NOT proof of glyph rasterisation, which stays the PDF-07
+  // manual Vercel-preview check.
+  it("PDF-07 probe: a Cyrillic name lands its code points in the embedded font's /ToUnicode CMap", async () => {
+    const cyrillic = await build([latinRow("Борис Ђенић")], {
+      count: 1,
+      owed: [],
+    });
+    const latin = await build([latinRow("Boris Djenic")], {
+      count: 1,
+      owed: [],
+    });
+    const cyrText = cyrillic.buf.toString("latin1");
+    const latText = latin.buf.toString("latin1");
+
+    expect(cyrText).toContain("/ToUnicode");
+
+    const cmap = (src: string): string => {
+      const parts = [
+        ...src.matchAll(/beginbfrange([\s\S]*?)endbfrange/g),
+        ...src.matchAll(/beginbfchar([\s\S]*?)endbfchar/g),
+      ];
+      return parts.map((m) => m[1]).join("\n");
+    };
+
+    // U+0411 (Cyrillic capital BE) is present for the Cyrillic roster's CMap,
+    // absent for the Latin one.
+    expect(cmap(cyrText)).toMatch(/<0411>/i);
+    expect(cmap(latText)).not.toMatch(/<0411>/i);
   });
 });
