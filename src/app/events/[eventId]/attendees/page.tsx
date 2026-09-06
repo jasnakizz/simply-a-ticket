@@ -372,6 +372,7 @@ export default async function AttendeesPage({
         </div>
 
         {hasAnyAttendee ? (
+          <>
           <AttendeeSearch
             items={searchItems}
             hasActiveFilter={hasActiveFilter}
@@ -395,6 +396,14 @@ export default async function AttendeesPage({
               </Link>
             }
           />
+            <a
+              href={`/events/${eventId}/attendees/roster.pdf`}
+              download
+              className={buttonVariants({ variant: "secondary", className: "self-start" })}
+            >
+              Download roster (PDF)
+            </a>
+          </>
         ) : (
           <div className="flex flex-col gap-2">
             <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
