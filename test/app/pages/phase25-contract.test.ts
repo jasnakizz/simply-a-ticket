@@ -386,13 +386,13 @@ describe("Gate 8 — the trigger, sealed cross-file (D-05, D-06, D-12)", () => {
     expect(a.includes("?")).toBe(false);
   });
 
-  it('the "Download roster (PDF)" label appears exactly once on the attendees page', () => {
-    expect(count(attendeesList, /Download roster \(PDF\)/g)).toBe(1);
+  it('the "Download Attendees List (PDF)" label appears exactly once on the attendees page', () => {
+    expect(count(attendeesList, /Download Attendees List \(PDF\)/g)).toBe(1);
   });
 
   it('the label is absent from the empty-state branch — it sits before "No attendees yet" and after the hasAnyAttendee test (D-12)', () => {
     const hasIdx = attendeesList.indexOf("hasAnyAttendee ?");
-    const labelIdx = attendeesList.indexOf("Download roster (PDF)");
+    const labelIdx = attendeesList.indexOf("Download roAttendees Listster (PDF)");
     const emptyIdx = attendeesList.indexOf("No attendees yet");
     expect(hasIdx).toBeGreaterThan(-1);
     expect(labelIdx).toBeGreaterThan(hasIdx);
@@ -401,7 +401,7 @@ describe("Gate 8 — the trigger, sealed cross-file (D-05, D-06, D-12)", () => {
 
   it("no other file under the attendees route tree carries the D-06 label", () => {
     const carriers = attendeesTreeFiles.filter((rel) =>
-      readCode(rel).includes("Download roster (PDF)"),
+      readCode(rel).includes("Download Attendees List (PDF)"),
     );
     expect(carriers).toEqual([ATTENDEES_LIST]);
   });

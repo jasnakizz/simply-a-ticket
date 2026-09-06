@@ -889,7 +889,7 @@ describe("PDF-01 — the foot-of-page roster download link (D-05, D-06, D-12)", 
     expect(attendees).toContain(
       'className={buttonVariants({ variant: "secondary", className: "self-start" })}',
     );
-    expect((attendees.match(/Download roster \(PDF\)/g) ?? []).length).toBe(1);
+    expect((attendees.match(/Download Attendees List \(PDF\)/g) ?? []).length).toBe(1);
     // a plain <a>, not the <Link> component — this is a file download
     const anchor = attendees.slice(
       attendees.indexOf("<a"),
@@ -900,7 +900,7 @@ describe("PDF-01 — the foot-of-page roster download link (D-05, D-06, D-12)", 
 
   it("places the link inside the hasAnyAttendee branch and before the empty-state copy (D-12)", () => {
     const gateIdx = attendees.indexOf("{hasAnyAttendee ? (");
-    const anchorIdx = attendees.indexOf("Download roster (PDF)");
+    const anchorIdx = attendees.indexOf("Download Attendees List (PDF)");
     const emptyIdx = attendees.indexOf("No attendees yet");
     expect(gateIdx).toBeGreaterThan(-1);
     expect(anchorIdx).toBeGreaterThan(gateIdx);

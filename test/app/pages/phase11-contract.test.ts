@@ -590,7 +590,7 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
   // attendees page — a plain `<a download>` to the static roster.pdf route.
   // Retargeted IN PLACE, not loosened: the chip and the search island still
   // carry zero download vocabulary, and the page carries the token exactly
-  // twice — the `download` attribute and the "Download roster (PDF)" label —
+  // twice — the `download` attribute and the "Download Attendees List (PDF)" label —
   // only on the roster.pdf anchor.
   it("the filter chip and the search island carry no download vocabulary at all", () => {
     expect(chip).not.toMatch(/download/i);
@@ -605,7 +605,7 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
     expect(attendees).toContain(
       'buttonVariants({ variant: "secondary", className: "self-start" })',
     );
-    expect(attendees).toContain("Download roster (PDF)");
+    expect(attendees).toContain("Download Attendees List (PDF)");
     // the ONLY two occurrences of the token on the whole page
     expect((attendees.match(/download/gi) ?? []).length).toBe(2);
     expect(attendees).not.toMatch(/\.csv/i);

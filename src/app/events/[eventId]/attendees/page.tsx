@@ -401,7 +401,7 @@ export default async function AttendeesPage({
               download
               className={buttonVariants({ variant: "secondary", className: "self-start" })}
             >
-              Download roster (PDF)
+              Download Attendees List (PDF)
             </a>
           </>
         ) : (
