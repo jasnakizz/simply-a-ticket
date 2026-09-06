@@ -24,13 +24,25 @@
 // the caller's `attendeeMoneyStrip`. It is printed verbatim — never `Number()`,
 // `parseFloat`, `parseInt` or `.toFixed`.
 //
+// Money and time rendering (D-04): this module owns its own money and time
+// formatting via ./format (formatPdfMoney / formatPdfGeneratedAt / footerText)
+// and does NOT import formatMoney or formatCheckInClock — the print form is
+// free to diverge from the screen form. The one screen helper it does reuse is
+// formatEventDateRange from src/lib/date.ts for the header event-date line:
+// that is a date-range helper, not on D-04's decoupling list, already tested
+// and ICU-stable, and re-implementing collapsed-range formatting would be
+// hand-rolling something the codebase already owns.
+//
 // Deliberately left to plan 02: pagination for a long roster, the repeated
 // per-page header/footer, "Page N of M", name wrapping onto a second line, and
 // the page-1 per-currency owed summary. This pass assumes every row fits on one
 // page.
 import PDFDocument from "pdfkit";
 
+import { formatEventDateRange } from "@/lib/date";
+
 import { dejaVuSansBase64 } from "./fonts/dejavu-sans";
+import { formatPdfMoney } from "./format";
 
 export type RosterRow = {
   name: string;
@@ -128,7 +140,16 @@ export function buildRosterPdf(
         width: contentRight - PAGE.marginX,
         lineBreak: false,
       });
-      y += 28;
+      y += 24;
+
+      // Event-date line — collapsed range shape shared with the dashboard.
+      doc.fontSize(10).text(
+        formatEventDateRange(meta.startsAt, meta.endsAt),
+        PAGE.marginX,
+        y,
+        { width: contentRight - PAGE.marginX, lineBreak: false },
+      );
+      y += 20;
 
       // Attendee count line (the full per-currency summary is plan 02).
       doc
@@ -199,11 +220,16 @@ export function buildRosterPdf(
         // D-02: print the owed cell iff a positive amount is owed; otherwise
         // leave it blank. `owed.amount` is a string — printed, never parsed.
         if (row.owed) {
-          doc.text(`${row.owed.amount} ${row.owed.currency}`, COL.owedX, y, {
-            width: COL.owedW,
-            align: "right",
-            lineBreak: false,
-          });
+          doc.text(
+            formatPdfMoney(row.owed.amount, row.owed.currency),
+            COL.owedX,
+            y,
+            {
+              width: COL.owedW,
+              align: "right",
+              lineBreak: false,
+            },
+          );
         }
 
         y += ROW_HEIGHT;
