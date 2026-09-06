@@ -104,6 +104,23 @@ const routeFiles: Array<[string, string]> = [
   [CHIP, chip],
 ];
 
+// RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+// SEARCH-02 ships a third file under the attendees list route — a client island
+// that owns the "Search" input. It is legitimately a client component with a
+// change handler, so it stays OUT of Gate 1's and Gate 6's `routeFiles` list
+// (those pin the page and the chip as server-only). Gate 12 alone gets a wider
+// list — the two route files plus the island — so the deferred-capability
+// negatives that still apply (export/download, CSV, blob, preset, storage,
+// auth, and crucially `placeholder=`) are checked on all three.
+const SEARCH = "src/app/events/[eventId]/attendees/attendee-search.tsx";
+const search = readCode(SEARCH);
+
+const gate12Files: Array<[string, string]> = [
+  [ATTENDEES, attendees],
+  [CHIP, chip],
+  [SEARCH, search],
+];
+
 describe("Gate 1 — the new route is a Server Component (ATTENDEE-V3-01, D-01)", () => {
   for (const [label, code] of routeFiles) {
     it(`${label}: carries no "use client" directive`, () => {
@@ -129,11 +146,27 @@ describe("Gate 1 — the new route is a Server Component (ATTENDEE-V3-01, D-01)"
     expect(attendees).toContain('export const dynamic = "force-dynamic"');
     expect(attendees).toContain("await params");
   });
+
+  // EXTENSION (plan 24-03 Task 1, SAME commit as the source change,
+  // 2026-09-06): SEARCH-02 introduces exactly one client boundary under the
+  // attendees list route — the AttendeeSearch island. This `it` pins that:
+  // the island carries the client directive and the page and the chip do not,
+  // so a second client boundary cannot appear on this route unnoticed (T-24-16).
+  it(`${SEARCH} is the only file under the attendees list route with a "use client" directive — ${ATTENDEES} and ${CHIP} carry none`, () => {
+    expect(search).toContain("use client");
+    expect(attendees).not.toContain("use client");
+    expect(chip).not.toContain("use client");
+  });
 });
 
 describe("Gate 2 — the event-scoping security spine (ATTENDEE-V3-01, V4 Access Control)", () => {
-  it(`${ATTENDEES}: issues exactly three .from("tickets") reads`, () => {
-    expect(attendeeTicketChains.length).toBe(3);
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deletes the two event-wide door-money reads
+  // (`owedTickets` / `collectedTickets`), leaving only the attendee list read.
+  // The next `it` — every tickets chain carries the event scoping — stays
+  // byte-unchanged and now guards that single surviving chain (T-24-10).
+  it(`${ATTENDEES}: issues exactly one .from("tickets") read — the attendee list read`, () => {
+    expect(attendeeTicketChains.length).toBe(1);
   });
 
   it(`${ATTENDEES}: every .from("tickets") chain carries .eq("event_id", eventId)`, () => {
@@ -154,8 +187,12 @@ describe("Gate 2 — the event-scoping security spine (ATTENDEE-V3-01, V4 Access
     expect(attendeeEventChains[0]).toMatch(/\.maybeSingle\(\)/);
   });
 
-  it(`${ATTENDEES}: opens exactly five Supabase table reads in total — no unscoped read hides by not being looked at`, () => {
-    expect(count(attendees, /\.from\("/g)).toBe(5);
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): with the two event-wide door-money reads gone, the page opens
+  // three table reads — one events, one ticket_types, one tickets. The
+  // rationale is unchanged: no unscoped read hides by not being looked at.
+  it(`${ATTENDEES}: opens exactly three Supabase table reads in total — no unscoped read hides by not being looked at`, () => {
+    expect(count(attendees, /\.from\("/g)).toBe(3);
   });
 });
 
@@ -213,18 +250,29 @@ describe("Gate 5 — one shared money module: the generic core, its per-column a
     expect(dashboard).not.toMatch(/\+=/);
   });
 
-  it(`${ATTENDEES}: imports the still-owed subtotal adapter and the collected adapter from @/lib/door-money, plus attendeeMoneyStrip from @/lib/attendee-money — never the gross sumOwedByCurrency (the dashboard's) and never the retired residualOwedForTicket`, () => {
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 removes the two event-wide door-money boxes, so the
+  // attendees page stops importing from the door-money module entirely. The
+  // milestone's one-shared-money-module invariant keeps its teeth by pointing
+  // at the module's one remaining page consumer — the dashboard, asserted here
+  // to import BOTH event-wide adapters (the collected adapter's positive
+  // assertion moved here rather than being deleted). The dashboard-side gate
+  // directly above is not weakened.
+  it(`${ATTENDEES}: imports NOTHING from @/lib/door-money and names neither event-wide adapter — it keeps its attendeeMoneyStrip import and still never names the gross sumOwedByCurrency or the retired residualOwedForTicket; ${DASHBOARD} imports both event-wide adapters`, () => {
+    expect(attendees).not.toMatch(/from\s*"@\/lib\/door-money"/);
+    expect(attendees).not.toMatch(/\bsumResidualOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bsumCollectedByCurrency\b/);
     expect(attendees).toMatch(
       /import\s*\{[^}]*\battendeeMoneyStrip\b[^}]*\}\s*from\s*"@\/lib\/attendee-money"/,
     );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
     expect(attendees).not.toMatch(/\bresidualOwedForTicket\b/);
+    expect(dashboard).toMatch(
+      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
+    expect(dashboard).toMatch(
+      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
+    );
   });
 
   // MONEY-V6-01 single-owner gate (plan 18-02): the attendee strip's cell-3
@@ -381,13 +429,18 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     );
   });
 
-  it(`${ATTENDEES}: the residual owed chain carries NO status filter and keeps the null filter (G-17-4)`, () => {
-    expect(attendeesOwedChain).toBeDefined();
-    expect(attendeesOwedChain).toContain('.eq("event_id", eventId)');
-    expect(attendeesOwedChain).not.toContain('.eq("status"');
-    expect(attendeesOwedChain).toContain(
-      '.not("pay_at_door_amount", "is", null)',
-    );
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deletes the attendees page's residual-owed read
+  // outright (the same total now lives only on the dashboard). This gate
+  // becomes its own negative: the locator resolves to undefined, and the one
+  // surviving tickets chain is the attendee list read. `attendeesOwedChain`
+  // stays a module-level constant — it is now the subject of a negative rather
+  // than dead code (the DASH-V6-02 `it` below still reads it to prove the
+  // dashboard chain is pinned against the deleted chain's frozen fingerprint).
+  it(`${ATTENDEES}: has NO residual-owed chain at all — SEARCH-01 deleted it; the single surviving tickets chain is the attendee list read (selects attendee_email)`, () => {
+    expect(attendeesOwedChain).toBeUndefined();
+    expect(attendeeTicketChains.length).toBe(1);
+    expect(attendeeTicketChains[0]).toContain("attendee_email");
   });
 
   // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
@@ -400,9 +453,32 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
   // (`status` present as a COLUMN, never as a `.eq("status"` FILTER), identical
   // filter set). Both length sanity checks and the filter-equality check are
   // kept exactly as they were.
-  it(`${DASHBOARD}: the residual owed chain is the attendees owed chain plus the Phase 23 partition key — identical filters, one extra "status" column (DASH-V6-02, retargeted by plan 23-01)`, () => {
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 DELETED the attendees-side residual owed read — the
+  // peer this proof compared against. It was not changed, it is gone, so the
+  // comparand cannot be re-derived from a live chain any more. Re-anchor rather
+  // than delete or relax: the attendees-side fingerprint is now two FROZEN
+  // literal reference constants, computed mechanically by running this file's
+  // own `norm()` over the chain text at the phase-start commit
+  // (git show 801a7f8…:src/app/events/[eventId]/attendees/page.tsx) — a
+  // four-entry sorted column list (row currency, owed amount ::text, collected
+  // amount ::text, collected currency) and a two-entry sorted filter list (the
+  // event-scoping equality and the owed-amount not-null filter). These literals
+  // are the preserved fingerprint, NOT hardcoding drift. Every dashboard-side
+  // expectation is kept exactly as written.
+  const FROZEN_ATTENDEES_OWED_COLUMNS = [
+    "currency",
+    "pay_at_door_amount::text",
+    "pay_at_door_collected_amount::text",
+    "pay_at_door_collected_currency",
+  ];
+  const FROZEN_ATTENDEES_OWED_FILTERS = [
+    '.eq("event_id", eventId)',
+    '.not("pay_at_door_amount", "is", null)',
+  ];
+
+  it(`${DASHBOARD}: the residual owed chain is pinned against the preserved fingerprint of the attendees owed chain that plan 24-02 deleted — identical filters, one extra "status" column (DASH-V6-02, retargeted by plan 24-02)`, () => {
     expect(dashboardOwedChain).toBeDefined();
-    expect(attendeesOwedChain).toBeDefined();
 
     // The dashboard chain on its own: event-scoped, NO status FILTER, keeps the
     // not-null guard, and selects the owed amount cast to text plus both
@@ -417,8 +493,8 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     expect(dashboardOwedChain).toContain("pay_at_door_collected_currency");
 
     // The equivalence proof: derive the selected-column set and the filter set
-    // from each chain string rather than hardcoding two literal lists, so this
-    // keeps binding if either page's read changes later.
+    // from the live dashboard chain string; compare against the frozen
+    // attendees-side fingerprint captured at the phase-start commit.
     const norm = (chain: string) => {
       const selectBody = (chain.match(/\.select\(([\s\S]*?)\)/) ?? [])[1] ?? "";
       const columns = selectBody
@@ -435,7 +511,10 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     };
 
     const d = norm(dashboardOwedChain as string);
-    const a = norm(attendeesOwedChain as string);
+    const a = {
+      columns: [...FROZEN_ATTENDEES_OWED_COLUMNS].sort(),
+      filters: [...FROZEN_ATTENDEES_OWED_FILTERS].sort(),
+    };
     // Superset, not identity: the dashboard chain's columns are the attendees
     // chain's columns plus exactly the `status` partition key.
     expect(d.columns.filter((c) => c !== "status")).toEqual(a.columns);
@@ -443,6 +522,9 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
     expect(d.filters).toEqual(a.filters);
     expect(d.columns.length).toBeGreaterThan(0);
     expect(d.filters.length).toBeGreaterThan(0);
+    // The frozen fingerprint is well-formed: four columns, two filters.
+    expect(a.columns.length).toBe(4);
+    expect(a.filters.length).toBe(2);
   });
 });
 
@@ -461,32 +543,38 @@ describe("Gate 11 — the honest empty states (ATTENDEE-V3-04)", () => {
     expect(new Set(emptyStateStrings).size).toBe(4);
   });
 
-  // RETARGET (plan 23-01 Task 1, SAME commit as the source swap): plan 23-01
-  // deletes the DASHBOARD's `owedSubtotals.length === 0 ? (` marker and the
-  // wide-block "Nothing owed at the door." sentence it anchored — the compact
-  // 3-cell strip uses a bare `0.00` fallback (D-05) instead. The byte-identity
-  // assertion had nothing left to anchor on. The property that survives until
-  // Phase 24 removes the attendees-list boxes: the attendees page still
-  // carries that wide-block sentence exactly once, and the dashboard carries
-  // it nowhere.
-  it(`${ATTENDEES}: keeps its own wide-block still-to-collect empty sentence exactly once, and ${DASHBOARD} no longer ships that sentence at all`, () => {
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): this `it`'s own comment already said the property survives
+  // only "until Phase 24 removes the attendees-list boxes". SEARCH-01 removed
+  // them. Retargeted to the completed state — the wide-block "Nothing owed at
+  // the door." sentence now appears in NEITHER the attendees page NOR the
+  // dashboard. Gate 11's first `it` (the four empty-state strings, each exactly
+  // once) is byte-unchanged: all four still live in the attendees page.
+  it(`${ATTENDEES} and ${DASHBOARD}: the wide-block still-to-collect empty sentence appears in neither page`, () => {
     const sentence = "Nothing owed at the door.";
-    expect(attendees.split(sentence).length - 1).toBe(1);
+    expect(attendees).not.toContain(sentence);
     expect(dashboard).not.toContain(sentence);
   });
 });
 
 describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md Out of Scope)", () => {
-  for (const [label, code] of routeFiles) {
-    it(`${label}: no export/download control, no search input, no saved-preset vocabulary, no auth construct`, () => {
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // this gate stayed GREEN while its title ("no search input") became false
+  // about the route — the search input SEARCH-02 ships lives in a third file
+  // (attendee-search.tsx) this gate's list did not name. Retargeted
+  // deliberately: the loop now runs over `gate12Files` (page + chip + island),
+  // the three search-shaped negatives (`type="search"`, `<Input`, `onChange=`)
+  // are DELETED from the deferred set because SEARCH-02 ships them by decision,
+  // and every other negative — including `placeholder=`, which keeps "labeled
+  // only Search" mechanically true — is kept and now applies to all three
+  // files. A companion `it` below asserts the shipped capability positively.
+  for (const [label, code] of gate12Files) {
+    it(`${label}: no export/download control, no saved-preset vocabulary, no browser storage, no auth construct, and no placeholder attribute (the search box is labeled only "Search")`, () => {
       expect(code).not.toMatch(/download/i);
       expect(code).not.toMatch(/\.csv/i);
       expect(code).not.toMatch(/createObjectURL/);
       expect(code).not.toMatch(/new Blob\(/);
-      expect(code).not.toMatch(/type="search"/);
-      expect(code).not.toMatch(/<[Ii]nput\b/);
       expect(code).not.toMatch(/placeholder=/);
-      expect(code).not.toMatch(/onChange=/);
       expect(code).not.toMatch(/preset/i);
       expect(code).not.toMatch(/localStorage/);
       expect(code).not.toMatch(/sessionStorage/);
@@ -496,6 +584,14 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
       expect(code).not.toMatch(/createServerClient/);
     });
   }
+
+  it(`the search input is shipped by exactly one file under the attendees list route — ${SEARCH} — and its <Label>'s only text is the word Search`, () => {
+    const withInput = gate12Files.filter(([, code]) => /<Input\b/.test(code));
+    expect(withInput.map(([label]) => label)).toEqual([SEARCH]);
+    expect((search.match(/type="search"/g) ?? []).length).toBe(1);
+    expect((search.match(/<Label\b[^>]*>Search<\/Label>/g) ?? []).length).toBe(1);
+    expect(search).not.toMatch(/placeholder=/);
+  });
 
   it(`${BADGE}: still declares exactly three variants (accent / neutral / outline)`, () => {
     expect(badge).toMatch(

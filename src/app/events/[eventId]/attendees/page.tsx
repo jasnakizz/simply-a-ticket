@@ -2,10 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createServiceClient } from "@/lib/supabase/server";
-import {
-  sumResidualOwedByCurrency,
-  sumCollectedByCurrency,
-} from "@/lib/door-money";
 import { attendeeMoneyStrip } from "@/lib/attendee-money";
 import type { AttendeeMoneyRow } from "@/lib/attendee-money";
 import { formatMoney } from "@/lib/amount";
@@ -13,6 +9,8 @@ import { formatCheckInClock } from "@/lib/date";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FilterChip } from "./filter-chip";
+import { AttendeeSearch } from "./attendee-search";
+import type { AttendeeSearchItem } from "./attendee-search";
 
 // Same reasoning as the dashboard: staff need the current attendee list on
 // every request, not a build-time snapshot frozen when Vercel built the app.
@@ -81,47 +79,6 @@ export default async function AttendeesPage({
   if (attendeesError) {
     throw attendeesError;
   }
-
-  // "Still to collect" — the RESIDUAL door balance across every ticket, not
-  // just the issued ones. Phase 17 introduced partial and cross-currency door
-  // collections, so status = 'checked_in' no longer implies "door balance
-  // resolved": a checked-in ticket can still carry a residual after a partial
-  // (6000 of 7000) or a cross-currency collection (G-17-4 / G-17-8). The read
-  // therefore carries NO status filter; it keeps .not("pay_at_door_amount",
-  // "is", null) because a ticket with no pay-at-door amount has no residual by
-  // definition. Every money column is cast to text so a decimal string —
-  // never a JS double — crosses the wire. Event-wide: nothing derived from
-  // the URL.
-  const { data: owedTickets, error: owedTicketsError } = await supabase
-    .from("tickets")
-    .select(
-      "pay_at_door_amount::text, currency, pay_at_door_collected_amount::text, pay_at_door_collected_currency",
-    )
-    .eq("event_id", eventId)
-    .not("pay_at_door_amount", "is", null);
-
-  if (owedTicketsError) {
-    throw owedTicketsError;
-  }
-
-  // "Collected at the door" — event-wide, no status filter and no .not(): the
-  // shared helper already skips null, zero, malformed and unknown-currency
-  // rows. The collected side carries its OWN currency column. Event-wide: it
-  // carries nothing derived from the URL.
-  const { data: collectedTickets, error: collectedTicketsError } = await supabase
-    .from("tickets")
-    .select("pay_at_door_collected_amount::text, pay_at_door_collected_currency")
-    .eq("event_id", eventId);
-
-  if (collectedTicketsError) {
-    throw collectedTicketsError;
-  }
-
-  // Every money figure comes from the shared helper — this page sums nothing,
-  // groups nothing by currency and formats nothing itself. The `?? []` runs
-  // only after the throws above, on a successful null.
-  const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);
-  const collectedSubtotals = sumCollectedByCurrency(collectedTickets ?? []);
 
   // Real ticket-type name per row (D-05). A row whose type id matches nothing
   // renders no badge rather than a fabricated one.
@@ -242,6 +199,132 @@ export default async function AttendeesPage({
     ...(owesActive ? [RESERVATION_LABEL] : []),
   ];
 
+  // ── The rows: still authored HERE, on the server ─────────────────────────
+  // Every attendee <li> is built exactly as it was before the search box
+  // existed; the AttendeeSearch island below only decides which of these
+  // pre-rendered rows to place (SEARCH-02, D-01). `hasAnyAttendee` gates the
+  // island against the "no attendees yet" copy; `chipVisibleIds` carries the
+  // URL-filter verdict to the island as a per-row flag, so the chips still
+  // decide the default, unsearched view (D-04).
+  const hasAnyAttendee = (attendees ?? []).length > 0;
+  const chipVisibleIds = new Set(
+    visibleAttendees.map((attendee) => attendee.id),
+  );
+
+  const searchItems: AttendeeSearchItem[] = (attendees ?? []).map((attendee) => {
+    const typeName = ticketTypeNames.get(attendee.ticket_type_id);
+
+    // D-12 check-in guard — the same shape the dashboard uses before
+    // formatting checked_in_at: only a non-empty string that parses
+    // to a real instant reaches the formatter. Anything else (null,
+    // empty, unparseable) is "not arrived" — never an epoch date.
+    // The green left bar is driven off THIS same fact, so a row can
+    // never show a bar without a time or a time without a bar.
+    const checkedInAt = attendee.checked_in_at;
+    const checkInClock =
+      typeof checkedInAt === "string" &&
+      checkedInAt !== "" &&
+      !Number.isNaN(new Date(checkedInAt).getTime())
+        ? formatCheckInClock(checkedInAt)
+        : null;
+    const isCheckedIn = checkInClock !== null;
+
+    // D-13 right side — four rendered / three logical mutually
+    // exclusive states, decided by ONE if/else-if/else chain (see the
+    // JSX below) so exactly one renders. Ordering (G-17-8): still-owed
+    // FIRST, then change, then "Paid at door". A checked-in
+    // pay-at-door attendee who paid only partially, or paid in the
+    // other currency, carries BOTH a collected amount and a positive
+    // balance — and such a row must read as still owing. "Paid at
+    // door" renders only when the ticket-currency balance is fully
+    // settled; a same-currency over-payment reads its change back.
+    const strip = attendeeMoneyStrip(attendee);
+
+    const collectedAmount = attendee.pay_at_door_collected_amount;
+    const isCollected =
+      typeof collectedAmount === "string" &&
+      /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
+
+    // The row's two signed figures come straight off the shared strip
+    // helper — the same attendeeMoneyStrip the chip predicate and the
+    // detail page's third money cell read, so the three surfaces can
+    // never disagree. "Owes" -> accent token, "Change" -> the
+    // checked-in-green token; every other label falls through to the
+    // collected / render-nothing branches. The page formats nothing
+    // and carries no currency literal (D-04 / D-05).
+    const owedLabel =
+      strip.balanceLabel === "Owes" && strip.balance !== null
+        ? formatMoney(strip.balance, strip.balanceCurrency)
+        : null;
+    const changeLabel =
+      strip.balanceLabel === "Change" && strip.balance !== null
+        ? formatMoney(strip.balance, strip.balanceCurrency)
+        : null;
+
+    return {
+      id: attendee.id,
+      name: attendee.attendee_name,
+      email: attendee.attendee_email,
+      chipVisible: chipVisibleIds.has(attendee.id),
+      row: (
+        <li
+          key={attendee.id}
+          className={[
+            "relative flex items-start justify-between gap-3 py-3 pl-3 border-l-4",
+            isCheckedIn
+              ? "border-l-[var(--color-checked-in)]"
+              : "border-l-transparent",
+            "border-t border-border first:border-t-0",
+          ].join(" ")}
+        >
+          <Link
+            href={detailHref(attendee.id)}
+            className="flex flex-1 items-start justify-between gap-3 min-w-0"
+          >
+            <div className="flex flex-col gap-1 min-w-0">
+              <span className="text-[13px] font-extrabold leading-[1.3] break-words">
+                {attendee.attendee_name}
+              </span>
+              {/* <span className="text-[12px] text-muted-foreground break-all">
+                {attendee.attendee_email}
+              </span> */}
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                {/* 260831-keq operator tweak: type badge and arrival status share one row to keep door-phone rows short (diverges from 11-UI-SPEC D-08 item 5 on purpose) */}
+                {typeName ? (
+                  <Badge variant="neutral" className="uppercase">
+                    {typeName}
+                  </Badge>
+                ) : null}
+                {isCheckedIn ? (
+                  <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
+                    Checked in {checkInClock}
+                  </span>
+                ) : (
+                  <span className="text-[12px] text-muted-foreground">
+                    Not arrived
+                  </span>
+                )}
+              </div>
+            </div>
+            {owedLabel !== null ? (
+              <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
+                {owedLabel}
+              </span>
+            ) : changeLabel !== null ? (
+              <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]">
+                {changeLabel}
+              </span>
+            ) : isCollected ? (
+              <span className="shrink-0 text-right text-[12px] text-muted-foreground">
+                Paid at door
+              </span>
+            ) : null}
+          </Link>
+        </li>
+      ),
+    };
+  });
+
   return (
     <div className="flex flex-col flex-1 items-center">
       <div className="w-full max-w-[560px] px-4 py-6 flex flex-col gap-4">
@@ -263,47 +346,6 @@ export default async function AttendeesPage({
         <h1 className="text-[26px] font-extrabold leading-[1.05] tracking-[-0.03em] break-words">
           Attendees
         </h1>
-
-        <div className="grid grid-cols-2">
-          <div className="flex flex-col gap-1 pr-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              COLLECTED AT DOOR
-            </p>
-            {collectedSubtotals.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">
-                Nothing collected yet.
-              </p>
-            ) : (
-              collectedSubtotals.map((subtotal) => (
-                <p
-                  key={subtotal.currency}
-                  className="text-[13px] font-extrabold leading-[1.3]"
-                >
-                  {formatMoney(subtotal.amount, subtotal.currency)}
-                </p>
-              ))
-            )}
-          </div>
-          <div className="flex flex-col gap-1 border-l-2 border-border pl-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--color-accent-700)]">
-              STILL TO COLLECT
-            </p>
-            {owedSubtotals.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">
-                Nothing owed at the door.
-              </p>
-            ) : (
-              owedSubtotals.map((subtotal) => (
-                <p
-                  key={subtotal.currency}
-                  className="text-[13px] font-extrabold leading-[1.3] text-[var(--color-accent-700)]"
-                >
-                  {formatMoney(subtotal.amount, subtotal.currency)}
-                </p>
-              ))
-            )}
-          </div>
-        </div>
 
         <div className="flex flex-wrap gap-2">
           {(ticketTypes ?? []).map((type) => (
@@ -329,131 +371,30 @@ export default async function AttendeesPage({
           ) : null}
         </div>
 
-        {visibleAttendees.length > 0 ? (
-          <ul className="flex flex-col">
-            {visibleAttendees.map((attendee, index) => {
-              const typeName = ticketTypeNames.get(attendee.ticket_type_id);
-
-              // D-12 check-in guard — the same shape the dashboard uses before
-              // formatting checked_in_at: only a non-empty string that parses
-              // to a real instant reaches the formatter. Anything else (null,
-              // empty, unparseable) is "not arrived" — never an epoch date.
-              // The green left bar is driven off THIS same fact, so a row can
-              // never show a bar without a time or a time without a bar.
-              const checkedInAt = attendee.checked_in_at;
-              const checkInClock =
-                typeof checkedInAt === "string" &&
-                checkedInAt !== "" &&
-                !Number.isNaN(new Date(checkedInAt).getTime())
-                  ? formatCheckInClock(checkedInAt)
-                  : null;
-              const isCheckedIn = checkInClock !== null;
-
-              // D-13 right side — four rendered / three logical mutually
-              // exclusive states, decided by ONE if/else-if/else chain (see the
-              // JSX below) so exactly one renders. Ordering (G-17-8): still-owed
-              // FIRST, then change, then "Paid at door". A checked-in
-              // pay-at-door attendee who paid only partially, or paid in the
-              // other currency, carries BOTH a collected amount and a positive
-              // balance — and such a row must read as still owing. "Paid at
-              // door" renders only when the ticket-currency balance is fully
-              // settled; a same-currency over-payment reads its change back.
-              const strip = attendeeMoneyStrip(attendee);
-
-              const collectedAmount = attendee.pay_at_door_collected_amount;
-              const isCollected =
-                typeof collectedAmount === "string" &&
-                /^\d+(?:\.\d{1,2})?$/.test(collectedAmount);
-
-              // The row's two signed figures come straight off the shared strip
-              // helper — the same attendeeMoneyStrip the chip predicate and the
-              // detail page's third money cell read, so the three surfaces can
-              // never disagree. "Owes" -> accent token, "Change" -> the
-              // checked-in-green token; every other label falls through to the
-              // collected / render-nothing branches. The page formats nothing
-              // and carries no currency literal (D-04 / D-05).
-              const owedLabel =
-                strip.balanceLabel === "Owes" && strip.balance !== null
-                  ? formatMoney(strip.balance, strip.balanceCurrency)
-                  : null;
-              const changeLabel =
-                strip.balanceLabel === "Change" && strip.balance !== null
-                  ? formatMoney(strip.balance, strip.balanceCurrency)
-                  : null;
-
-              return (
-                <li
-                  key={attendee.id}
-                  className={[
-                    "relative flex items-start justify-between gap-3 py-3 pl-3 border-l-4",
-                    isCheckedIn
-                      ? "border-l-[var(--color-checked-in)]"
-                      : "border-l-transparent",
-                    index === 0 ? "" : "border-t border-border",
-                  ].join(" ")}
-                >
-                  <Link
-                    href={detailHref(attendee.id)}
-                    className="flex flex-1 items-start justify-between gap-3 min-w-0"
-                  >
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <span className="text-[13px] font-extrabold leading-[1.3] break-words">
-                        {attendee.attendee_name}
-                      </span>
-                      {/* <span className="text-[12px] text-muted-foreground break-all">
-                        {attendee.attendee_email}
-                      </span> */}
-                      <div className="flex flex-wrap items-center gap-2 min-w-0">
-                        {/* 260831-keq operator tweak: type badge and arrival status share one row to keep door-phone rows short (diverges from 11-UI-SPEC D-08 item 5 on purpose) */}
-                        {typeName ? (
-                          <Badge variant="neutral" className="uppercase">
-                            {typeName}
-                          </Badge>
-                        ) : null}
-                        {isCheckedIn ? (
-                          <span className="text-[12px] font-semibold text-[var(--color-checked-in)]">
-                            Checked in {checkInClock}
-                          </span>
-                        ) : (
-                          <span className="text-[12px] text-muted-foreground">
-                            Not arrived
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {owedLabel !== null ? (
-                      <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]">
-                        {owedLabel}
-                      </span>
-                    ) : changeLabel !== null ? (
-                      <span className="shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]">
-                        {changeLabel}
-                      </span>
-                    ) : isCollected ? (
-                      <span className="shrink-0 text-right text-[12px] text-muted-foreground">
-                        Paid at door
-                      </span>
-                    ) : null}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        ) : hasActiveFilter ? (
-          <div className="flex flex-col gap-2">
-            <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-              No attendees match this filter
-            </h2>
-            <p className="text-[15px] leading-[1.55] text-muted-foreground">
-              {"No one for this event matches the filters you've selected."}
-            </p>
-            <Link
-              href={basePath}
-              className="text-[12px] text-[var(--color-accent-700)]"
-            >
-              Clear filters
-            </Link>
-          </div>
+        {hasAnyAttendee ? (
+          <AttendeeSearch
+            items={searchItems}
+            hasActiveFilter={hasActiveFilter}
+            filterSummary={activeFilterLabels.join(", ")}
+            emptyState={
+              <>
+                <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                  No attendees match this filter
+                </h2>
+                <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                  {"No one for this event matches the filters you've selected."}
+                </p>
+              </>
+            }
+            clearFilters={
+              <Link
+                href={basePath}
+                className="text-[12px] text-[var(--color-accent-700)]"
+              >
+                Clear filters
+              </Link>
+            }
+          />
         ) : (
           <div className="flex flex-col gap-2">
             <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
@@ -464,14 +405,6 @@ export default async function AttendeesPage({
             </p>
           </div>
         )}
-
-        {hasActiveFilter && visibleAttendees.length > 0 ? (
-          <p className="text-[12px] text-muted-foreground pt-2 break-words">
-            {visibleAttendees.length}{" "}
-            {visibleAttendees.length === 1 ? "attendee" : "attendees"} ·{" "}
-            {activeFilterLabels.join(", ")}
-          </p>
-        ) : null}
       </div>
     </div>
   );

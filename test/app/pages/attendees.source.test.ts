@@ -1,3 +1,5 @@
+import { execSync } from "child_process";
+
 import { describe, it, expect } from "vitest";
 
 import { readCode } from "./helpers";
@@ -37,25 +39,13 @@ const ticketChains = attendees
   });
 
 const listChain = ticketChains.find((c) => c.includes("attendee_email"));
-// SUPERSEDED AGAIN by 17-05 (G-17-4 / G-17-8): the owed read dropped its
-// status filter — a checked-in ticket can still carry a residual after a
-// partial or cross-currency collection — so it can no longer be located by
-// `.eq("status", "issued")`. And now that the list read also carries
-// `pay_at_door_collected_currency` for the residual row badge, the collected
-// total can no longer be located by that column alone. New unique locators:
-// the owed/residual read is the only tickets chain carrying
-// `.not("pay_at_door_amount", "is", null)`; the collected read is the only
-// one that fetches `pay_at_door_collected_currency` WITHOUT also selecting
-// `pay_at_door_amount` (the substring `pay_at_door_amount` does not occur
-// inside `pay_at_door_collected_amount`).
-const owedChain = ticketChains.find((c) =>
-  c.includes('.not("pay_at_door_amount", "is", null)'),
-);
-const collectedChain = ticketChains.find(
-  (c) =>
-    c.includes("pay_at_door_collected_currency") &&
-    !c.includes("pay_at_door_amount"),
-);
+// RETARGET (plan 24-02 Task 1, SAME commit as the source deletion, 2026-09-06):
+// SEARCH-01 removes the two event-wide door-money boxes and their two orphaned
+// reads (`owedTickets` / `collectedTickets`) from this page. Both the
+// `owedChain` and `collectedChain` locators found over `ticketChains` for a
+// chain that no longer exists, and every consumer of both is removed or
+// retargeted below. `listChain` and `ticketChains` stay — the one surviving
+// tickets read (the attendee list read) is still located structurally.
 
 describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list", () => {
   it("exists and exports the force-dynamic marker", () => {
@@ -128,15 +118,22 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
     expect(attendees).not.toMatch(/\.normalize\(/);
   });
 
-  it("renders the populated list only behind a positive length check — never an unconditional <ul>", () => {
-    // SUPERSEDED by 11-03: the <ul> gate moved from the raw fetched array
-    // (`attendees.length > 0`) to the VISIBLE row count after the URL filter is
-    // applied (`visibleAttendees.length > 0`) — ATTENDEE-V3-04 requires the
-    // populated list to sit behind a positive check on the visible rows, never
-    // on the unfiltered fetch. Still "a positive length check, never an
-    // unconditional <ul>"; only the counted array changed. The ATTENDEE-V3-04
-    // describe below pins the three-way branch and the raw-array negative.
-    expect(attendees).toMatch(/visibleAttendees(?:\?\.|\.)length\s*>\s*0/);
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 delegates the populated list to the new AttendeeSearch client
+  // island. The <ul> container moved OUT of this page into the island; the page
+  // now renders <AttendeeSearch exactly once behind `hasAnyAttendee` and
+  // carries no <ul> of its own. The property — a populated list never renders
+  // unconditionally — is preserved, just across two files: the island's <ul>
+  // is gated on a positive shown-row count.
+  it("delegates the populated list to the AttendeeSearch island — the page renders <AttendeeSearch once behind hasAnyAttendee and carries no <ul of its own, and the island's one <ul is gated on a positive shown-row count", () => {
+    expect((attendees.match(/<AttendeeSearch\b/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(/\{hasAnyAttendee \? \(/);
+    expect(attendees).not.toMatch(/<ul\b/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect((island.match(/<ul\b/g) ?? []).length).toBe(1);
+    expect(island).toMatch(/shown\.length > 0 \? \(/);
   });
 
   it("carries the no-attendees empty-state heading and body verbatim, exactly once each", () => {
@@ -151,46 +148,27 @@ describe("ATTENDEE-V3-01 — the live, event-scoped, name-ordered attendee list"
   });
 });
 
-describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one shared helper", () => {
-  it("imports the still-owed subtotal adapter and the collected adapter from door-money, plus attendeeMoneyStrip from attendee-money — never the gross sumOwedByCurrency (that adapter is the dashboard's) and never the retired residualOwedForTicket", () => {
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumResidualOwedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
-    expect(attendees).toMatch(
-      /import\s*\{[^}]*\bsumCollectedByCurrency\b[^}]*\}\s*from\s*"@\/lib\/door-money"/,
-    );
+// RETARGET (plan 24-02 Task 1, SAME commit as the source deletion, 2026-09-06):
+// SEARCH-01 removes the two event-wide "COLLECTED AT DOOR" / "STILL TO COLLECT"
+// boxes and their two orphaned reads. The event-wide per-currency door-money
+// line is no longer this page's surface — as of SEARCH-01 the page's only money
+// surface is per row. This describe is retitled and reframed: its first `it`
+// flips the two door-money-adapter expectations from positive to negative, three
+// `it`s whose whole subject was a deleted read are gone, the box-sentence `it`
+// becomes a removal negative, and the throw-count `it` retargets from "at least
+// four" to exactly two. The no-arithmetic and formatMoney/no-currency-literal
+// `it`s are byte-unchanged — both still hold, and both now protect the per-row
+// surface alone.
+describe("SEARCH-01 — the attendees list carries no event-wide per-currency door-money line; its only money surface is per row", () => {
+  it("imports nothing from the door-money module and names neither event-wide adapter — the per-row attendeeMoneyStrip import stays, and neither the gross sumOwedByCurrency nor the retired residualOwedForTicket appears", () => {
+    expect(attendees).not.toMatch(/from\s*"@\/lib\/door-money"/);
+    expect(attendees).not.toMatch(/\bsumResidualOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bsumCollectedByCurrency\b/);
     expect(attendees).toMatch(
       /import\s*\{[^}]*\battendeeMoneyStrip\b[^}]*\}\s*from\s*"@\/lib\/attendee-money"/,
     );
     expect(attendees).not.toMatch(/\bsumOwedByCurrency\b/);
     expect(attendees).not.toMatch(/\bresidualOwedForTicket\b/);
-  });
-
-  it("has a dedicated residual read scoped to this event, NOT narrowed by status, selecting both the owed and the collected money columns (G-17-4)", () => {
-    expect(owedChain).toBeDefined();
-    expect(owedChain).toContain('.eq("event_id", eventId)');
-    expect(owedChain).not.toContain('.eq("status"');
-    expect(owedChain).toContain("pay_at_door_amount::text");
-    expect(owedChain).toContain("pay_at_door_collected_amount::text");
-    expect(owedChain).toContain("pay_at_door_collected_currency");
-  });
-
-  it("has a dedicated collected read scoped to this event, with the text cast on the collected amount column and the collected currency column", () => {
-    expect(collectedChain).toBeDefined();
-    expect(collectedChain).toContain('.eq("event_id", eventId)');
-    expect(collectedChain).toContain("pay_at_door_collected_amount::text");
-    expect(collectedChain).toContain("pay_at_door_collected_currency");
-  });
-
-  it("keeps both totals reads event-wide — neither chain carries any token derived from a request query", () => {
-    for (const chain of [owedChain, collectedChain]) {
-      expect(chain).toBeDefined();
-      expect(chain).not.toContain("searchParams");
-      expect(chain).not.toContain("sp.");
-      expect(chain).not.toContain("typeFilter");
-      expect(chain).not.toContain("owes");
-      expect(chain).not.toContain(".in(");
-    }
   });
 
   it("does no money arithmetic of its own — no reduce / += / Number( / parseFloat / parseInt / toFixed / toLocaleString", () => {
@@ -209,13 +187,17 @@ describe("ATTENDEE-V3-03 — the event-wide per-currency door-money line, one sh
     expect(attendees).not.toMatch(/"RSD"/);
   });
 
-  it("carries each box's empty-state sentence verbatim, exactly once, and they are two different sentences", () => {
-    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(1);
-    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(1);
+  it("no longer carries either door-money box label or either box empty-state sentence — each occurs zero times", () => {
+    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/COLLECTED AT DOOR/g) ?? []).length).toBe(0);
+    expect((attendees.match(/STILL TO COLLECT/g) ?? []).length).toBe(0);
   });
 
-  it("throws on every read except the event-id 404 read — at least four throws in the file", () => {
-    expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
+  it("throws on exactly its two surviving non-404 reads — the ticket_types read guard and the attendees-list read guard", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
+    expect(attendees).toContain("throw ticketTypesError;");
+    expect(attendees).toContain("throw attendeesError;");
   });
 });
 
@@ -476,18 +458,13 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(norm).toContain("const strip = attendeeMoneyStrip(attendee);");
   });
 
-  it("keeps both totals chains free of any query-derived token", () => {
-    for (const chain of [owedChain, collectedChain]) {
-      expect(chain).toBeDefined();
-      expect(chain).not.toContain("searchParams");
-      expect(chain).not.toContain("sp.");
-      expect(chain).not.toContain("activeTypeId");
-      expect(chain).not.toContain("owesActive");
-      expect(chain).not.toContain("rowOwesAtDoor");
-      expect(chain).not.toContain("requestedTypeIds");
-      expect(chain).not.toMatch(/\.in\(/);
-    }
-  });
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deleted both event-wide totals reads, so the
+  // "keeps both totals chains free of any query-derived token" gate that stood
+  // here has no subject left — removed for the same reason as the
+  // both-totals-reads-are-event-wide gate in the SEARCH-01 describe above. The
+  // one surviving tickets chain (the attendee list read) is already proven
+  // query-free by ATTENDEE-V3-01's ordering/scoping gates.
 
   it("carries the wrapping chip-row class and defers the 44px tap target to the chip component", () => {
     expect(attendees).toContain('<div className="flex flex-wrap gap-2">');
@@ -525,23 +502,40 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect(new Set(emptyStateStrings).size).toBe(4);
   });
 
-  it("gates the populated <ul> on the visible row count, never on the raw fetched array", () => {
-    expect(attendees).toMatch(/\{visibleAttendees\.length > 0 \? \(/);
-    // the raw fetched array is never itself the <ul> gate
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 moved the <ul> gate into the AttendeeSearch island. The page
+  // still must not gate anything on the raw fetched array, and the chip verdict
+  // now reaches the island as a per-item `chipVisible` flag derived from
+  // `visibleAttendees` — so the URL filter is still what decides the default,
+  // unsearched view (D-04).
+  it("gates nothing on the raw fetched array and carries no <ul; the chip verdict reaches the island as a per-item chipVisible flag derived from visibleAttendees", () => {
     expect(attendees).not.toMatch(/\battendees\.length\s*>\s*0/);
+    expect(attendees).not.toMatch(/<ul\b/);
+    expect(attendees).toContain(
+      "const chipVisibleIds = new Set(",
+    );
+    expect(attendees).toContain(
+      "visibleAttendees.map((attendee) => attendee.id),",
+    );
+    expect(attendees).toMatch(/chipVisible: chipVisibleIds\.has\(attendee\.id\)/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toMatch(/shown\.length > 0/);
   });
 
-  it("reaches the filter-matches-nobody branch only when a facet is active and the no-attendees branch only when none is", () => {
-    // three-way: <ul> when visible rows exist; else the facet-active branch
-    // (filter matches nobody); else the no-facet branch (no attendees at all)
-    const ulGateIdx = attendees.indexOf("{visibleAttendees.length > 0 ? (");
-    const guardIdx = attendees.indexOf(") : hasActiveFilter ? (");
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // the page's three-way branch became a two-way with the third case delegated
+  // to the island. The shipped order: the `hasAnyAttendee` gate precedes the
+  // "No attendees match this filter" copy (passed INTO the island), which
+  // precedes the "No attendees yet" copy (kept on the page's own else branch).
+  it("splits the empty states across the island boundary — hasAnyAttendee gates the island that receives the filter-empty copy, and the page's own else branch keeps the no-attendees copy, in that source order", () => {
+    const hasAnyIdx = attendees.indexOf("{hasAnyAttendee ? (");
     const filterEmptyIdx = attendees.indexOf("No attendees match this filter");
     const noAttendeesIdx = attendees.indexOf("No attendees yet");
-    expect(ulGateIdx).toBeGreaterThan(-1);
-    expect(guardIdx).toBeGreaterThan(ulGateIdx);
-    expect(guardIdx).toBeLessThan(filterEmptyIdx);
-    expect(filterEmptyIdx).toBeLessThan(noAttendeesIdx);
+    expect(hasAnyIdx).toBeGreaterThan(-1);
+    expect(filterEmptyIdx).toBeGreaterThan(hasAnyIdx);
+    expect(noAttendeesIdx).toBeGreaterThan(filterEmptyIdx);
   });
 
   it("shows the clear-filters link targeting the bare route path in both the chip row and the empty state", () => {
@@ -552,16 +546,31 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect((attendees.match(/href=\{basePath\}/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("gates the footer summary on both a positive visible count and an active facet", () => {
-    expect(attendees).toContain(
-      "{hasActiveFilter && visibleAttendees.length > 0 ? (",
-    );
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // SEARCH-02 moved the footer-summary expression into the AttendeeSearch
+  // island. The page no longer carries it; the island gates its footer on a
+  // positive shown-row count AND (searching OR an active facet). The "0
+  // attendees" negative is kept and applied to BOTH files.
+  it("moves the footer summary into the island — the page carries no footer expression, the island gates its footer on a positive shown-row count AND (searching OR an active facet), and neither file ever emits \"0 attendees\"", () => {
+    expect(attendees).not.toContain("visibleAttendees.length > 0 ? (");
     expect(attendees).not.toMatch(/0 attendees/);
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toContain(
+      "shown.length > 0 && (searching || hasActiveFilter) ? (",
+    );
+    expect(island).not.toMatch(/0 attendees/);
   });
 
-  it("chooses the footer noun by an exactly-one test and carries both the singular and plural forms", () => {
-    expect(attendees).toContain(
-      'visibleAttendees.length === 1 ? "attendee" : "attendees"',
+  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
+  // the exactly-one noun test moved to the island, now over `shown.length`.
+  it("chooses the footer noun by an exactly-one test and carries both the singular and plural forms — now in the island", () => {
+    const island = readCode(
+      "src/app/events/[eventId]/attendees/attendee-search.tsx",
+    );
+    expect(island).toContain(
+      'shown.length === 1 ? "attendee" : "attendees"',
     );
   });
 
@@ -572,8 +581,13 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect(attendees).toContain("{activeFilterLabels.join(\", \")}");
   });
 
-  it("keeps the throw count at least the read count so a failed read never becomes an empty state", () => {
-    expect((attendees.match(/\bthrow /g) ?? []).length).toBeGreaterThanOrEqual(4);
+  // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,
+  // 2026-09-06): SEARCH-01 deletes the two orphaned totals reads and their two
+  // throw guards. The property is unchanged — a failed read never degrades into
+  // an empty state — but the count now equals the two remaining non-404 reads
+  // (ticket_types, attendees list), not "at least four".
+  it("keeps the throw count equal to its two remaining non-404 reads so a failed read never becomes an empty state", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
   });
 });
 
@@ -627,34 +641,217 @@ describe("ADETAIL-V5-01 — every row links to the per-ticket detail page carryi
 });
 
 /**
- * G-17-4 / G-17-8 (plan 17-05) — the list page reads the RESIDUAL door balance,
- * not the pre-Phase-17 gross "status = 'issued' AND collected IS NULL" model.
- * Phase 17 introduced partial and cross-currency door collections; a checked-in
- * ticket can still owe. The event-wide "STILL TO COLLECT" box, the per-row
- * badge and the RESERVATION chip filter all resolve through the one residual
- * helper in src/lib/door-money.ts.
+ * G-17-4 / G-17-8 (plan 17-05, RETARGETED by plan 24-02 Task 1 in the SAME
+ * commit as the source deletion, 2026-09-06) — Phase 17 introduced partial and
+ * cross-currency door collections; a checked-in ticket can still owe. SEARCH-01
+ * then deleted the event-wide "STILL TO COLLECT" box and its residual read from
+ * this page (the same totals now live on the event dashboard). What survives on
+ * the attendees list, and what this describe now protects, is that the
+ * RESERVATION chip filter, the per-row badge and the per-row money token still
+ * resolve through ONE shared residual predicate — they cannot drift onto two.
+ * The still-to-collect-subtotal `it` and the residual-read-not-narrowed-by-status
+ * `it` are gone with the read they named.
  *
  * `attendees` is the comment-stripped source. Every `it` is named for the one
- * property it protects; the key retargets carry recorded break-checks in
- * 17-05-SUMMARY.md.
+ * property it protects.
  */
-describe("G-17-4 / G-17-8 — the list page reflects the residual door balance, not the gross owes", () => {
-  it("computes the still-to-collect subtotal from sumResidualOwedByCurrency over the residual read", () => {
-    expect(attendees).toContain(
-      "const owedSubtotals = sumResidualOwedByCurrency(owedTickets ?? []);",
-    );
-  });
-
-  it("does not narrow the residual read by status — a checked-in ticket with an outstanding balance still reaches the total (G-17-4)", () => {
-    expect(owedChain).toBeDefined();
-    expect(owedChain).not.toContain('.eq("status"');
-    expect(owedChain).toContain('.not("pay_at_door_amount", "is", null)');
-  });
-
-  it("resolves the chip filter, the row badge and the row token through one strip helper and the event-wide total through the residual adapter — one rowOwesAtDoor, two attendeeMoneyStrip( call sites, zero residualOwedForTicket(, one sumResidualOwedByCurrency( call site", () => {
+describe("G-17-4 / G-17-8 — the RESERVATION chip, the row badge and the row token share one residual predicate", () => {
+  it("resolves the chip filter, the row badge and the row token through one strip helper — one rowOwesAtDoor, two attendeeMoneyStrip( call sites, zero residualOwedForTicket(, and no event-wide sumResidualOwedByCurrency( call site", () => {
     expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
     expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
     expect((attendees.match(/residualOwedForTicket\(/g) ?? []).length).toBe(0);
-    expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(1);
+    expect((attendees.match(/sumResidualOwedByCurrency\(/g) ?? []).length).toBe(0);
+  });
+});
+
+/**
+ * SEARCH-01 (plan 24-02 Task 2) — the positive REMOVAL contract.
+ *
+ * Phase 23 moved the event-wide COLLECTED / STILL-TO-COLLECT door-money totals
+ * onto the event dashboard; plan 24-02 Task 1 then removed the attendees-list
+ * copy (the two boxes, their two orphaned reads, the two throw guards, the
+ * @/lib/door-money import and the two subtotal locals). This describe's job is
+ * to keep that removal removed WITHOUT letting a later cleanup take the per-row
+ * money surface (attendeeMoneyStrip / rowOwesAtDoor / formatMoney / the three
+ * row token classNames) with it. Most assertions are negatives over the
+ * attendees page, paired with positives over the dashboard and over the per-row
+ * surface so a "fix" that deletes too much also fails BY NAME.
+ *
+ * `attendees` / `dashboard` are the comment-stripped sources (helpers.readCode);
+ * `ticketChains` / `listChain` are reused from this file's module scope. Three
+ * load-bearing gates were proven to fail by name via a one-line break-check
+ * (re-add the door-money import; re-add a second tickets read; delete a
+ * strip-helper call site), recorded in 24-02-SUMMARY.md.
+ */
+const dashboardPage = readCode("src/app/events/[eventId]/page.tsx");
+
+// The commit HEAD pointed at when Phase 24 was planned (tip of the merged
+// Phase 23 branch). diffNameOnly diffs a path set against it — an empty string
+// means this phase did not touch that path. Same execSync git-diff shape as
+// phase23-contract.test.ts.
+const PHASE_24_BASE = "801a7f8ac77ad9c3406cfdf28a7391bc5c45106f";
+
+function diffNameOnly(paths: string[]): string {
+  return execSync(
+    `git diff --name-only ${PHASE_24_BASE} -- ${paths.join(" ")}`,
+    { encoding: "utf8", cwd: process.cwd() },
+  ).trim();
+}
+
+describe("SEARCH-01 — the attendees list carries no event-wide door-money surface", () => {
+  it("imports nothing from the shared door-money module and names neither event-wide adapter", () => {
+    expect(attendees).not.toMatch(/from\s*["']@\/lib\/door-money["']/);
+    expect(attendees).not.toMatch(/\bsumResidualOwedByCurrency\b/);
+    expect(attendees).not.toMatch(/\bsumCollectedByCurrency\b/);
+  });
+
+  it("carries none of the six identifiers the removed reads and subtotals used — each occurs zero times", () => {
+    for (const id of [
+      "owedTickets",
+      "collectedTickets",
+      "owedTicketsError",
+      "collectedTicketsError",
+      "owedSubtotals",
+      "collectedSubtotals",
+    ]) {
+      expect((attendees.match(new RegExp(`\\b${id}\\b`, "g")) ?? []).length).toBe(
+        0,
+      );
+    }
+  });
+
+  it("carries neither box label, neither box empty-state sentence, nor the two-up grid container class", () => {
+    expect((attendees.match(/COLLECTED AT DOOR/g) ?? []).length).toBe(0);
+    expect((attendees.match(/STILL TO COLLECT/g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing collected yet\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/Nothing owed at the door\./g) ?? []).length).toBe(0);
+    expect((attendees.match(/grid grid-cols-2/g) ?? []).length).toBe(0);
+  });
+
+  it("opens exactly one tickets chain and exactly three table reads in total, and that one tickets chain is the list read", () => {
+    expect(ticketChains.length).toBe(1);
+    expect((attendees.match(/\.from\("/g) ?? []).length).toBe(3);
+    expect(listChain).toBeDefined();
+    expect(ticketChains[0]).toContain("attendee_email");
+  });
+
+  it("keeps the surviving tickets chain event-scoped and un-widened — no token column, no pre-paid money column (T-24-10 / T-24-11)", () => {
+    expect(listChain).toContain('.eq("event_id", eventId)');
+    expect(listChain).not.toContain("qr_token");
+    expect(listChain).not.toMatch(/paid_amount[^_]/);
+  });
+
+  it("still throws on both surviving non-404 reads — exactly two throw statements, naming the ticket-types error and the attendees error", () => {
+    expect((attendees.match(/\bthrow /g) ?? []).length).toBe(2);
+    expect(attendees).toContain("throw ticketTypesError;");
+    expect(attendees).toContain("throw attendeesError;");
+  });
+
+  it("leaves the per-row money surface intact — two attendeeMoneyStrip( call sites, one rowOwesAtDoor declaration, the amount-module formatter still imported, all three row token classNames present", () => {
+    expect((attendees.match(/attendeeMoneyStrip\(/g) ?? []).length).toBe(2);
+    expect((attendees.match(/function rowOwesAtDoor/g) ?? []).length).toBe(1);
+    expect(attendees).toMatch(
+      /import\s*\{[^}]*\bformatMoney\b[^}]*\}\s*from\s*["']@\/lib\/amount["']/,
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-accent-700)]",
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[13px] font-extrabold text-[var(--color-checked-in)]",
+    );
+    expect(attendees).toContain(
+      "shrink-0 text-right text-[12px] text-muted-foreground",
+    );
+  });
+
+  it("proves the totals moved rather than vanished — the dashboard still carries all three Phase 23 cell labels and this phase did not touch that file", () => {
+    expect(dashboardPage).toContain("COLLECTED");
+    expect(dashboardPage).toContain("TO COLLECT - IN");
+    expect(dashboardPage).toContain("TO COLLECT - OUT");
+    expect(diffNameOnly(["src/app/events/[eventId]/page.tsx"])).toBe("");
+  });
+
+  it("leaves the shared money modules untouched — door-money / amount / attendee-money unchanged this phase, and door-money still declares exactly seven export function symbols", () => {
+    expect(
+      diffNameOnly([
+        "src/lib/door-money.ts",
+        "src/lib/amount.ts",
+        "src/lib/attendee-money.ts",
+      ]),
+    ).toBe("");
+    const doorMoney = readCode("src/lib/door-money.ts");
+    expect((doorMoney.match(/export function /g) ?? []).length).toBe(7);
+  });
+});
+
+/**
+ * SEARCH-02 (plan 24-03 Task 2) — the PAGE side of the delegation.
+ *
+ * The island's own source contract lives in attendee-search.source.test.ts;
+ * this describe pins what the attendees PAGE must still be after the rewire:
+ * the list region is handed to ONE client island and nothing else moved — the
+ * per-row <li> markup is still authored here, the page is still a Server
+ * Component, and the chip verdict is still what decides the default view.
+ */
+describe("SEARCH-02 — the list region is delegated to one client island and nothing else moved", () => {
+  const island = readCode(
+    "src/app/events/[eventId]/attendees/attendee-search.tsx",
+  );
+
+  it("imports AttendeeSearch as a value and AttendeeSearchItem with import type — the D-02 match rule and D-04 chip suspension live in the island, not the page", () => {
+    expect(attendees).toContain(
+      'import { AttendeeSearch } from "./attendee-search";',
+    );
+    expect(attendees).toContain(
+      'import type { AttendeeSearchItem } from "./attendee-search";',
+    );
+    expect(island).toMatch(/item\.name\.toLowerCase\(\)\.includes\(term\)/);
+  });
+
+  it("renders the AttendeeSearch island exactly once, with exactly the five declared props — items, hasActiveFilter, filterSummary, emptyState, clearFilters — and no sixth", () => {
+    expect((attendees.match(/<AttendeeSearch\b/g) ?? []).length).toBe(1);
+    const tagStart = attendees.indexOf("<AttendeeSearch");
+    const tag = attendees.slice(
+      tagStart,
+      attendees.indexOf("\n          />", tagStart),
+    );
+    const ownProps = (tag.match(/\n {12}(\w+)=\{/g) ?? [])
+      .map((m) => m.trim().replace(/=\{$/, ""))
+      .sort();
+    expect(ownProps).toEqual([
+      "clearFilters",
+      "emptyState",
+      "filterSummary",
+      "hasActiveFilter",
+      "items",
+    ]);
+  });
+
+  it("builds one search item per FETCHED attendee — the item map runs over the raw fetched array, not the chip-filtered subset (D-04's other half)", () => {
+    expect(attendees).toMatch(
+      /const searchItems: AttendeeSearchItem\[\] = \(attendees \?\? \[\]\)\.map\(\(attendee\) => \{/,
+    );
+    expect(attendees).not.toMatch(/visibleAttendees\.map\(\(attendee\) => \{/);
+  });
+
+  it("computes the chip verdict from visibleAttendees and passes it as a per-item chipVisible flag", () => {
+    expect(attendees).toContain("const chipVisibleIds = new Set(");
+    expect(attendees).toContain(
+      "visibleAttendees.map((attendee) => attendee.id),",
+    );
+    expect(attendees).toMatch(/chipVisible: chipVisibleIds\.has\(attendee\.id\)/);
+  });
+
+  it("keeps the page a Server Component — no client directive, no hook, no input element, no event-handler prop", () => {
+    expect(attendees).not.toContain("use client");
+    expect(attendees).not.toMatch(/\buseState\b|\buseEffect\b|\buseActionState\b/);
+    expect(attendees).not.toMatch(/<Input\b/);
+    expect(attendees).not.toMatch(/\son[A-Z][a-zA-Z]*=\{/);
+  });
+
+  it("keys the row separator on the first-child CSS pseudo-class, not a render-index comparison", () => {
+    expect(attendees).toContain("border-t border-border first:border-t-0");
+    expect(attendees).not.toContain("index === 0");
+    expect(attendees).not.toMatch(/\.map\(\(attendee, index\)/);
   });
 });

@@ -11,9 +11,9 @@ import {
   attendeePaymentTotals,
 } from "@/lib/attendee-money";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { CheckInPanel } from "./check-in-panel";
 import { NoteForm } from "./note-form";
+import { ResendEmailButton } from "./resend-email-button";
 
 // Same reasoning as every other /events page reading live Supabase data: staff
 // need the current ticket row, not a build-time snapshot. Living inside the
@@ -358,10 +358,11 @@ export default async function AttendeeDetailPage({
         {/* 7. Footer — 2px top rule. The check-in panel renders for every
             ticket except one that is checked in and already settled at the door
             (that page is a pure read-out — no footer actions, ADETAIL-V5-05).
-            The resend-email button below is inert this phase, rendered per the
-            handoff (C-1 / D-10). The collect / mark-paid control is 17-03
-            (D-11 / C-2) and lives inside the panel, not here. 17-03 fills the
-            owes-branch inside check-in-panel.tsx with no further change here. */}
+            The resend-email button below is a live client island
+            (ResendEmailButton, plan 24-01) that re-sends this attendee's ticket
+            email through the one existing sendTicketEmail() path, reusing the
+            ticket's stored QR token (SEARCH-03 / SEARCH-04). The collect /
+            mark-paid control lives inside the panel, not here. */}
         <div className="flex flex-col gap-2 border-t-2 border-border pt-3">
           {/* Teaching note: this page stays a Server Component — it renders on
               the request and streams HTML. The panel below is the single
@@ -384,16 +385,7 @@ export default async function AttendeeDetailPage({
             />
           ) : null}
           {!statusIsCheckedIn ? (
-            <button
-              type="button"
-              disabled
-              className={buttonVariants({
-                variant: "secondary",
-                className: "min-h-[44px] w-full justify-start text-left",
-              })}
-            >
-              Resend ticket email
-            </button>
+            <ResendEmailButton ticketId={ticket.id} eventId={eventId} />
           ) : null}
         </div>
       </div>

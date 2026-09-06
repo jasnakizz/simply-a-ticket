@@ -142,3 +142,20 @@ export type SaveTicketNoteState = {
     note: string;
   };
 };
+
+// Shared contract between the resendTicketEmail Server Action (src/app/actions/
+// resend-ticket-email.ts) and the attendee detail page's ResendEmailButton
+// client island. Deliberately its own type — not a widening of
+// SaveTicketNoteState — and deliberately WITHOUT `errors` or `values`: this
+// action renders no user-typed field, so a rejected parse is an id problem
+// (a tampered or malformed ticket_id / event_id), never a field the operator
+// could correct in place. `notFound` is the malformed-or-missing-id outcome;
+// `formError` carries the one fixed staff-facing sentence per failure; `sentTo`
+// is the recipient address read server-side from the ticket row (never a
+// client-supplied prop) and is present only on success, alongside `ok`.
+export type ResendTicketEmailState = {
+  formError?: string;
+  ok?: boolean;
+  notFound?: boolean;
+  sentTo?: string;
+};
