@@ -855,3 +855,55 @@ describe("SEARCH-02 — the list region is delegated to one client island and no
     expect(attendees).not.toMatch(/\.map\(\(attendee, index\)/);
   });
 });
+
+/**
+ * PDF-01 / D-05 / D-06 / D-12 (plan 25-01) — the roster download link at the
+ * foot of the populated attendees list.
+ *
+ * Pins: exactly one `<a download>`, a STATIC href (no `?` query string, so the
+ * export is filter-independent by construction — PDF-02), styled through
+ * `buttonVariants`, the exact D-06 label, and — the D-12 property — the anchor
+ * lives INSIDE the `hasAnyAttendee` branch and BEFORE the "No attendees yet"
+ * else-branch copy in source order, so a zero-attendee event renders no link.
+ *
+ * `attendees` is the comment-stripped source (helpers.readCode). Each `it` was
+ * proven to fail BY NAME via a one-line break-check recorded in 25-01-SUMMARY.md.
+ */
+describe("PDF-01 — the foot-of-page roster download link (D-05, D-06, D-12)", () => {
+  it("renders exactly one anchor carrying the download attribute", () => {
+    expect((attendees.match(/<a\b[^>]*\sdownload\b/g) ?? []).length).toBe(1);
+  });
+
+  it("points the anchor at the static roster.pdf path — a template literal with no query string", () => {
+    expect(attendees).toContain(
+      "href={`/events/${eventId}/attendees/roster.pdf`}",
+    );
+    const anchor = attendees.slice(
+      attendees.indexOf("<a"),
+      attendees.indexOf("</a>") + 4,
+    );
+    expect(anchor).not.toContain("?");
+  });
+
+  it("styles the anchor through buttonVariants and carries the D-06 label verbatim", () => {
+    expect(attendees).toContain(
+      'className={buttonVariants({ variant: "secondary", className: "self-start" })}',
+    );
+    expect((attendees.match(/Download roster \(PDF\)/g) ?? []).length).toBe(1);
+    // a plain <a>, not the <Link> component — this is a file download
+    const anchor = attendees.slice(
+      attendees.indexOf("<a"),
+      attendees.indexOf("</a>") + 4,
+    );
+    expect(anchor).not.toContain("<Link");
+  });
+
+  it("places the link inside the hasAnyAttendee branch and before the empty-state copy (D-12)", () => {
+    const gateIdx = attendees.indexOf("{hasAnyAttendee ? (");
+    const anchorIdx = attendees.indexOf("Download roster (PDF)");
+    const emptyIdx = attendees.indexOf("No attendees yet");
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(anchorIdx).toBeGreaterThan(gateIdx);
+    expect(emptyIdx).toBeGreaterThan(anchorIdx);
+  });
+});

@@ -569,8 +569,7 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
   // only Search" mechanically true — is kept and now applies to all three
   // files. A companion `it` below asserts the shipped capability positively.
   for (const [label, code] of gate12Files) {
-    it(`${label}: no export/download control, no saved-preset vocabulary, no browser storage, no auth construct, and no placeholder attribute (the search box is labeled only "Search")`, () => {
-      expect(code).not.toMatch(/download/i);
+    it(`${label}: no CSV/blob export, no saved-preset vocabulary, no browser storage, no auth construct, and no placeholder attribute (the search box is labeled only "Search")`, () => {
       expect(code).not.toMatch(/\.csv/i);
       expect(code).not.toMatch(/createObjectURL/);
       expect(code).not.toMatch(/new Blob\(/);
@@ -584,6 +583,34 @@ describe("Gate 12 — the deferred capabilities stayed deferred (REQUIREMENTS.md
       expect(code).not.toMatch(/createServerClient/);
     });
   }
+
+  // RETARGET (plan 25-01 Task 2, SAME commit as the page.tsx download link,
+  // 2026-09-06): the blanket `not.toMatch(/download/i)` was true only until
+  // Phase 25. PDF-01 / D-05 / D-06 ship EXACTLY ONE download control on the
+  // attendees page — a plain `<a download>` to the static roster.pdf route.
+  // Retargeted IN PLACE, not loosened: the chip and the search island still
+  // carry zero download vocabulary, and the page carries the token exactly
+  // twice — the `download` attribute and the "Download roster (PDF)" label —
+  // only on the roster.pdf anchor.
+  it("the filter chip and the search island carry no download vocabulary at all", () => {
+    expect(chip).not.toMatch(/download/i);
+    expect(search).not.toMatch(/download/i);
+  });
+
+  it(`${ATTENDEES}: its only download control is the one sanctioned roster.pdf link (PDF-01, D-05, D-06)`, () => {
+    expect(attendees).toContain(
+      "href={`/events/${eventId}/attendees/roster.pdf`}",
+    );
+    expect(attendees).toMatch(/roster\.pdf`\}\s*\n\s*download\b/);
+    expect(attendees).toContain(
+      'buttonVariants({ variant: "secondary", className: "self-start" })',
+    );
+    expect(attendees).toContain("Download roster (PDF)");
+    // the ONLY two occurrences of the token on the whole page
+    expect((attendees.match(/download/gi) ?? []).length).toBe(2);
+    expect(attendees).not.toMatch(/\.csv/i);
+    expect(attendees).not.toMatch(/createObjectURL|new Blob\(/);
+  });
 
   it(`the search input is shipped by exactly one file under the attendees list route — ${SEARCH} — and its <Label>'s only text is the word Search`, () => {
     const withInput = gate12Files.filter(([, code]) => /<Input\b/.test(code));

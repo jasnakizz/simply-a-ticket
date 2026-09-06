@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execSync } from "child_process";
-import { readdirSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 import { readCode } from "./helpers";
@@ -156,10 +156,8 @@ function walkTsx(absDir: string): string[] {
 
 const srcChangedFromBase = diffNameOnly("src", PHASE_24_BASE);
 const srcChangedWorking = diffNameOnly("src");
-const packageChangedFromBase = diffNameOnly(
-  "package.json package-lock.json",
-  PHASE_24_BASE,
-);
+// (The former `packageChangedFromBase` name-only diff was removed when Gate 2
+//  was retargeted for the Phase 25 sanctioned pdfkit delta — plan 25-01.)
 
 const attendeesList = readCode(ATTENDEES_LIST);
 const attendeeDetail = readCode(ATTENDEE_DETAIL);
@@ -212,9 +210,48 @@ describe("Gate 1 — the frozen exactly-once check-in machine is byte-identical 
   });
 });
 
-describe("Gate 2 — no new dependency (milestone invariant; the T-24-SC supply-chain mitigation)", () => {
-  it(`git diff ${PHASE_24_BASE}..working-tree over package.json / package-lock.json is empty`, () => {
-    expect(packageChangedFromBase).toEqual([]);
+describe("Gate 2 — the only dependency delta is the v8-sanctioned pdfkit pair (milestone invariant; T-24-SC, retargeted plan 25-01)", () => {
+  // RETARGET (plan 25-01 Task 2, in the Phase 25 tracer commit that installs
+  // pdfkit, 2026-09-06): the v8 roadmap sanctions EXACTLY ONE runtime
+  // dependency addition — a pure-JS PDF engine — in Phase 25, plus its dev
+  // types. Retargeted IN PLACE (not deleted, not loosened): the delta vs
+  // PHASE_24_BASE must be EXACTLY `+pdfkit` in `dependencies` and
+  // `+@types/pdfkit` in `devDependencies`, every shared range byte-identical,
+  // nothing removed — parsed from JSON. A second added package fails BY NAME.
+  // (`phase25-contract.test.ts`, written in plan 25-03, asserts the same delta
+  // as its own primary supply-chain gate.)
+  it("adds exactly pdfkit + @types/pdfkit vs PHASE_24_BASE and changes no other package.json key", () => {
+    const base = JSON.parse(
+      execSync(`git show ${PHASE_24_BASE}:package.json`, {
+        encoding: "utf8",
+        cwd: process.cwd(),
+      }),
+    );
+    const now = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(
+      Object.keys(now.dependencies).filter((k) => !(k in base.dependencies)),
+    ).toEqual(["pdfkit"]);
+    expect(
+      Object.keys(base.dependencies).filter((k) => !(k in now.dependencies)),
+    ).toEqual([]);
+    expect(
+      Object.keys(now.devDependencies).filter(
+        (k) => !(k in base.devDependencies),
+      ),
+    ).toEqual(["@types/pdfkit"]);
+    expect(
+      Object.keys(base.devDependencies).filter(
+        (k) => !(k in now.devDependencies),
+      ),
+    ).toEqual([]);
+    for (const k of Object.keys(base.dependencies)) {
+      expect(now.dependencies[k]).toBe(base.dependencies[k]);
+    }
+    for (const k of Object.keys(base.devDependencies)) {
+      expect(now.devDependencies[k]).toBe(base.devDependencies[k]);
+    }
   });
 });
 
@@ -232,12 +269,35 @@ describe("Gate 3 — the modified-file canary", () => {
   });
 });
 
-describe("Gate 4 — the exact source change set", () => {
-  it("git diff --name-only <base> -- src/ is exactly the six declared paths", () => {
+describe("Gate 4 — the exact source change set (overlaid by Phase 25, retargeted plan 25-01)", () => {
+  // RETARGET (plan 25-01 Task 2, in the Phase 25 tracer commit, 2026-09-06):
+  // Phase 25 is the next phase to branch off PHASE_24_BASE, and it legitimately
+  // adds files under src/lib/roster-pdf/ and
+  // src/app/events/[eventId]/attendees/roster.pdf/, and re-touches the
+  // attendees list page.tsx. This gate can no longer assert the src diff is
+  // EXACTLY the six Phase 24 paths; it is retargeted IN PLACE to two `it`s:
+  // (a) all six Phase 24 paths are still present in the diff, and (b) every
+  // OTHER changed path is a declared Phase 25 path. A stray edit outside both
+  // phases still fails BY NAME.
+  const isPhase25Path = (p: string) =>
+    p.startsWith("src/lib/roster-pdf/") ||
+    p.startsWith("src/app/events/[eventId]/attendees/roster.pdf/") ||
+    p === "src/app/events/[eventId]/attendees/page.tsx";
+
+  it("still contains all six Phase 24 src paths", () => {
     expect(PHASE_24_SRC_CHANGED.length).toBe(6);
-    expect(srcChangedFromBase.slice().sort()).toEqual(
-      [...PHASE_24_SRC_CHANGED].sort(),
+    for (const f of PHASE_24_SRC_CHANGED) {
+      expect(srcChangedFromBase).toContain(f);
+    }
+  });
+
+  it("every changed src path beyond the six Phase 24 paths is a declared Phase 25 path", () => {
+    const extra = srcChangedFromBase.filter(
+      (p) => !(PHASE_24_SRC_CHANGED as readonly string[]).includes(p),
     );
+    for (const p of extra) {
+      expect(isPhase25Path(p), `unexpected changed src path: ${p}`).toBe(true);
+    }
   });
 });
 

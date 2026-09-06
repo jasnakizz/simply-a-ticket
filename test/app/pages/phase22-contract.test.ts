@@ -152,13 +152,46 @@ describe("Gate 1 — the frozen exactly-once check-in machine is byte-identical 
   });
 });
 
-describe("Gate 2 — no new dependency (milestone invariant; also the T-22-SC supply-chain mitigation)", () => {
-  it(`git diff ${PHASE_22_BASE}..HEAD over package.json / package-lock.json is empty`, () => {
-    const out = execSync(
-      `git diff --name-only ${PHASE_22_BASE} -- package.json package-lock.json`,
-      { encoding: "utf8", cwd: process.cwd() },
-    ).trim();
-    expect(out).toBe("");
+describe("Gate 2 — the only dependency delta is the v8-sanctioned pdfkit pair (milestone invariant; T-22-SC, retargeted plan 25-01)", () => {
+  // RETARGET (plan 25-01 Task 2, in the Phase 25 tracer commit that installs
+  // pdfkit, 2026-09-06): the v8 roadmap sanctions EXACTLY ONE runtime
+  // dependency addition — a pure-JS PDF engine — in Phase 25, plus its dev
+  // types. Retargeted IN PLACE (not deleted, not loosened): the delta vs this
+  // phase's base must be EXACTLY `+pdfkit` in `dependencies` and
+  // `+@types/pdfkit` in `devDependencies`, every shared range byte-identical,
+  // nothing removed — parsed from JSON. A second added package fails BY NAME.
+  it("adds exactly pdfkit + @types/pdfkit vs the phase base and changes no other package.json key", () => {
+    const base = JSON.parse(
+      execSync(`git show ${PHASE_22_BASE}:package.json`, {
+        encoding: "utf8",
+        cwd: process.cwd(),
+      }),
+    );
+    const now = JSON.parse(
+      readFileSync(join(process.cwd(), "package.json"), "utf8"),
+    );
+    expect(
+      Object.keys(now.dependencies).filter((k) => !(k in base.dependencies)),
+    ).toEqual(["pdfkit"]);
+    expect(
+      Object.keys(base.dependencies).filter((k) => !(k in now.dependencies)),
+    ).toEqual([]);
+    expect(
+      Object.keys(now.devDependencies).filter(
+        (k) => !(k in base.devDependencies),
+      ),
+    ).toEqual(["@types/pdfkit"]);
+    expect(
+      Object.keys(base.devDependencies).filter(
+        (k) => !(k in now.devDependencies),
+      ),
+    ).toEqual([]);
+    for (const k of Object.keys(base.dependencies)) {
+      expect(now.dependencies[k]).toBe(base.dependencies[k]);
+    }
+    for (const k of Object.keys(base.devDependencies)) {
+      expect(now.devDependencies[k]).toBe(base.devDependencies[k]);
+    }
   });
 });
 
