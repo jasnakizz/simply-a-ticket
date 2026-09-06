@@ -392,7 +392,7 @@ describe("Gate 8 — the trigger, sealed cross-file (D-05, D-06, D-12)", () => {
 
   it('the label is absent from the empty-state branch — it sits before "No attendees yet" and after the hasAnyAttendee test (D-12)', () => {
     const hasIdx = attendeesList.indexOf("hasAnyAttendee ?");
-    const labelIdx = attendeesList.indexOf("Download roAttendees Listster (PDF)");
+    const labelIdx = attendeesList.indexOf("Download Attendees List (PDF)");
     const emptyIdx = attendeesList.indexOf("No attendees yet");
     expect(hasIdx).toBeGreaterThan(-1);
     expect(labelIdx).toBeGreaterThan(hasIdx);

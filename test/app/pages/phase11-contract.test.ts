@@ -529,18 +529,27 @@ describe("Gate 10 — the reservation chip, the row badge and the still-to-colle
 });
 
 describe("Gate 11 — the honest empty states (ATTENDEE-V3-04)", () => {
+  // RETARGET (plan 26-01 Task 2, SAME commit as the source change, 2026-09-06):
+  // FILT-06 adds two own-words check-in empty states (one for IN, one for NOT
+  // IN) selected on the server from checkedInActive / notCheckedInActive. The
+  // set grows 4 -> 8; the "each exactly once" and "no two equal" properties are
+  // byte-unchanged.
   const emptyStateStrings = [
     "No attendees yet",
     "Attendees appear here once an order is placed or a sold ticket is added for this event.",
     "No attendees match this filter",
     "No one for this event matches the filters you've selected.",
+    "No checked-in attendees match",
+    "No one for this event is checked in and matches the filters you've selected.",
+    "No not-checked-in attendees match",
+    "No one for this event is still to arrive and matches the filters you've selected.",
   ];
 
-  it(`${ATTENDEES}: carries all four empty-state strings, each exactly once, and no two are equal`, () => {
+  it(`${ATTENDEES}: carries all eight empty-state strings, each exactly once, and no two are equal`, () => {
     for (const s of emptyStateStrings) {
       expect(attendees.split(s).length - 1).toBe(1);
     }
-    expect(new Set(emptyStateStrings).size).toBe(4);
+    expect(new Set(emptyStateStrings).size).toBe(8);
   });
 
   // RETARGET (plan 24-02 Task 1, SAME commit as the source deletion,

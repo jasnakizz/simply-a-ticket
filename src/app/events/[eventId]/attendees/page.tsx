@@ -90,6 +90,7 @@ export default async function AttendeesPage({
   // The awaited query object is a plain record (Next 16): a repeated key is an
   // array, a lone key a string, an absent key undefined. Normalise before any
   // use — never call a string method on the raw value.
+  const CHECK_IN_PARAM = "checkedin";
   const sp = await searchParams;
   const rawType = sp.type;
   const requestedTypeIds = Array.isArray(rawType)
@@ -100,6 +101,15 @@ export default async function AttendeesPage({
   // owes is active only for the exact truthy value the UI-SPEC fixes; anything
   // else (absent, empty, unexpected) is inactive, never an error.
   const owesActive = sp.owes === "1";
+  // The check-in facet follows the same "exact recognised value or inactive"
+  // rule as owes (FILT-05): a wrong-case value, a garbage value, or a repeated
+  // key (which Next 16 hands over as an array) all compare unequal and leave the
+  // facet inactive — never a 404, never a throw. No method is ever called on the
+  // raw query value.
+  const checkedInActive = sp[CHECK_IN_PARAM] === "yes";
+  // One key, exactly two recognised values: "yes" and "no" can never both be
+  // true, so the two chips are mutually exclusive by construction (FILT-02).
+  const notCheckedInActive = sp[CHECK_IN_PARAM] === "no";
 
   // Intersect the requested type ids against the event's OWN ticket types. A
   // requested id that matches nothing is silently dropped; an unrecognised
@@ -107,7 +117,11 @@ export default async function AttendeesPage({
   const validTypeIds = new Set((ticketTypes ?? []).map((type) => type.id));
   const activeTypeIds = requestedTypeIds.filter((id) => validTypeIds.has(id));
   const activeTypeIdSet = new Set(activeTypeIds);
-  const hasActiveFilter = activeTypeIds.length > 0 || owesActive;
+  const hasActiveFilter =
+    activeTypeIds.length > 0 ||
+    owesActive ||
+    checkedInActive ||
+    notCheckedInActive;
 
   const basePath = `/events/${eventId}/attendees`;
 
@@ -122,6 +136,11 @@ export default async function AttendeesPage({
     }
     if (owesActive) {
       seeded.set("owes", "1");
+    }
+    if (checkedInActive) {
+      seeded.set(CHECK_IN_PARAM, "yes");
+    } else if (notCheckedInActive) {
+      seeded.set(CHECK_IN_PARAM, "no");
     }
     return seeded;
   };
@@ -150,6 +169,19 @@ export default async function AttendeesPage({
     }
     return withQuery(params);
   };
+  // One parameterised toggle for BOTH check-in chips. Because URLSearchParams.set
+  // replaces rather than appends, calling this with the other value from an
+  // active state swaps the state instead of stacking it — that is FILT-02's
+  // mutual exclusion, enforced by the data structure rather than an if-chain.
+  const hrefForCheckIn = (value: "yes" | "no") => {
+    const params = seededParams();
+    if (params.get(CHECK_IN_PARAM) === value) {
+      params.delete(CHECK_IN_PARAM);
+    } else {
+      params.set(CHECK_IN_PARAM, value);
+    }
+    return withQuery(params);
+  };
 
   // ADETAIL-V5-01 / D-13: each row links to that attendee's detail page,
   // carrying the SAME active-filter query string the chips carry forward
@@ -164,6 +196,23 @@ export default async function AttendeesPage({
   };
 
   const RESERVATION_LABEL = "RESERVATION";
+  const IN_LABEL = "IN";
+  const NOT_IN_LABEL = "NOT IN";
+
+  // The one and only "is this row checked in" fact. The exact
+  // string-and-parseable-instant guard the row builder used to inline, lifted
+  // into a single function so the in-memory filter predicate and the row's
+  // green-bar / clock render read the SAME fact — a row can never filter one way
+  // and render the other. Returns the timestamp string on a real instant, null
+  // otherwise (FILT-05: a null / empty / unparseable value is simply "not in").
+  function checkedInInstant(row: { checked_in_at: unknown }): string | null {
+    const checkedInAt = row.checked_in_at;
+    return typeof checkedInAt === "string" &&
+      checkedInAt !== "" &&
+      !Number.isNaN(new Date(checkedInAt).getTime())
+      ? checkedInAt
+      : null;
+  }
 
   // The single definition of "still owes money at the door" (D-02, revised by
   // Phase 19): a pure delegation to attendeeMoneyStrip in
@@ -187,7 +236,10 @@ export default async function AttendeesPage({
     const typeFacetPass =
       activeTypeIdSet.size === 0 || activeTypeIdSet.has(attendee.ticket_type_id);
     const owesFacetPass = !owesActive || rowOwesAtDoor(attendee);
-    return typeFacetPass && owesFacetPass;
+    const rowCheckedIn = checkedInInstant(attendee) !== null;
+    const checkInFacetPass =
+      (!checkedInActive || rowCheckedIn) && (!notCheckedInActive || !rowCheckedIn);
+    return typeFacetPass && owesFacetPass && checkInFacetPass;
   });
 
   // Footer-summary labels in chip order: active ticket types in creation order
@@ -197,6 +249,8 @@ export default async function AttendeesPage({
       .filter((type) => activeTypeIdSet.has(type.id))
       .map((type) => type.name.toUpperCase()),
     ...(owesActive ? [RESERVATION_LABEL] : []),
+    ...(checkedInActive ? [IN_LABEL] : []),
+    ...(notCheckedInActive ? [NOT_IN_LABEL] : []),
   ];
 
   // ── The rows: still authored HERE, on the server ─────────────────────────
@@ -220,13 +274,9 @@ export default async function AttendeesPage({
     // empty, unparseable) is "not arrived" — never an epoch date.
     // The green left bar is driven off THIS same fact, so a row can
     // never show a bar without a time or a time without a bar.
-    const checkedInAt = attendee.checked_in_at;
+    const checkedInAt = checkedInInstant(attendee);
     const checkInClock =
-      typeof checkedInAt === "string" &&
-      checkedInAt !== "" &&
-      !Number.isNaN(new Date(checkedInAt).getTime())
-        ? formatCheckInClock(checkedInAt)
-        : null;
+      checkedInAt !== null ? formatCheckInClock(checkedInAt) : null;
     const isCheckedIn = checkInClock !== null;
 
     // D-13 right side — four rendered / three logical mutually
@@ -347,19 +397,38 @@ export default async function AttendeesPage({
           Attendees
         </h1>
 
+        {/* D-02 / FILT-04: row 1 is the ticket-type chips (creation order), */}
+        {/* rendered only when the event has types so no empty gap shows. */}
+        {(ticketTypes ?? []).length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {(ticketTypes ?? []).map((type) => (
+              <FilterChip
+                key={type.id}
+                href={hrefForType(type.id)}
+                label={type.name.toUpperCase()}
+                active={activeTypeIdSet.has(type.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {/* D-02 / FILT-04: row 2 is the reservation chip, then the check-in */}
+        {/* chips, then the existing clear-filters link, in fixed source order. */}
         <div className="flex flex-wrap gap-2">
-          {(ticketTypes ?? []).map((type) => (
-            <FilterChip
-              key={type.id}
-              href={hrefForType(type.id)}
-              label={type.name.toUpperCase()}
-              active={activeTypeIdSet.has(type.id)}
-            />
-          ))}
           <FilterChip
             href={hrefForOwes()}
             label={RESERVATION_LABEL}
             active={owesActive}
+          />
+          <FilterChip
+            href={hrefForCheckIn("yes")}
+            label={IN_LABEL}
+            active={checkedInActive}
+          />
+          <FilterChip
+            href={hrefForCheckIn("no")}
+            label={NOT_IN_LABEL}
+            active={notCheckedInActive}
           />
           {hasActiveFilter ? (
             <Link
@@ -378,14 +447,38 @@ export default async function AttendeesPage({
             hasActiveFilter={hasActiveFilter}
             filterSummary={activeFilterLabels.join(", ")}
             emptyState={
-              <>
-                <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
-                  No attendees match this filter
-                </h2>
-                <p className="text-[15px] leading-[1.55] text-muted-foreground">
-                  {"No one for this event matches the filters you've selected."}
-                </p>
-              </>
+              checkedInActive ? (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No checked-in attendees match
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {
+                      "No one for this event is checked in and matches the filters you've selected."
+                    }
+                  </p>
+                </>
+              ) : notCheckedInActive ? (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No not-checked-in attendees match
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {
+                      "No one for this event is still to arrive and matches the filters you've selected."
+                    }
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-[26px] font-extrabold leading-[1.1] tracking-[-0.02em]">
+                    No attendees match this filter
+                  </h2>
+                  <p className="text-[15px] leading-[1.55] text-muted-foreground">
+                    {"No one for this event matches the filters you've selected."}
+                  </p>
+                </>
+              )
             }
             clearFilters={
               <Link
