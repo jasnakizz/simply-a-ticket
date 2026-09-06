@@ -103,7 +103,7 @@ const COL = {
 const MIN_ROW_HEIGHT = 20;
 const ROW_PAD_Y = 6; // added to the measured name height
 const COL_HEADER_HEIGHT = 24; // label row + rule + gap below it
-const SUMMARY_BLOCK_HEIGHT = 22; // page-1 attendee-count line (Task 3 expands)
+const SUMMARY_LINE_HEIGHT = 15; // page-1 count line + one line per currency
 const ROW_FONT_SIZE = 10;
 
 // The per-page header: event name then the collapsed event-date range, drawn
@@ -157,7 +157,11 @@ export function buildRosterPdf(
   meta: RosterMeta,
   opts: {
     compress?: boolean;
-    onMeta?: (meta: { pageCount: number }) => void;
+    onMeta?: (meta: {
+      pageCount: number;
+      columnHeaderDrawn: boolean;
+      summaryOwedLines: number;
+    }) => void;
   } = {},
 ): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
@@ -256,26 +260,58 @@ export function buildRosterPdf(
 
       let y = rowBandTop;
 
-      // Page-1 summary block. Just the attendee-count line for now — the full
-      // per-currency owed lines are Task 3, which draws them into this space.
+      // Page-1 summary (D-03, PDF-05): the attendee count, then ONE LINE PER
+      // ENTRY of `summary.owed` — residual owed at the door, per currency.
+      // `src/lib/door-money.ts`'s `sumResidualOwedByCurrency` already hands
+      // this array back in EUR-then-RSD order with zero-valued and
+      // cross-currency entries omitted, so the builder must NOT sort, filter,
+      // merge or total it — it iterates it exactly as given.
+      //
+      // There is deliberately no collected-so-far figure on this page (D-03):
+      // the only money here is money still to collect, which is what makes
+      // "add up the printed owed column, get this summary" true. The per-row
+      // owed cell (from attendeeMoneyStrip) and this summary (from
+      // sumResidualOwedByCurrency) can only diverge for a row that owes money
+      // but has a null currency — and the `tickets_currency_required_with_amount`
+      // database constraint makes such a row impossible, so the printed column
+      // and this summary cannot disagree (see 25-RESEARCH.md "Money Wiring").
       doc.fontSize(10).text(
         `${summary.count} ${summary.count === 1 ? "attendee" : "attendees"}`,
         left,
         y,
         { width, lineBreak: false },
       );
-      y += SUMMARY_BLOCK_HEIGHT;
+      y += SUMMARY_LINE_HEIGHT;
 
+      let summaryOwedLines = 0;
+      for (const entry of summary.owed) {
+        doc.fontSize(10).text(
+          `${formatPdfMoney(entry.amount, entry.currency)} still to collect`,
+          left,
+          y,
+          { width, lineBreak: false },
+        );
+        y += SUMMARY_LINE_HEIGHT;
+        summaryOwedLines += 1;
+      }
+      y += 10; // gap before the column band / empty-roster message
+
+      let columnHeaderDrawn = false;
       if (rows.length === 0) {
-        // D-12: a zero-attendee roster is a valid PDF, not a 500. No
-        // four-column header band — there is no column to head.
-        doc.fontSize(12).text("No attendees yet", left, y + 20, {
+        // D-12: a zero-attendee roster is a valid PDF, not a 500 — event
+        // header, the zero-count summary above (no currency lines, since
+        // `summary.owed` is empty for an event with no attendees), a centred
+        // line matching the attendees page's own empty-state wording, and the
+        // page footer from the post-pass. NO four-column header band — there is
+        // no column to head.
+        doc.fontSize(12).text("No attendees yet", left, y + 12, {
           width,
           align: "center",
           lineBreak: false,
         });
       } else {
         y = drawColumnHeader(y);
+        columnHeaderDrawn = true;
 
         // Rows in the order the caller supplied them — the PDF performs NO sort
         // of its own, so paper matches screen.
@@ -338,7 +374,11 @@ export function buildRosterPdf(
         stampFooter(doc, i, range.count, meta, left, width);
       }
 
-      opts.onMeta?.({ pageCount: range.count });
+      opts.onMeta?.({
+        pageCount: range.count,
+        columnHeaderDrawn,
+        summaryOwedLines,
+      });
 
       doc.flushPages();
       doc.end();

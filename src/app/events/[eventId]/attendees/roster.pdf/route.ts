@@ -108,8 +108,9 @@ export async function GET(
   });
 
   // D-03: attendee count + per-currency residual owed, routed through the
-  // frozen door-money helper over the raw ticket array. Never re-derived.
-  // (Plan 02 draws this onto page 1.)
+  // frozen door-money helper over the raw ticket array. Never re-derived — the
+  // array is handed to buildRosterPdf as-is (EUR-then-RSD, no zero/cross
+  // entries) and drawn onto page 1 one line per currency.
   const summary = {
     count: rows.length,
     owed: sumResidualOwedByCurrency(attendees ?? []),
