@@ -196,7 +196,7 @@ export default async function AttendeesPage({
   };
 
   const RESERVATION_LABEL = "RESERVATION";
-  const IN_LABEL = "IN";
+  const IN_LABEL = "CHECKED IN";
   const NOT_IN_LABEL = "NOT IN";
 
   // The one and only "is this row checked in" fact. The exact

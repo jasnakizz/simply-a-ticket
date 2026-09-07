@@ -584,8 +584,8 @@ describe("ATTENDEE-V3-02 — the chip filter is URL-driven, event-scoped and int
     expect(attendees).toContain("const isCheckedIn = checkInClock !== null;");
   });
 
-  it("declares IN_LABEL once as the literal \"IN\" beside RESERVATION_LABEL and uses it as a label prop exactly once", () => {
-    expect((attendees.match(/const IN_LABEL = "IN";/g) ?? []).length).toBe(1);
+  it("declares IN_LABEL once as the literal \"CHECKED IN\" beside RESERVATION_LABEL and uses it as a label prop exactly once", () => {
+    expect((attendees.match(/const IN_LABEL = "CHECKED IN";/g) ?? []).length).toBe(1);
     expect((attendees.match(/label=\{IN_LABEL\}/g) ?? []).length).toBe(1);
     expect(attendees).toContain('const RESERVATION_LABEL = "RESERVATION";');
     expect((attendees.match(/label=\{RESERVATION_LABEL\}/g) ?? []).length).toBe(
