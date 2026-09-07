@@ -205,15 +205,32 @@ describe("Gate 3 — the untouched modules (FILT-08 source half)", () => {
 
 // ── Gate 4 ───────────────────────────────────────────────────────────────
 
-describe("Gate 4 — the exact source change set", () => {
-  it("git diff PHASE_26_BASE -- src, sorted, equals the declared Phase 26 path", () => {
-    expect([...srcChangedFromBase].sort()).toEqual(
-      [...PHASE_26_SRC_CHANGED].sort(),
-    );
+describe("Gate 4 — the exact source change set (overlaid by Phase 27, retargeted plan 27-01)", () => {
+  // RETARGET (plan 27-01 Task 1, SAME commit as the source change, 2026-09-07):
+  // Phase 27 is the next phase to branch off PHASE_26_BASE and legitimately adds
+  // the numbered client pager to attendee-search.tsx. This gate can no longer
+  // assert the src diff is EXACTLY the one Phase 26 path; it is retargeted IN
+  // PLACE to two `it`s: (a) the one declared Phase 26 path is still present and
+  // the allow-list length is still 1, and (b) every OTHER changed src path is
+  // the one declared Phase 27 path. A stray edit outside both phases still fails
+  // BY NAME.
+  const isPhase27Path = (p: string) =>
+    p === "src/app/events/[eventId]/attendees/attendee-search.tsx";
+
+  it("still contains the one declared Phase 26 src path and the allow-list length is 1", () => {
+    expect(PHASE_26_SRC_CHANGED.length).toBe(1);
+    for (const f of PHASE_26_SRC_CHANGED) {
+      expect(srcChangedFromBase).toContain(f);
+    }
   });
 
-  it("the declared allow-list has exactly one entry — a second path forces a deliberate edit here", () => {
-    expect(PHASE_26_SRC_CHANGED.length).toBe(1);
+  it("every changed src path beyond the one Phase 26 path is a declared Phase 27 path", () => {
+    const extra = srcChangedFromBase.filter(
+      (p) => !(PHASE_26_SRC_CHANGED as readonly string[]).includes(p),
+    );
+    for (const p of extra) {
+      expect(isPhase27Path(p), `unexpected changed src path: ${p}`).toBe(true);
+    }
   });
 });
 
@@ -419,9 +436,16 @@ describe("Gate 9 — FILT-06: the eight honest empty-state strings", () => {
 // ── Gate 10 ──────────────────────────────────────────────────────────────
 
 describe("Gate 10 — FILT-07: the search island is untouched", () => {
-  it(`${ISLAND}: attendee-search.tsx is absent from the base src diff and the working-tree src diff`, () => {
-    expect(srcChangedFromBase).not.toContain(ISLAND);
-    expect(srcChangedWorking).not.toContain(ISLAND);
+  // RETARGET (plan 27-01 Task 1, SAME commit as the source change, 2026-09-07):
+  // Phase 27 legitimately adds the numbered pager to the island, so it now DOES
+  // appear in `git diff PHASE_26_BASE -- src`. The working-tree src diff must
+  // still be empty at rest (every Phase 27 change is committed). The island's
+  // SHAPE — five props, `use client` only here, the byte-identical `shown`
+  // expression — is still guarded UNCHANGED by the other three `it`s in this
+  // gate.
+  it(`${ISLAND}: attendee-search.tsx IS in the base src diff (Phase 27's pager) and the working tree has no uncommitted src change`, () => {
+    expect(srcChangedFromBase).toContain(ISLAND);
+    expect(srcChangedWorking).toEqual([]);
   });
 
   it(`${ISLAND}: it is the only file under the attendees list route with a client directive`, () => {

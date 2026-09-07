@@ -27,6 +27,11 @@ import { Label } from "@/components/ui/label";
 // drift apart.
 const SEARCH_INPUT_ID = "attendee-search";
 
+// PGN-01 / D-05: the attendees list pages client-side at 25 rows per page. One
+// consumer, one constant — deliberately not hoisted to a shared module (Phase 28
+// is the DRY pass). The contract test pins the bare literal 25 here.
+const PAGE_SIZE = 25;
+
 // Exactly five fields: the first three are matched on, the fourth is the
 // server's chip-filter verdict, the fifth is the <li> the server already
 // built.
@@ -51,10 +56,13 @@ export function AttendeeSearch({
   emptyState: ReactNode;
   clearFilters: ReactNode;
 }) {
-  // The one and only hook call in this file. No debounce: D-01 is live
+  // The two state hooks in this file: the live search term and the 1-based
+  // pager page index (PGN-01, D-01 — the page number lives here and nowhere
+  // else: no URL, no router, no storage). No debounce on the term: D-01 is live
   // filtering and the list is tens to low hundreds of rows, so a timer would
   // add a stale-frame bug class for no gain.
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   // Two separate values on purpose: `term` is the lowercased needle used for
   // matching; `trimmed` is what the footer echoes back, so it never shows the
@@ -77,6 +85,17 @@ export function AttendeeSearch({
       )
     : items.filter((item) => item.chipVisible);
 
+  // PGN-01 / PGN-03: page the already-filtered `shown` array — never `items` —
+  // so search and every chip still operate on the full event-wide set upstream
+  // of this slice. `pageRows` is a SEPARATE downstream const; `shown` is not
+  // touched. Array.prototype.slice preserves order, so the server's
+  // attendee_name-then-id ordering carries through unchanged — nothing here
+  // sorts, reverses or re-keys. No Math.min/Math.max clamp on `page` (D-03): an
+  // out-of-range page is treated as unreachable because every real term/chip
+  // change resets to page 1.
+  const pageCount = Math.ceil(shown.length / PAGE_SIZE);
+  const pageRows = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
@@ -91,7 +110,7 @@ export function AttendeeSearch({
       </div>
 
       {shown.length > 0 ? (
-        <ul className="flex flex-col">{shown.map((item) => item.row)}</ul>
+        <ul className="flex flex-col">{pageRows.map((item) => item.row)}</ul>
       ) : (
         <div className="flex flex-col gap-2">
           {emptyState}
@@ -108,6 +127,31 @@ export function AttendeeSearch({
           )}
         </div>
       )}
+
+      {shown.length > PAGE_SIZE ? (
+        <nav aria-label="Pagination" className="flex flex-wrap gap-2 pt-2">
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) =>
+            n === page ? (
+              <span
+                key={n}
+                aria-current="page"
+                className="text-[12px] font-semibold text-foreground px-1"
+              >
+                {n}
+              </span>
+            ) : (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPage(n)}
+                className="text-[12px] text-[var(--color-accent-700)] px-1"
+              >
+                {n}
+              </button>
+            ),
+          )}
+        </nav>
+      ) : null}
 
       {shown.length > 0 && (searching || hasActiveFilter) ? (
         <p className="text-[12px] text-muted-foreground pt-2 break-words">

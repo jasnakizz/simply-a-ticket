@@ -38,10 +38,24 @@ const shownStart = code.indexOf("const shown =");
 const shownExpr = code.slice(shownStart, code.indexOf(";", shownStart) + 1);
 
 describe("SEARCH-02 — attendee-search.tsx is a narrow client island: state, substring match, no round-trip", () => {
-  it("is a client component with exactly one hook call site — the state hook and nothing else (no effect, memo, transition, ref, router or action-state hook)", () => {
+  // RETARGET (plan 27-01 Task 1, SAME commit as the source change, 2026-09-07):
+  // PGN-01 adds a second `useState` (the 1-based pager page index). The
+  // load-bearing property is unchanged — every hook call site in this file is
+  // `useState`, and no effect / ref / memo / callback / reducer / transition /
+  // router / action-state hook is used — but there is now more than one call
+  // site, so the exact-array equality is loosened to "one or more, all
+  // useState" plus explicit by-name bans on the forbidden hook families.
+  it("is a client component whose every hook call is `useState` — no effect, memo, callback, reducer, transition, ref, router or action-state hook", () => {
     expect(code).toContain("use client");
     const hookCalls = code.match(/\buse[A-Z][a-zA-Z]*\(/g) ?? [];
-    expect(hookCalls).toEqual(["useState("]);
+    expect(hookCalls.length).toBeGreaterThanOrEqual(1);
+    expect(hookCalls.every((h) => h === "useState(")).toBe(true);
+    expect(code).not.toMatch(/\buseEffect\b/);
+    expect(code).not.toMatch(/\buseRef\b/);
+    expect(code).not.toMatch(/\buseMemo\b/);
+    expect(code).not.toMatch(/\buseCallback\b/);
+    expect(code).not.toMatch(/\buseReducer\b/);
+    expect(code).not.toMatch(/\buseTransition\b/);
   });
 
   it("filters live with no debounce and no timer — no setTimeout, setInterval or requestAnimationFrame anywhere in the file", () => {
@@ -179,5 +193,64 @@ describe("SEARCH-02 — attendee-search.tsx is a narrow client island: state, su
     expect(ulSlice).not.toMatch(/attendee_/);
     expect(ulSlice).not.toMatch(/formatMoney/);
     expect(ulSlice).not.toMatch(/<Badge\b/);
+  });
+});
+
+/**
+ * PGN-01 / PGN-03 (plan 27-01 Task 1) — client-side pagination is a third stage
+ * inside this island: a page-size constant, a 1-based page `useState`, a derived
+ * `pageRows` slice of the already-computed `shown` array, and a numbered pager.
+ * Each `it` is named for the single property it protects.
+ */
+describe("PGN-01 — the pagination slice and the numbered pager", () => {
+  it("PGN-01 / D-05 — PAGE_SIZE is one module-scope constant carrying the bare literal 25", () => {
+    expect((code.match(/const PAGE_SIZE = 25;/g) ?? []).length).toBe(1);
+  });
+
+  it("PGN-01 / D-01 — the page index is a 1-based useState and nothing else (no router, URL param or storage for it)", () => {
+    expect(
+      (code.match(/const \[page, setPage\] = useState\(1\);/g) ?? []).length,
+    ).toBe(1);
+  });
+
+  it("PGN-03 — pageRows is a SEPARATE downstream slice of `shown`, computed exactly once, and `shown` is still derived exactly once", () => {
+    expect(
+      (
+        code.match(
+          /const pageRows = shown\.slice\(\(page - 1\) \* PAGE_SIZE, page \* PAGE_SIZE\);/g,
+        ) ?? []
+      ).length,
+    ).toBe(1);
+    expect((code.match(/const shown =/g) ?? []).length).toBe(1);
+    expect(code.indexOf("const pageRows =")).toBeGreaterThan(
+      code.indexOf("const shown ="),
+    );
+  });
+
+  it("PGN-01 / E-02 / E-05 — the page count uses Math.ceil and there is no out-of-range clamp on `page`", () => {
+    expect(
+      (code.match(/const pageCount = Math\.ceil\(shown\.length \/ PAGE_SIZE\);/g) ?? [])
+        .length,
+    ).toBe(1);
+    expect(code).not.toMatch(/Math\.min\(page/);
+    expect(code).not.toMatch(/Math\.max\(page/);
+  });
+
+  it("PGN-01 — the <ul> maps the page slice `pageRows`, never the full `shown` array", () => {
+    const ulSlice = code.slice(code.indexOf("<ul"), code.indexOf("</ul>") + 5);
+    expect(ulSlice).toContain("pageRows.map((item) => item.row)");
+    expect(code).not.toMatch(/shown\.map\(/);
+  });
+
+  it("PGN-01 / D-04 — the pager renders only when shown.length > PAGE_SIZE, one <button type=\"button\"> per other page calling setPage, and the current page as a non-interactive aria-current=\"page\" node", () => {
+    expect(code).toMatch(/shown\.length > PAGE_SIZE \? \(/);
+    expect(code).toMatch(/aria-current="page"/);
+    const navSlice = code.slice(code.indexOf("<nav"), code.indexOf("</nav>") + 6);
+    expect(navSlice).toMatch(/<button\s+key=\{n\}\s+type="button"/);
+    expect(navSlice).toContain("setPage(n)");
+  });
+
+  it("PGN-01 / D-04 — the pager is numbers only: no Prev/Next/Previous vocabulary anywhere in the file", () => {
+    expect(code).not.toMatch(/\b(Prev|Previous|Next)\b/);
   });
 });

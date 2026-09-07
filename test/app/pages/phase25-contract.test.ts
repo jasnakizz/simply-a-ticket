@@ -245,15 +245,33 @@ describe("Gate 3 — the untouched modules", () => {
   });
 });
 
-describe("Gate 4 — the exact source change set", () => {
-  it("git diff PHASE_25_BASE -- src, sorted, equals the eight declared Phase 25 paths", () => {
-    expect([...srcChangedFromBase].sort()).toEqual(
-      [...PHASE_25_SRC_CHANGED].sort(),
-    );
+describe("Gate 4 — the exact source change set (overlaid by Phase 26 + Phase 27, retargeted plan 27-01)", () => {
+  // RETARGET (plan 27-01 Task 1, SAME commit as the source change, 2026-09-07):
+  // Phases 26 and 27 both branch off (a descendant of) PHASE_25_BASE and
+  // legitimately re-touch the attendees route tree — Phase 26 re-touched
+  // page.tsx (already in the Phase 25 allow-list), and Phase 27 adds the client
+  // pager to attendee-search.tsx. This gate can no longer assert the src diff
+  // is EXACTLY the eight Phase 25 paths; it is retargeted IN PLACE to two `it`s:
+  // (a) all eight Phase 25 paths are still present in the diff, and (b) every
+  // OTHER changed src path is the one declared Phase 27 path. A stray edit
+  // outside those phases still fails BY NAME.
+  const isPhase27Path = (p: string) =>
+    p === "src/app/events/[eventId]/attendees/attendee-search.tsx";
+
+  it("still contains all eight Phase 25 src paths", () => {
+    expect(PHASE_25_SRC_CHANGED.length).toBe(8);
+    for (const f of PHASE_25_SRC_CHANGED) {
+      expect(srcChangedFromBase).toContain(f);
+    }
   });
 
-  it("the declared allow-list has exactly eight entries — a ninth path forces a deliberate edit here", () => {
-    expect(PHASE_25_SRC_CHANGED.length).toBe(8);
+  it("every changed src path beyond the eight Phase 25 paths is a declared Phase 27 path", () => {
+    const extra = srcChangedFromBase.filter(
+      (p) => !(PHASE_25_SRC_CHANGED as readonly string[]).includes(p),
+    );
+    for (const p of extra) {
+      expect(isPhase27Path(p), `unexpected changed src path: ${p}`).toBe(true);
+    }
   });
 });
 
