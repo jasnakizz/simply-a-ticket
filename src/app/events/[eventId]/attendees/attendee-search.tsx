@@ -42,6 +42,13 @@ const PAGE_SIZE = 25;
 // `useRef` is unavailable here (the island's hook family is `useState` only).
 const SHOWING_STATUS_ID = "attendee-showing-status";
 
+// PGN-06 (retarget): the "Showing X–Y of N" line now sits BELOW the list, so
+// focusing it on a page change would scroll to the bottom of the new page. The
+// pager also scrolls this element — the top of the list — into view so the new
+// page still starts at the top. Same id-not-ref convention (useState-only hook
+// family).
+const ATTENDEE_LIST_TOP_ID = "attendee-list-top";
+
 // Exactly five fields: the first three are matched on, the fourth is the
 // server's chip-filter verdict, the fifth is the <li> the server already
 // built.
@@ -145,24 +152,10 @@ export function AttendeeSearch({
         />
       </div>
 
-      <p
-        id={SHOWING_STATUS_ID}
-        tabIndex={-1}
-        aria-live="polite"
-        className="text-[12px] text-muted-foreground pt-2 break-words"
-      >
-        {`Showing ${
-          shown.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-        }${
-          shown.length > 0 ? `–${Math.min(page * PAGE_SIZE, shown.length)}` : ""
-        } of ${shown.length}`}
-        {searching || hasActiveFilter
-          ? ` · ${searching ? `"${trimmed}"` : filterSummary}`
-          : ""}
-      </p>
-
       {shown.length > 0 ? (
-        <ul className="flex flex-col">{pageRows.map((item) => item.row)}</ul>
+        <ul id={ATTENDEE_LIST_TOP_ID} className="flex flex-col">
+          {pageRows.map((item) => item.row)}
+        </ul>
       ) : (
         <div className="flex flex-col gap-2">
           {emptyState}
@@ -179,6 +172,22 @@ export function AttendeeSearch({
           )}
         </div>
       )}
+
+      <p
+        id={SHOWING_STATUS_ID}
+        tabIndex={-1}
+        aria-live="polite"
+        className="self-end text-right text-[12px] text-muted-foreground pt-2 break-words"
+      >
+        {`Showing ${
+          shown.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+        }${
+          shown.length > 0 ? `–${Math.min(page * PAGE_SIZE, shown.length)}` : ""
+        } of ${shown.length}`}
+        {searching || hasActiveFilter
+          ? ` · ${searching ? `"${trimmed}"` : filterSummary}`
+          : ""}
+      </p>
 
       {shown.length > PAGE_SIZE ? (
         <nav aria-label="Pagination" className="flex flex-wrap gap-2 pt-2">
@@ -198,6 +207,9 @@ export function AttendeeSearch({
                 onClick={() => {
                   setPage(n);
                   document.getElementById(SHOWING_STATUS_ID)?.focus();
+                  document
+                    .getElementById(ATTENDEE_LIST_TOP_ID)
+                    ?.scrollIntoView({ block: "start" });
                 }}
                 className="text-[12px] text-[var(--color-accent-700)] px-1"
               >

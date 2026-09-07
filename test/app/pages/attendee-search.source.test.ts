@@ -164,7 +164,7 @@ describe("SEARCH-02 — attendee-search.tsx is a narrow client island: state, su
 
   // RETARGET (plan 27-01 Task 2, SAME commit as the source change, 2026-09-07):
   // D-09 removes the conditional footer `<p>` and replaces it with ONE always-on
-  // "Showing X–Y of N" line above the list — it doubles as the PGN-06 focus
+  // "Showing X–Y of N" line below the list — it doubles as the PGN-06 focus
   // target. This gate is re-anchored to that line: the deleted footer
   // expressions must be absent; the new line must carry the range arithmetic,
   // the `shown.length` total, the focusable `aria-live` attributes and the
@@ -290,7 +290,7 @@ describe("PGN-01 — the pagination slice and the numbered pager", () => {
  * `it` is named for the single property it protects.
  */
 describe("PGN-04..06 — the Showing line, focus move, and page-1 resets", () => {
-  it("PGN-06 / D-07 — SHOWING_STATUS_ID is one module-scope constant, and the line carrying it is focusable and an aria-live region, placed before the list branch", () => {
+  it("PGN-06 / D-07 — SHOWING_STATUS_ID is one module-scope constant, and the line carrying it is focusable and an aria-live region, placed after the list branch", () => {
     expect(
       (code.match(/const SHOWING_STATUS_ID = "attendee-showing-status";/g) ?? [])
         .length,
@@ -300,7 +300,7 @@ describe("PGN-04..06 — the Showing line, focus move, and page-1 resets", () =>
     const pSlice = code.slice(pStart - 40, pStart + 200);
     expect(pSlice).toContain("tabIndex={-1}");
     expect(pSlice).toContain('aria-live="polite"');
-    expect(pStart).toBeLessThan(code.indexOf("{shown.length > 0 ?"));
+    expect(pStart).toBeGreaterThan(code.indexOf("{shown.length > 0 ?"));
   });
 
   it("PGN-05 — the line's total N is `shown.length` — the same array the pager slices and pageCount divides", () => {
