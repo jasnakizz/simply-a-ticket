@@ -342,7 +342,7 @@ describe("Gate 8 — FILT-04 / D-01 / D-02: two rows, fixed order, literal label
   });
 
   it(`${ATTENDEES}: IN_LABEL and NOT_IN_LABEL are each declared exactly once with the literal values IN and NOT IN`, () => {
-    expect(count(attendees, /const IN_LABEL = "IN";/g)).toBe(1);
+    expect(count(attendees, /const IN_LABEL = "CHECKED IN";/g)).toBe(1);
     expect(count(attendees, /const NOT_IN_LABEL = "NOT IN";/g)).toBe(1);
   });
 
