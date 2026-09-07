@@ -1,7 +1,10 @@
 "use client";
 
 // AttendeeSearch — the live client-side "Search" box on the attendees list
-// (SEARCH-02, D-01..D-06).
+// (SEARCH-02, D-01..D-06), plus client-side pagination (PGN-01..06): the
+// already-filtered `shown` array is sliced into pages of PAGE_SIZE and a
+// numbered pager moves between them. Search and the chips still run over the
+// FULL event-wide set, upstream of the slice.
 //
 // This island is deliberately narrow. The server page renders every attendee
 // <li> exactly as it does today and hands this component one item per
@@ -31,6 +34,13 @@ const SEARCH_INPUT_ID = "attendee-search";
 // consumer, one constant — deliberately not hoisted to a shared module (Phase 28
 // is the DRY pass). The contract test pins the bare literal 25 here.
 const PAGE_SIZE = 25;
+
+// PGN-06 / D-07: the id of the always-on "Showing X–Y of N" line. Each
+// page-number click focuses this element (it is a focusable `tabIndex={-1}`
+// `aria-live` region), so the range change is announced and the top of the new
+// page scrolls into view. Mirrors the single-id `SEARCH_INPUT_ID` convention;
+// `useRef` is unavailable here (the island's hook family is `useState` only).
+const SHOWING_STATUS_ID = "attendee-showing-status";
 
 // Exactly five fields: the first three are matched on, the fourth is the
 // server's chip-filter verdict, the fifth is the <li> the server already
@@ -65,11 +75,37 @@ export function AttendeeSearch({
   const [page, setPage] = useState(1);
 
   // Two separate values on purpose: `term` is the lowercased needle used for
-  // matching; `trimmed` is what the footer echoes back, so it never shows the
-  // operator her own typing case-folded.
+  // matching; `trimmed` is what the "Showing X–Y of N" line echoes back, so it
+  // never shows the operator her own typing case-folded.
   const trimmed = query.trim();
   const term = trimmed.toLowerCase();
   const searching = term.length > 0;
+
+  // PGN-04: snap the view back to page 1 whenever the search term OR the active
+  // chip set changes. Both use the in-repo derived-state-reset idiom
+  // (check-in-panel.tsx lines 291-298), NOT a useEffect: an effect that
+  // setState()s on every dep change is a lint-flagged cascading-render
+  // anti-pattern and would break this island's useState-only hook family. The
+  // during-render conditional fires only on a real change.
+  //
+  // Search path — keyed on the trimmed term.
+  const [prevTrimmed, setPrevTrimmed] = useState(trimmed);
+  if (trimmed !== prevTrimmed) {
+    setPrevTrimmed(trimmed);
+    setPage(1);
+  }
+
+  // Chip path — keyed on `items` identity. A chip toggle is a URL navigation
+  // that re-renders the Server Component and hands the island a fresh `items`
+  // array reference; keying on that identity covers the chip path whether or
+  // not React re-mounts the island instance across the nav. Every render of
+  // this island is such a navigation (initial load, chip toggle, "Clear
+  // filters", browser back/forward), and all of them should land on page 1.
+  const [prevItems, setPrevItems] = useState(items);
+  if (items !== prevItems) {
+    setPrevItems(items);
+    setPage(1);
+  }
 
   // D-02 and D-04 in one statement: the name and email fields are tested
   // independently and joined by OR — never concatenated, never tokenised,
@@ -109,6 +145,22 @@ export function AttendeeSearch({
         />
       </div>
 
+      <p
+        id={SHOWING_STATUS_ID}
+        tabIndex={-1}
+        aria-live="polite"
+        className="text-[12px] text-muted-foreground pt-2 break-words"
+      >
+        {`Showing ${
+          shown.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+        }${
+          shown.length > 0 ? `–${Math.min(page * PAGE_SIZE, shown.length)}` : ""
+        } of ${shown.length}`}
+        {searching || hasActiveFilter
+          ? ` · ${searching ? `"${trimmed}"` : filterSummary}`
+          : ""}
+      </p>
+
       {shown.length > 0 ? (
         <ul className="flex flex-col">{pageRows.map((item) => item.row)}</ul>
       ) : (
@@ -143,7 +195,10 @@ export function AttendeeSearch({
               <button
                 key={n}
                 type="button"
-                onClick={() => setPage(n)}
+                onClick={() => {
+                  setPage(n);
+                  document.getElementById(SHOWING_STATUS_ID)?.focus();
+                }}
                 className="text-[12px] text-[var(--color-accent-700)] px-1"
               >
                 {n}
@@ -151,14 +206,6 @@ export function AttendeeSearch({
             ),
           )}
         </nav>
-      ) : null}
-
-      {shown.length > 0 && (searching || hasActiveFilter) ? (
-        <p className="text-[12px] text-muted-foreground pt-2 break-words">
-          {shown.length}{" "}
-          {shown.length === 1 ? "attendee" : "attendees"} ·{" "}
-          {searching ? `"${trimmed}"` : filterSummary}
-        </p>
       ) : null}
     </div>
   );

@@ -782,30 +782,38 @@ describe("ATTENDEE-V3-04 — two distinct empty states and a suppressible footer
     expect((attendees.match(/href=\{basePath\}/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
-  // SEARCH-02 moved the footer-summary expression into the AttendeeSearch
-  // island. The page no longer carries it; the island gates its footer on a
-  // positive shown-row count AND (searching OR an active facet). The "0
-  // attendees" negative is kept and applied to BOTH files.
-  it("moves the footer summary into the island — the page carries no footer expression, the island gates its footer on a positive shown-row count AND (searching OR an active facet), and neither file ever emits \"0 attendees\"", () => {
+  // RETARGET (plan 27-01 Task 2, SAME commit as the source change, 2026-09-07):
+  // D-09 removes the island's conditional footer `<p>` and replaces it with one
+  // always-on "Showing X–Y of N" line. The page still carries no footer
+  // expression; the island now carries the always-on line and NOT the old
+  // conditional footer. The "0 attendees" negative is kept on BOTH files — the
+  // new line renders "Showing 0 of 0".
+  it("moves the summary into the island's always-on \"Showing X–Y of N\" line — the page carries no footer expression, the island carries the always-on line and not the old conditional footer, and neither file ever emits \"0 attendees\"", () => {
     expect(attendees).not.toContain("visibleAttendees.length > 0 ? (");
     expect(attendees).not.toMatch(/0 attendees/);
     const island = readCode(
       "src/app/events/[eventId]/attendees/attendee-search.tsx",
     );
-    expect(island).toContain(
+    expect(island).toMatch(/Showing /);
+    expect(island).toContain("of ${shown.length}");
+    expect(island).not.toContain(
       "shown.length > 0 && (searching || hasActiveFilter) ? (",
     );
     expect(island).not.toMatch(/0 attendees/);
   });
 
-  // RETARGET (plan 24-03 Task 1, SAME commit as the source change, 2026-09-06):
-  // the exactly-one noun test moved to the island, now over `shown.length`.
-  it("chooses the footer noun by an exactly-one test and carries both the singular and plural forms — now in the island", () => {
+  // RETARGET (plan 27-01 Task 2, SAME commit as the source change, 2026-09-07):
+  // the singular/plural noun choice is gone — the new copy is "of N", not
+  // "N attendees". Re-anchored to the new range copy shape (the `Showing`
+  // prefix, the `(page - 1) * PAGE_SIZE + 1` start, the `Math.min(...)` end).
+  it("renders the range as \"Showing <start>–<end> of <N>\" in the island — start is (page - 1) * PAGE_SIZE + 1, end is Math.min(page * PAGE_SIZE, shown.length), and the old singular/plural noun test is gone", () => {
     const island = readCode(
       "src/app/events/[eventId]/attendees/attendee-search.tsx",
     );
-    expect(island).toContain(
+    expect(island).toContain("Showing ");
+    expect(island).toContain("(page - 1) * PAGE_SIZE + 1");
+    expect(island).toContain("Math.min(page * PAGE_SIZE, shown.length)");
+    expect(island).not.toContain(
       'shown.length === 1 ? "attendee" : "attendees"',
     );
   });
